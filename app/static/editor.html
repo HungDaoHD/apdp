@@ -1,0 +1,2632 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SurveyFlow — datatable.json Editor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#1a1a2e;background:#f0f2f5;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* Header */
+.hdr{background:#16213e;color:white;padding:0 14px;height:48px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.hdr-logo{font-size:13px;font-weight:700;margin-right:4px;white-space:nowrap}
+.sep{width:1px;height:22px;background:#2d3748;flex-shrink:0}
+.fbadge{font-size:11px;padding:2px 9px;border-radius:4px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fbadge.none{background:#252f3f;color:#555}
+.fbadge.ok{background:#1a3a2a;color:#6fcf97;border:1px solid #2a5a3a}
+.gap{flex:1}
+.btn{padding:5px 11px;border-radius:5px;border:none;cursor:pointer;font-size:11px;font-weight:500;transition:background .12s;white-space:nowrap}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-pri{background:#1a73e8;color:white}.btn-pri:not(:disabled):hover{background:#1557b0}
+.btn-suc{background:#1e8449;color:white}.btn-suc:not(:disabled):hover{background:#166138}
+.btn-sec{background:#3d4757;color:#e0e6ef}.btn-sec:hover{background:#4a5568}
+.btn-dan{background:#c0392b;color:white}.btn-dan:hover{background:#992218}
+.btn-gho{background:transparent;color:#9ab;border:1px solid #3d4757}.btn-gho:hover{background:#3d4757;color:#e0e6ef}
+.btn-xs{padding:2px 7px;font-size:10px}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-blu{background:#e8f0fe;color:#1a73e8;border:1px solid #c5d8f5}.btn-blu:hover{background:#d2e3fc}
+.btn-grn{background:#e6f4ea;color:#1e8449;border:1px solid #b7dfbf}.btn-grn:hover{background:#ceead6}
+
+/* Body layout */
+.body{display:flex;flex:1;overflow:hidden}
+
+/* Questions Panel */
+.qp{width:260px;min-width:260px;background:white;border-right:1px solid #e0e4ea;display:flex;flex-direction:column;transition:width .18s,min-width .18s;overflow:hidden}
+.qp.hidden{width:0;min-width:0}
+.qpi{width:260px;display:flex;flex-direction:column;height:100%;overflow:hidden}
+.qph{padding:9px 11px;border-bottom:1px solid #e8eaed;flex-shrink:0}
+.qpt{font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
+.qps{width:100%;padding:5px 9px;border:1px solid #dde1e7;border-radius:5px;font-size:12px;outline:none;font-family:inherit}
+.qps:focus{border-color:#1a73e8}
+.qpf{display:flex;gap:3px;margin-top:6px;flex-wrap:wrap}
+.qfb{padding:2px 7px;border:1px solid #e0e4ea;border-radius:10px;background:white;font-size:10px;cursor:pointer;color:#777;transition:all .1s}
+.qfb.on{background:#1a73e8;border-color:#1a73e8;color:white;font-weight:700}
+.ql{flex:1;overflow-y:auto;padding:5px 7px}
+.qempty{padding:24px 10px;text-align:center;color:#bbb;font-size:11px;line-height:1.7}
+/* Question card */
+.qcard{border:1px solid #e8eaed;border-radius:6px;padding:7px 9px;margin-bottom:4px;background:#fafbfc;cursor:grab;user-select:none;transition:border-color .1s,box-shadow .1s,opacity .1s;position:relative}
+.qcard:hover{border-color:#1a73e8;background:#f0f6ff;box-shadow:0 1px 5px rgba(26,115,232,.12)}
+.qcard:active{cursor:grabbing}
+.qcard.dragging{opacity:.3;cursor:grabbing}
+.qcard-top{display:flex;align-items:center;gap:5px}
+.qlbl{font-weight:700;font-size:11px;color:#1a1a2e;flex-shrink:0}
+.qname{font-size:10px;color:#666;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.qcard-hint{font-size:10px;color:#c0c8d8;margin-top:4px;font-style:italic}
+.qcard-prev{font-size:10px;color:#bbb;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Type badges */
+.tb{font-size:9px;padding:1px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;flex-shrink:0}
+.tb-sa{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
+.tb-ma{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7}
+.tb-mx{background:#f3e5f5;color:#7b1fa2;border:1px solid #ce93d8}
+.tb-ft{background:#fff3e0;color:#e65100;border:1px solid #ffcc80}
+.tb-nm{background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da}
+.tb-ot{background:#f5f5f5;color:#888;border:1px solid #ddd}
+
+/* Tables Sidebar */
+.tbs{width:160px;min-width:160px;background:white;border-right:1px solid #e0e4ea;display:flex;flex-direction:column}
+.tbsh{padding:9px 11px 6px;font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #f0f2f5}
+.tbsl{flex:1;overflow-y:auto}
+.tbsi{padding:8px 11px;cursor:pointer;border-left:3px solid transparent;transition:background .1s}
+.tbsi:hover{background:#f5f7fa}
+.tbsi.on{background:#eef4ff;border-left-color:#1a73e8}
+.tbsi-name{font-size:12px;font-weight:600;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbsi.on .tbsi-name{color:#1a73e8}
+.tbsi-sub{font-size:10px;color:#bbb;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbsf{padding:7px 9px;border-top:1px solid #e0e4ea}
+
+/* Main */
+.main{flex:1;overflow-y:auto;padding:14px 16px}
+
+/* Statusbar */
+.sbar{height:24px;background:white;border-top:1px solid #e0e4ea;padding:0 12px;display:flex;align-items:center;font-size:10px;color:#999;gap:12px;flex-shrink:0}
+.sbar .dot{width:6px;height:6px;border-radius:50%;background:#ccc;flex-shrink:0}
+.sbar.dirty .dot{background:#e67e22}.sbar.dirty .msg{color:#e67e22}
+.sbar.saved .dot{background:#27ae60}.sbar.saved .msg{color:#27ae60}
+
+/* Tabs */
+.tabs{display:flex;gap:2px;margin-bottom:14px;background:white;border:1px solid #e0e4ea;border-radius:7px;padding:3px;width:fit-content}
+.tab{padding:5px 13px;border-radius:5px;border:none;background:transparent;cursor:pointer;font-size:12px;color:#666;transition:background .12s;white-space:nowrap}
+.tab.on{background:#1a73e8;color:white;font-weight:600}
+.tab:not(.on):hover{background:#f0f2f5}
+.tbg{background:#e8eaf6;color:#3949ab;padding:1px 5px;border-radius:8px;font-size:10px;margin-left:3px}
+.tab.on .tbg{background:rgba(255,255,255,.25);color:white}
+
+/* Cards */
+.card{background:white;border-radius:7px;border:1px solid #e0e4ea;margin-bottom:10px}
+.cardh{padding:9px 13px;border-bottom:1px solid #e0e4ea;font-weight:600;font-size:12px;color:#222;display:flex;align-items:center;justify-content:space-between}
+.chl{display:flex;align-items:center;gap:7px}
+.cardb{padding:13px}
+
+/* Forms */
+.fr{display:flex;gap:9px;margin-bottom:9px;align-items:flex-end}
+.fg{flex:1}
+.fl{font-size:10px;color:#888;display:block;margin-bottom:3px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+input[type=text],input[type=number],select,textarea{width:100%;padding:5px 8px;border:1px solid #dde1e7;border-radius:5px;font-size:12px;outline:none;background:white;color:#222;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2px rgba(26,115,232,.1)}
+
+/* Toggle */
+.tw{display:flex;align-items:center;gap:7px}
+.tgl{position:relative;display:inline-block;width:34px;height:19px;flex-shrink:0}
+.tgl input{opacity:0;width:0;height:0}
+.tgls{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:19px;transition:.18s}
+.tgls:before{content:"";position:absolute;height:13px;width:13px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.18s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.tgl input:checked+.tgls{background:#1a73e8}
+.tgl input:checked+.tgls:before{transform:translateX(15px)}
+
+/* Stats chips */
+.sgrid{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.schip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1.5px solid #e0e4ea;border-radius:18px;cursor:pointer;font-size:11px;user-select:none;color:#666;transition:all .1s}
+.schip input{width:11px;height:11px;cursor:pointer;accent-color:#1a73e8}
+.schip:has(input:checked){background:#eef4ff;border-color:#1a73e8;color:#1a73e8;font-weight:700}
+
+/* Layout tab */
+.ls{margin-bottom:14px}
+.lsh{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.lst{font-size:11px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:.5px}
+
+/* Banner grid (columns × levels) */
+.bgwrap{overflow-x:auto;border:1px solid #e0e4ea;border-radius:8px;background:white;transition:box-shadow .15s,border-color .15s}
+.bgwrap.dov{border-color:#1a73e8!important;box-shadow:0 0 0 3px #c5d8fb}
+.bgtbl{border-collapse:collapse;table-layout:fixed}
+.bgtbl td{border:1px solid #e8eaed;padding:0;vertical-align:top}
+/* Level label column (left) */
+.bg-lvcol{width:46px;background:#f1f3f4;border-right:2px solid #dee2e7 !important;text-align:center;font-size:9px;font-weight:700;color:#888;letter-spacing:.3px;vertical-align:middle !important;padding:4px 2px;white-space:nowrap;position:sticky;left:0;z-index:2}
+/* Data column */
+.bgcol{min-width:130px;width:150px;transition:background .1s}
+.bgcol.is-matrix .bgcell{background:#fffde7 !important}
+.bgcol.is-matrix .bgcell:hover{background:#fff9c4 !important}
+.bgcol.dragging{opacity:.4}
+.bgcol.dov{outline:2px dashed #1a73e8;outline-offset:-2px;background:#eef4ff !important}
+/* Cells inside a column */
+.bgcell{min-height:52px;padding:6px 8px;display:flex;flex-direction:column;gap:3px;cursor:pointer;transition:background .1s;position:relative;justify-content:center}
+.bgcell:hover{background:#f0f6ff}
+.bgcell.is-empty{align-items:center;justify-content:center;background:#fafbfc;min-height:52px;cursor:pointer}
+.bgcell.is-empty:hover{background:#e8f0fe}
+/* Content inside cells */
+.bgqid{font-size:9px;font-weight:700;color:#1a73e8;background:#e8f0fe;padding:1px 6px;border-radius:4px;align-self:flex-start;line-height:1.6}
+.bgql{font-size:11px;font-weight:600;color:#333;line-height:1.3;margin-top:1px}
+.bgqg{display:flex;flex-wrap:wrap;gap:2px;margin-top:2px}
+.bgqgc{font-size:9px;background:#f1f3f4;color:#555;padding:1px 5px;border-radius:3px;white-space:nowrap}
+.bgqgc.more{background:#f3e5f5;color:#7b1fa2}
+.bgqacts{display:flex;gap:2px;margin-top:auto;padding-top:4px}
+/* Add column (rightmost) */
+.bgaddcol{width:68px;min-width:68px;background:#f0f6ff;border-left:2px dashed #a8c7fa !important;cursor:pointer;vertical-align:middle !important;text-align:center;transition:background .12s;padding:0}
+.bgaddcol:hover,.bgaddcol.dov{background:#c5d8fb}
+.bgaddmain{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:16px 6px;height:100%;min-height:260px;color:#1a73e8}
+/* Choices list in stub modal */
+.choices-sect{margin-top:14px}
+.choices-list{max-height:190px;overflow-y:auto;background:#f8f9fb;border:1px solid #e0e4ea;border-radius:6px;padding:5px 10px;margin-top:5px}
+.choices-list label{display:flex;align-items:center;gap:7px;padding:3px 0;font-size:12px;cursor:pointer;border-bottom:1px solid #f0f2f5;line-height:1.4}
+.choices-list label:last-child{border-bottom:none}
+.choices-list label:hover{color:#1a73e8}
+.cc-code{color:#aaa;font-size:10px;font-family:monospace;min-width:24px;text-align:right;flex-shrink:0}
+.choices-all{display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:11px;color:#888}
+.choices-all button{padding:1px 8px;font-size:10px}
+/* Question picker modal */
+.qplist{max-height:380px;overflow-y:auto;border:1px solid #e0e4ea;border-radius:6px;margin-top:6px}
+.qpi-empty{padding:20px;text-align:center;color:#bbb;font-size:12px}
+/* Picker items use inline styles for robustness (see _renderQPickerItems) */
+/* Banner placement mode */
+.banner-placing-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#e8f0fe;border-radius:6px;border:1.5px solid #1a73e8;margin-bottom:6px;font-size:11px}
+.bgcell.place-target{background:#e8f0fe !important;border:2px dashed #1a73e8 !important;animation:placePulse 1.4s ease-in-out infinite;cursor:crosshair !important}
+.bgcell.place-target:hover{background:#c5d8fb !important}
+@keyframes placePulse{0%,100%{border-color:#1a73e8;background:#e8f0fe}50%{border-color:#4285f4;background:#c5d8fb}}
+/* Drag-over on individual cells */
+.bgcell.cell-dov{background:#c5d8fb !important;border:2px dashed #1a73e8}
+
+/* Stub rows */
+.sarea{display:flex;flex-direction:column;gap:5px;min-height:48px;padding:8px 10px;background:#f8f9fb;border:1.5px dashed #d8dde6;border-radius:8px;transition:border-color .15s,background .15s}
+.sarea.dov{border-color:#1a73e8!important;background:#eef4ff!important}
+.srow{display:flex;align-items:center;gap:7px;padding:7px 10px;background:white;border:1px solid #e0e4ea;border-radius:6px;cursor:pointer;user-select:none;transition:all .12s}
+.srow:hover{border-color:#1a73e8;background:#f0f6ff}
+.srow.dragging{opacity:.3}
+.srow.dov{border-color:#1a73e8;border-style:dashed;background:#f0f6ff}
+.srow.rg{border-left:3px solid #9c27b0}
+.sdh{color:#ccc;font-size:13px;cursor:grab;flex-shrink:0}
+.slbl{font-weight:700;font-size:11px;color:#1a73e8;background:#e8f0fe;padding:2px 7px;border-radius:4px;flex-shrink:0;min-width:36px;text-align:center}
+.sname{font-size:12px;color:#333;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sstats{font-size:10px;color:#bbb;flex-shrink:0}
+.sx{font-size:12px;color:#c8d0da;padding:1px 4px;border-radius:3px;flex-shrink:0}
+.sx:hover{background:#fee2e2;color:#c0392b}
+
+/* Drop hint text */
+.drophint{color:#b8c0cc;font-size:11px;text-align:center;padding:6px 0;pointer-events:none;user-select:none;width:100%}
+
+/* Sheet rows */
+.shrow{display:flex;gap:8px;align-items:flex-end;border:1px solid #e0e4ea;border-radius:6px;padding:8px 10px;margin-bottom:6px;background:#fafbfc}
+.shrow.dis{opacity:.5}
+
+/* Banner group rows */
+.bgr{display:flex;gap:7px;align-items:flex-end;margin-bottom:5px;background:white;border:1px solid #e8eaed;border-radius:5px;padding:6px 8px;transition:border-color .1s,box-shadow .1s}
+.bgr.dov{border-color:#1a73e8;border-style:dashed;box-shadow:0 0 0 2px #c5d8fb;background:#f0f6ff}
+
+/* Misc */
+.divider{height:1px;background:#e8eaed;margin:10px 0}
+.slabel{font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.qkbtns{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;gap:8px;padding:20px}
+.welico{font-size:56px}
+.welh2{font-size:17px;color:#333;font-weight:600}
+.welp{color:#999;font-size:12px;max-width:360px;line-height:1.6}
+.raw-ta{width:100%;height:calc(100vh-155px);font-family:'Cascadia Code',Consolas,monospace;font-size:12px;padding:12px;border:1px solid #dde1e7;border-radius:7px;resize:none;line-height:1.5}
+.raw-ta.err{border-color:#e74c3c}
+.prow{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:13px}
+.ptitle h2{font-size:16px;font-weight:700;color:#1a1a2e}
+.ptitle p{font-size:11px;color:#999;margin-top:2px}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d0d4dc;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#b0b4bc}
+
+/* Modal */
+.mov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.mdlg{background:white;border-radius:10px;width:580px;max-width:100%;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.mhd{padding:14px 16px;border-bottom:1px solid #e0e4ea;display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0}
+.mhd-info{display:flex;align-items:flex-start;gap:10px}
+.mhd-icon{font-size:24px;flex-shrink:0;margin-top:1px}
+.mhd-title{font-size:14px;font-weight:700;color:#1a1a2e}
+.mhd-sub{font-size:11px;color:#888;margin-top:3px;line-height:1.4}
+.mbtn-close{background:none;border:none;cursor:pointer;font-size:16px;color:#999;padding:2px 6px;border-radius:4px;line-height:1;flex-shrink:0}
+.mbtn-close:hover{background:#f0f2f5;color:#333}
+.mbody{flex:1;overflow-y:auto;padding:16px}
+.mft{padding:10px 16px;border-top:1px solid #e0e4ea;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
+
+/* Info box in modal */
+.qinfo-box{background:#f8f9fb;border:1px solid #e8eaed;border-radius:7px;padding:12px;margin-bottom:14px}
+.qinfo-row{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}
+.qinfo-row:last-child{margin-bottom:0}
+.qinfo-label{font-size:10px;font-weight:700;color:#999;text-transform:uppercase;width:68px;flex-shrink:0;padding-top:1px}
+.qinfo-val{font-size:12px;color:#444;flex:1;line-height:1.5}
+.choices-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.choice-chip{background:white;border:1px solid #e0e4ea;border-radius:4px;padding:2px 8px;font-size:11px;color:#555}
+.add-btns{display:flex;gap:8px;margin-top:12px}
+.add-btns .btn{flex:1;font-size:12px;padding:8px;text-align:center}
+
+/* Config section in modal */
+.cfg-section{border-top:1px solid #e8eaed;padding-top:12px}
+.cfg-title{font-size:11px;font-weight:700;color:#444;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+
+/* ── Preview panel ──────────────────────────────── */
+#previewPanel{position:fixed;inset:0;z-index:500;background:#f0f2f5;display:none;flex-direction:column}
+.pvhdr{background:#16213e;color:white;padding:0 14px;height:44px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+.pvhdr-title{font-weight:700;font-size:13px;white-space:nowrap}
+.pvtabs{display:flex;gap:2px;flex:1;overflow-x:auto}
+.pvtab{padding:4px 14px;border-radius:4px 4px 0 0;border:none;background:#2d3748;color:#aaa;cursor:pointer;font-size:11px;font-weight:600;transition:all .12s}
+.pvtab.on{background:#1a73e8;color:white}
+.pvbody{flex:1;overflow:auto;padding:14px}
+/* Datatable HTML */
+.dt-wrap{overflow-x:auto}
+.dt-tbl{border-collapse:collapse;font-size:11px;white-space:nowrap;min-width:600px}
+.dt-tbl th,.dt-tbl td{border:1px solid #d8dde6;padding:3px 8px}
+.dt-stub-hdr{background:#1a1a2e;color:white;min-width:200px;max-width:260px;position:sticky;left:0;z-index:2}
+.dt-bh{background:#16213e;color:#dde;text-align:center;font-size:10px;font-weight:700}
+.dt-bh1{background:#1a3050;color:#a8c7fa;border-bottom:2px solid #4285f4}
+.dt-bh2{background:#16213e;color:#c5d8f5}
+.dt-bh3{background:#0f172a;color:#9ab;font-weight:400;font-size:10px}
+.dt-qhdr{background:#1a3050;color:#a8c7fa;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0}
+.dt-subhdr{background:#253045;color:#93b4d9;font-size:10px;padding:3px 10px 3px 18px;position:sticky;left:0}
+.dt-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.dt-rlbl-base{font-weight:700;color:#333;background:#f0f2f5}
+.dt-rlbl-summ{font-weight:700;color:#7b1fa2;background:#f9f0ff;font-style:italic}
+.dt-cell{text-align:right;padding:3px 8px;color:#222;background:white}
+.dt-base{background:#f0f2f5;font-weight:700;color:#444}
+.dt-summ{background:#f9f0ff;color:#6a1b9a;font-style:italic}
+.dt-choice:nth-child(odd) .dt-cell{background:#fafbfc}
+.dt-sig{color:#c0392b;font-size:8px;font-weight:700;margin-left:2px}
+.dt-type{font-size:9px;background:#253870;color:#a8c7fa;padding:1px 5px;border-radius:3px;margin-left:6px;font-weight:400}
+
+/* Survey panel */
+.sp-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center}
+.sp-dlg{background:white;border-radius:10px;width:640px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25)}
+.sp-hd{padding:14px 18px;border-bottom:1px solid #e0e4ea;display:flex;align-items:center;justify-content:space-between}
+.sp-hd strong{font-size:14px;color:#1a1a2e}
+.sp-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px;overflow:hidden;flex:1}
+.sp-row{display:flex;gap:8px}
+.sp-inp{flex:1;padding:7px 10px;border:1px solid #dde1e7;border-radius:5px;font-size:13px;outline:none;font-family:inherit}
+.sp-inp:focus{border-color:#1a73e8}
+.sp-res{flex:1;overflow-y:auto;border:1px solid #e0e4ea;border-radius:6px;min-height:180px;max-height:320px}
+.sp-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f2f5;transition:background .1s}
+.sp-item:hover{background:#eef4ff}
+.sp-item.sel{background:#e8f0fe;border-left:3px solid #1a73e8}
+.sp-item-title{font-size:12px;font-weight:600;color:#1a1a2e}
+.sp-item-sub{font-size:10px;color:#888;margin-top:2px}
+.sp-empty{padding:30px;text-align:center;color:#bbb;font-size:12px}
+.sp-act{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid #e0e4ea;align-items:center}
+.sp-log{font-size:11px;color:#555;padding:6px 10px;background:#f8f9fb;border-radius:4px;max-height:80px;overflow-y:auto;font-family:monospace;white-space:pre-wrap;flex:1}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <span class="hdr-logo">📊 SurveyFlow Editor</span>
+  <div class="sep"></div>
+  <button class="btn btn-pri btn-sm" onclick="openSurveyPanel()">🔍 Survey</button>
+  <span class="fbadge none" id="surveyBadge" style="max-width:200px">Chưa chọn survey</span>
+  <div class="sep"></div>
+  <span class="fbadge none" id="fetchBadge">fetch: —</span>
+  <span class="fbadge none" id="ingestBadge" style="margin-left:4px">ingest: —</span>
+  <div class="sep"></div>
+  <span class="fbadge none" id="dtBadge">datatable: —</span>
+  <button class="btn btn-gho btn-sm" onclick="openDT()" id="loadDtBtn" disabled>📂 Load DT</button>
+  <button class="btn" id="runBtn" disabled onclick="showPreview()"
+    style="background:#7c3aed;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
+  <div class="gap"></div>
+  <button class="btn btn-gho" onclick="toggleQP()" id="qpToggle">◀ Questions</button>
+  <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save</button>
+  <button class="btn btn-pri btn-sm" onclick="runPipeline()" id="pipelineBtn" disabled>⚙ Run</button>
+  <button class="btn btn-grn btn-sm" onclick="downloadServerXlsx()" id="dlServerBtn" disabled>⬇ xlsx</button>
+  <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn">{} Raw</button>
+</div>
+
+<div class="body">
+  <!-- Questions Panel -->
+  <div class="qp" id="qp">
+    <div class="qpi">
+      <div class="qph">
+        <div class="qpt">Questions palette</div>
+        <input class="qps" id="qSearch" type="text" placeholder="Tìm câu hỏi…" oninput="renderQL()">
+        <div class="qpf">
+          <button class="qfb on" data-f="all"    onclick="setQF('all')">All</button>
+          <button class="qfb"    data-f="SA"     onclick="setQF('SA')">SA</button>
+          <button class="qfb"    data-f="MA"     onclick="setQF('MA')">MA</button>
+          <button class="qfb"    data-f="Matrix" onclick="setQF('Matrix')">Matrix</button>
+          <button class="qfb"    data-f="other"  onclick="setQF('other')">Num/Text</button>
+        </div>
+      </div>
+      <div class="ql" id="qList">
+        <div class="qempty">Mở <strong>metadata.json</strong><br>để xem danh sách câu hỏi</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tables Sidebar -->
+  <div class="tbs">
+    <div class="tbsh">Tables</div>
+    <div class="tbsl" id="tbsList"></div>
+    <div class="tbsf">
+      <button class="btn btn-sec btn-xs" style="width:100%" onclick="addCfg()">+ Add Table</button>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main" id="main">
+    <div class="welcome">
+      <div class="welico">📋</div>
+      <div class="welh2">datatable.json Editor</div>
+      <div class="welp">Mở <strong>metadata.json</strong> → kéo hoặc click câu hỏi vào Layout.<br>
+        Mở <strong>datatable.json</strong> để chỉnh sửa file hiện có.</div>
+      <div style="display:flex;gap:9px;margin-top:6px">
+        <button class="btn btn-pri" onclick="openSurveyPanel()">🔍 Chọn Survey</button>
+        <button class="btn btn-sec" onclick="openDT()">📂 Load Datatable</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sbar" id="sbar">
+  <div class="dot"></div>
+  <span class="msg">Chưa mở file nào</span>
+  <span style="flex:1"></span>
+  <span style="color:#ccc" id="shortcut">Ctrl+S để lưu</span>
+</div>
+
+<!-- Modal -->
+<div class="mov" id="modal" style="display:none" onclick="onModalOvClick(event)">
+  <div class="mdlg" onclick="event.stopPropagation()">
+    <div class="mhd">
+      <div class="mhd-info">
+        <div class="mhd-icon" id="mIcon">📋</div>
+        <div>
+          <div class="mhd-title" id="mTitle">Properties</div>
+          <div class="mhd-sub"  id="mSub"></div>
+        </div>
+      </div>
+      <button class="mbtn-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="mbody" id="mBody"></div>
+    <div class="mft" id="mFt"></div>
+  </div>
+</div>
+
+<!-- Hidden file inputs (local fallback for datatable/csv) -->
+<input type="file" id="dtIn"   accept=".json" style="display:none" onchange="onDTIn(event)">
+<input type="file" id="rdIn"   accept=".csv"  style="display:none" onchange="onRdIn(event)">
+
+<!-- Survey panel modal -->
+<div class="sp-ov" id="surveyPanel" style="display:none">
+  <div class="sp-dlg">
+    <div class="sp-hd">
+      <strong>🔍 Chọn Survey</strong>
+      <button class="mbtn-close" onclick="closeSurveyPanel()">&#x2715;</button>
+    </div>
+    <div class="sp-body">
+      <div class="sp-row">
+        <input class="sp-inp" id="spSearch" placeholder="Tìm tên survey…" onkeydown="if(event.key==='Enter')doSurveySearch()">
+        <button class="btn btn-pri btn-sm" onclick="doSurveySearch()">🔍 Tìm</button>
+      </div>
+      <div class="sp-res" id="spResults">
+        <div class="sp-empty">Nhập từ khóa và nhấn Tìm</div>
+      </div>
+    </div>
+    <div class="sp-act" id="spActions" style="display:none">
+      <button class="btn btn-pri btn-sm" onclick="doFetch()" id="spFetchBtn">📥 Fetch từ QMe</button>
+      <button class="btn btn-sec btn-sm" onclick="doIngest()" id="spIngestBtn" disabled>&#x2699; Ingest</button>
+      <button class="btn btn-suc btn-sm" onclick="doSelectSurvey()" id="spSelectBtn" disabled>&#x2713; Load &amp; Đóng</button>
+      <div class="sp-log" id="spLog" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview panel -->
+<div id="previewPanel">
+  <div class="pvhdr">
+    <span class="pvhdr-title">📊 Preview</span>
+    <div class="pvtabs" id="pvTabs"></div>
+    <button class="btn btn-grn btn-sm" onclick="downloadXlsx()" style="flex-shrink:0">⬇ xlsx</button>
+    <button class="btn btn-sec btn-sm" onclick="closePreview()" style="flex-shrink:0">✕ Đóng</button>
+  </div>
+  <div class="pvbody">
+    <div class="dt-wrap" id="pvContent"></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════
+const HAS_FS   = typeof window.showOpenFilePicker === 'function';
+let metaHandle = null, dtHandle = null;
+let metadata   = [];       // flat array of normalized question objects
+let lastFQ     = [];       // result of last filteredQ() — used for index-based drag
+let data       = [];       // datatable.json array
+let activeCfg  = 0;
+let activeTab  = 'layout';
+let showRaw    = false;
+let dirty      = false;
+let qf         = 'all';
+let qpVisible  = true;
+
+// Drag state
+let dragSt = null;         // { src:'palette'|'banner'|'stub', q?, idx? }
+
+// Banner placement mode (after clicking "Add to Banner")
+let pendingBannerQ = null; // question waiting to be placed in banner grid
+
+// Question picker callback
+let _qPickerCb = null;
+let _qPickerList = [];     // current filtered list for index-based selection
+
+// Modal state
+let modalSt = null;        // { type:'qinfo'|'banner'|'stub', q?, idx?, item? }
+
+const STATS_ALL  = ['base','percent','t2b','b2b','mean','std','se','min','max'];
+const CODEABLE   = new Set(['SA','MA','Matrix_SA','Matrix_MA','Matrix_NUM']);
+// Types we include in palette (exclude purely admin/system types)
+const HIDE_TYPES = new Set(['instruction','user-name','user-phone','reward','record','photo','area']);
+// Recommended stats by type
+const TYPE_STATS = {
+  'SA'         : ['base','percent'],
+  'MA'         : ['base','percent'],
+  'Matrix_SA'  : ['base','percent'],
+  'Matrix_MA'  : ['base','percent'],
+  'Matrix_NUM' : ['base','mean','std'],
+  'NUM'        : ['base','mean','std','min','max'],
+  'ranking'    : ['base','mean'],
+  'FT'         : [],
+};
+
+// ════════════════════════════════════════════════════
+// FILE — METADATA
+// ════════════════════════════════════════════════════
+async function openMeta() {
+  if (!HAS_FS) { document.getElementById('metaIn').click(); return; }
+  try {
+    const [h] = await window.showOpenFilePicker({ types:[{description:'JSON',accept:{'application/json':['.json']}}] });
+    metaHandle = h;
+    parseMeta(await (await h.getFile()).text(), h.name);
+  } catch(e) { if (e.name!=='AbortError') setStatus('⚠ '+e.message,''); }
+}
+function onMetaIn(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => parseMeta(ev.target.result, f.name);
+  r.readAsText(f,'utf-8'); e.target.value = '';
+}
+function parseMeta(text, name) {
+  try {
+    const raw = JSON.parse(text);
+    metadata = normalizeMeta(raw);
+    buildMetaSubMap();    // build sub-question lookup
+    const b = document.getElementById('metaBadge');
+    b.textContent = 'meta: ' + name.replace(/\.json$/i,'');
+    b.className = 'fbadge ok';
+    setStatus(`Metadata: ${metadata.length} câu hỏi`, 'saved');
+    renderQL();
+    if (data.length) renderMain();
+    checkRunBtn();
+  } catch(e) { setStatus('⚠ Metadata lỗi: '+e.message,''); }
+}
+
+/** Normalize any metadata.json or definition.json → flat array */
+function normalizeMeta(raw) {
+  let qs = [];
+  // surveyflow metadata.json: { survey_id, questions: { "id": {...} } }
+  if (raw && !Array.isArray(raw) && raw.questions) {
+    const qmap = raw.questions;
+    qs = !Array.isArray(qmap) ? Object.values(qmap) : qmap;
+  }
+  else if (Array.isArray(raw)) { qs = raw; }
+  else if (raw && typeof raw === 'object') { qs = Object.values(raw); }
+
+  return qs
+    .filter(q => {
+      const t = qType(q);
+      // Exclude system/admin types and sub-questions (have 'parent' field)
+      return !HIDE_TYPES.has(t) && !q.parent;
+    })
+    .sort((a, b) => (a.position||0) - (b.position||0));
+}
+
+// ════════════════════════════════════════════════════
+// FILE — DATATABLE
+// ════════════════════════════════════════════════════
+async function openDT() {
+  if (!HAS_FS) { document.getElementById('dtIn').click(); return; }
+  try {
+    const [h] = await window.showOpenFilePicker({ types:[{description:'JSON',accept:{'application/json':['.json']}}] });
+    dtHandle = h;
+    loadDT(await (await h.getFile()).text(), h.name);
+  } catch(e) { if (e.name!=='AbortError') setStatus('⚠ '+e.message,''); }
+}
+function onDTIn(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => loadDT(ev.target.result, f.name);
+  r.readAsText(f,'utf-8'); e.target.value = '';
+}
+function loadDT(text, name) {
+  try {
+    let p = JSON.parse(text);
+    if (!Array.isArray(p)) p = [p];
+    data = p; activeCfg = 0; activeTab = 'layout'; dirty = false;
+    document.getElementById('saveBtn').disabled = false;
+    const b = document.getElementById('dtBadge');
+    b.textContent = 'dt: ' + name.replace(/\.json$/i,'');
+    b.className = 'fbadge ok';
+    setStatus('Đã mở: '+name, 'saved');
+    render(); checkRunBtn();
+  } catch(e) { setStatus('⚠ Datatable lỗi: '+e.message,''); }
+}
+async function saveFile() {
+  if (showRaw) syncRaw();
+  const text = JSON.stringify(data, null, 2);
+  if (HAS_FS) {
+    if (!dtHandle) {
+      try { dtHandle = await window.showSaveFilePicker({ suggestedName:'datatable.json', types:[{description:'JSON',accept:{'application/json':['.json']}}] }); }
+      catch(e) { if (e.name!=='AbortError') dlFallback(text); return; }
+    }
+    try {
+      const w = await dtHandle.createWritable();
+      await w.write(text); await w.close();
+      dirty = false; setStatus('Đã lưu: '+dtHandle.name,'saved'); return;
+    } catch(e) {}
+  }
+  dlFallback(text);
+}
+function dlFallback(text) {
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([text],{type:'application/json'})),
+    download: dtHandle?.name||'datatable.json'
+  });
+  a.click(); dirty=false; setStatus('Đã download','saved');
+}
+
+// ════════════════════════════════════════════════════
+// METADATA HELPERS
+// ════════════════════════════════════════════════════
+function qType(q)  { return q.answer_type || q.question_type || q.type || ''; }
+function qTitle(q) {
+  const v = q.question_i18n || q.title || q.name || '';
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  return v.vi || v.en || v.ja || Object.values(v).find(x=>x&&typeof x==='string') || '';
+}
+/** choices_i18n dict {"1":{"vi":"...","en":"..."}} → [{code, label}] */
+function qChoices(q) {
+  const ci = q.choices_i18n;
+  if (!ci) return [];
+  if (Array.isArray(ci)) return ci.map(c=>({ code:c.code??c.value, label:i18nStr(c.label||c) }));
+  if (typeof ci === 'object') {
+    if ('rows' in ci || 'columns' in ci) return [];  // matrix
+    return Object.entries(ci).map(([code, val]) => ({
+      code: /^\d+$/.test(code) ? parseInt(code) : code,
+      label: i18nStr(val)
+    }));
+  }
+  return [];
+}
+/** Matrix rows */
+function qRows(q) {
+  const ci = q.choices_i18n;
+  if (!ci || typeof ci !== 'object') return [];
+  const rows = ci.rows;
+  if (!rows) return [];
+  return Object.entries(rows).map(([code, val]) => ({ code, label: i18nStr(val) }));
+}
+function i18nStr(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') return v.vi || v.en || v.ja || Object.values(v).find(x=>x&&typeof x==='string') || '';
+  return String(v);
+}
+function findMetaQ(label) { return metadata.find(q => q.label === label) || null; }
+function typeBadgeClass(t) {
+  if (t==='SA') return 'tb-sa';
+  if (t==='MA') return 'tb-ma';
+  if (t.startsWith('Matrix')) return 'tb-mx';
+  if (t==='FT') return 'tb-ft';
+  if (t==='NUM'||t==='ranking'||t==='multiplenumber') return 'tb-nm';
+  return 'tb-ot';
+}
+function typeIcon(t) {
+  if (t==='SA') return '🔘';
+  if (t==='MA') return '☑️';
+  if (t.startsWith('Matrix')) return '📊';
+  if (t==='FT') return '📝';
+  if (t==='NUM') return '🔢';
+  return '❓';
+}
+function defaultStats(t) { return TYPE_STATS[t] || ['base','percent']; }
+
+// ════════════════════════════════════════════════════
+// QUESTIONS PANEL
+// ════════════════════════════════════════════════════
+function toggleQP() {
+  qpVisible = !qpVisible;
+  document.getElementById('qp').classList.toggle('hidden', !qpVisible);
+  document.getElementById('qpToggle').textContent = qpVisible ? '◀ Questions' : '▶ Questions';
+}
+function setQF(f) {
+  qf = f;
+  document.querySelectorAll('.qfb').forEach(b => b.classList.toggle('on', b.dataset.f===f));
+  renderQL();
+}
+function filteredQ() {
+  const s = (document.getElementById('qSearch')?.value||'').toLowerCase();
+  return metadata.filter(q => {
+    const t = qType(q);
+    if (qf==='SA'     && t!=='SA') return false;
+    if (qf==='MA'     && t!=='MA') return false;
+    if (qf==='Matrix' && !t.startsWith('Matrix')) return false;
+    if (qf==='other'  && (t==='SA'||t==='MA'||t.startsWith('Matrix'))) return false;
+    if (s) {
+      const l = (q.label||'').toLowerCase();
+      const n = qTitle(q).toLowerCase();
+      if (!l.includes(s) && !n.includes(s)) return false;
+    }
+    return true;
+  });
+}
+function renderQL() {
+  const el = document.getElementById('qList'); if (!el) return;
+  lastFQ = filteredQ();
+  if (!lastFQ.length) {
+    el.innerHTML = metadata.length
+      ? '<div class="qempty">Không tìm thấy<br>câu hỏi phù hợp</div>'
+      : '<div class="qempty">Mở <strong>metadata.json</strong><br>để xem danh sách</div>';
+    return;
+  }
+  el.innerHTML = lastFQ.map((q, idx) => {
+    const t      = qType(q);
+    const title  = qTitle(q);
+    const ch     = qChoices(q);
+    const rows   = qRows(q);
+    const preview = ch.length   ? ch.slice(0,3).map(c=>c.label).join(' · ')+(ch.length>3?` +${ch.length-3}`:'')
+                  : rows.length ? `${rows.length} rows`
+                  : '';
+    return `<div class="qcard" draggable="true"
+        ondragstart="onQDragStart(event,${idx})"
+        ondragend="onQDragEnd(event)"
+        onclick="onQClick(${idx})">
+      <div class="qcard-top">
+        <span class="tb ${typeBadgeClass(t)}">${t||'?'}</span>
+        <span class="qlbl">${h(q.label||'?')}</span>
+      </div>
+      ${title?`<div class="qname" style="margin-top:3px">${h(title)}</div>`:''}
+      ${preview?`<div class="qcard-prev">${h(preview)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════
+// DRAG — PALETTE
+// Fix: use index (safe), always set dataTransfer data
+// ════════════════════════════════════════════════════
+function onQDragStart(e, idx) {
+  const q = lastFQ[idx]; if (!q) return;
+  dragSt = { src:'palette', q };
+  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData('text/plain', 'q:'+idx);  // required for Firefox
+  e.currentTarget.classList.add('dragging');
+}
+function onQDragEnd(e) { e.currentTarget.classList.remove('dragging'); }
+
+// ════════════════════════════════════════════════════
+// DRAG — BANNER CHIP REORDER
+// Fix: NO stopPropagation in dragover → lets container also see the event
+// ════════════════════════════════════════════════════
+function onBChipDragStart(e, idx) {
+  dragSt = { src:'banner', idx };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 'b:'+idx);
+  // Highlight all cells in this column
+  document.querySelectorAll(`[data-bcol="${idx}"]`).forEach(el => el.classList.add('dragging'));
+  e.stopPropagation();
+}
+function onBChipDragEnd(e) {
+  document.querySelectorAll('[data-bcol]').forEach(el => el.classList.remove('dragging'));
+  clearDragUI();
+}
+
+// dragover on grid column: highlight the whole column being hovered
+function onBChipDragOver(e, ti) {
+  if (!dragSt) return;
+  e.preventDefault();
+  if (dragSt.src === 'banner' && dragSt.idx !== ti) {
+    document.querySelectorAll('[data-bcol]').forEach(el => {
+      el.classList.toggle('dov', el.dataset.bcol === String(ti));
+    });
+  }
+}
+// Drop on Lv1 cell: palette insert-before AND banner column reorder
+// Total is immovable — guarded both as source and target
+function onBChipDrop(e, ti) {
+  e.preventDefault(); e.stopPropagation(); clearDragUI();
+  if (!dragSt) return;
+  const banner = cfg()?.banner || [];
+  const isTotal = i => banner[i] && banner[i].filter===null && !banner[i].question;
+
+  if (dragSt.src === 'palette') {
+    _insertBannerFromQ(dragSt.q, ti);  // insert before ti
+    dragSt = null; return;
+  }
+  if (dragSt.src === 'banner') {
+    const from = dragSt.idx; dragSt = null;
+    if (from === ti || isTotal(from) || isTotal(ti)) return;
+    const item = banner.splice(from, 1)[0];
+    banner.splice(ti, 0, item);
+    markDirty(); renderMain();
+  }
+  dragSt = null;
+}
+
+// Banner AREA events (container) — only for palette drops, not column reorder
+function onBAreaDragOver(e) {
+  if (!dragSt || dragSt.src==='stub' || dragSt.src==='banner') return;
+  e.preventDefault();
+  document.getElementById('bannerArea')?.classList.add('dov');
+  document.querySelector('.bgaddcol')?.classList.add('dov');
+}
+function onBAreaDragLeave(e) {
+  const el = document.getElementById('bannerArea');
+  if (el && !el.contains(e.relatedTarget)) {
+    el.classList.remove('dov');
+    document.querySelector('.bgaddcol')?.classList.remove('dov');
+  }
+}
+function onBAreaDrop(e) {
+  e.preventDefault();
+  clearDragUI();
+  if (!dragSt || dragSt.src==='stub') return;
+  if (dragSt.src==='palette') addBannerFromQ(dragSt.q);
+  // banner reorder handled by chip drop (stopPropagation)
+  dragSt = null;
+}
+
+// ════════════════════════════════════════════════════
+// DRAG — STUB ROW REORDER
+// Same pattern: no stopPropagation in dragover
+// ════════════════════════════════════════════════════
+function onSRowDragStart(e, idx) {
+  dragSt = { src:'stub', idx };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 's:'+idx);
+  e.currentTarget.classList.add('dragging');
+  e.stopPropagation();
+}
+function onSRowDragEnd(e) { e.currentTarget.classList.remove('dragging'); clearDragUI(); }
+
+function onSRowDragOver(e, ti) {
+  if (!dragSt) return;
+  e.preventDefault();
+  if (dragSt.src==='stub' && dragSt.idx!==ti) {
+    document.querySelectorAll('.srow').forEach((el, i) => el.classList.toggle('dov', i===ti));
+  }
+}
+function onSRowDrop(e, ti) {
+  e.preventDefault(); e.stopPropagation(); clearDragUI();
+  if (!dragSt) return;
+  if (dragSt.src==='palette') {
+    addStubFromQ(dragSt.q); dragSt = null; return;
+  }
+  if (dragSt.src==='stub') {
+    const from = dragSt.idx; dragSt = null;
+    if (from===ti) return;
+    const arr = cfg().stub;
+    const item = arr.splice(from, 1)[0];
+    arr.splice(ti, 0, item);
+    markDirty(); renderMain();
+  }
+  dragSt = null;
+}
+
+// Stub AREA events (container)
+function onSAreaDragOver(e) {
+  if (!dragSt || dragSt.src==='banner') return;
+  e.preventDefault();
+  document.getElementById('stubArea')?.classList.add('dov');
+}
+function onSAreaDragLeave(e) {
+  const el = document.getElementById('stubArea');
+  if (el && !el.contains(e.relatedTarget)) el.classList.remove('dov');
+}
+function onSAreaDrop(e) {
+  e.preventDefault();
+  clearDragUI();
+  if (!dragSt || dragSt.src==='banner') return;
+  if (dragSt.src==='palette') addStubFromQ(dragSt.q);
+  dragSt = null;
+}
+
+function clearDragUI() {
+  document.querySelectorAll('.dov,.cell-dov').forEach(el => el.classList.remove('dov','cell-dov'));
+}
+
+// ════════════════════════════════════════════════════
+// DRAG — PALETTE → BANNER CELL (individual level cells)
+// ════════════════════════════════════════════════════
+function onBCellDragOver(e, ci, lv) {
+  if (!dragSt || dragSt.src !== 'palette') return;
+  e.preventDefault();
+  e.stopPropagation();  // don't highlight whole grid
+  e.currentTarget.querySelector('.bgcell')?.classList.add('cell-dov');
+}
+function onBCellDragLeave(e) {
+  e.currentTarget.querySelector('.bgcell')?.classList.remove('cell-dov');
+}
+function onBCellDrop(e, ci, lv) {
+  e.preventDefault(); e.stopPropagation();
+  clearDragUI();
+  if (!dragSt || dragSt.src !== 'palette') return;
+  const q = dragSt.q; dragSt = null;
+  if (lv < 0) {
+    // Level 1: add as new column before ci (insert)
+    _insertBannerFromQ(q, ci);
+  } else {
+    // Level 2+: set as sub-level
+    _setBannerLevelFromQ(ci, lv, q);
+  }
+}
+// Drop on filled Lv1 cell: insert before that column
+function onBLv1Drop(e, ci) {
+  e.preventDefault(); e.stopPropagation();
+  clearDragUI();
+  if (!dragSt || dragSt.src !== 'palette') return;
+  const q = dragSt.q; dragSt = null;
+  _insertBannerFromQ(q, ci);
+}
+function _insertBannerFromQ(q, beforeIdx) {
+  if (!data.length) return;
+  if (!cfg().banner) cfg().banner = [{label:'Total',filter:null}];
+  const ch = qChoices(q);
+  const groups = ch.map(c=>({label:i18nStr(c.label),value:typeof c.code==='number'?c.code:parseInt(c.code)||c.code}));
+  const item = { label: qTitle(q)||q.label||'?', question: q.label||'?', groups };
+  cfg().banner.splice(beforeIdx, 0, item);
+  markDirty(); activeTab='layout'; renderMain();
+}
+function _setBannerLevelFromQ(ci, lvIdx, q) {
+  if (!data.length) return;
+  const col = cfg().banner[ci];
+  if (!col) return;
+  if (!col.levels) col.levels = [];
+  const ch = qChoices(q);
+  const groups = ch.map(c=>({label:i18nStr(c.label),value:typeof c.code==='number'?c.code:parseInt(c.code)||c.code}));
+  col.levels[lvIdx] = { label: qTitle(q)||q.label||'?', question: q.label||'?', groups };
+  markDirty(); activeTab='layout'; renderMain();
+}
+
+// ════════════════════════════════════════════════════
+// PLACEMENT MODE — "Add to Banner" click
+// ════════════════════════════════════════════════════
+function startBannerPlacement(q) {
+  pendingBannerQ = q;
+  closeModal();
+  activeTab = 'layout';
+  renderMain();
+}
+function cancelBannerPlacement() {
+  pendingBannerQ = null;
+  renderMain();
+}
+function placeBannerQ(ci, lv) {
+  if (!pendingBannerQ) return;
+  const q = pendingBannerQ;
+  pendingBannerQ = null;
+  if (ci === -1 || lv === 'new') {
+    addBannerFromQ(q);
+  } else if (lv < 0) {
+    // Level 1 empty — shouldn't happen but fallback
+    addBannerFromQ(q);
+  } else {
+    _setBannerLevelFromQ(ci, lv, q);
+  }
+}
+
+// ════════════════════════════════════════════════════
+// QUESTION PICKER (searchable dropdown modal)
+// ════════════════════════════════════════════════════
+function showQPicker(title, sub, cb) {
+  _qPickerCb = cb;
+  const qs = (metadata||[]).filter(q => !HIDE_TYPES.has(qType(q)));
+  _qPickerList = qs;
+  showModal(title, sub,
+    `<input id="qpSearch" type="text" placeholder="🔍 Search question label or text…"
+       oninput="filterQPicker(this.value)"
+       style="width:100%;padding:7px 10px;border:1.5px solid #d8dde6;border-radius:6px;font-size:12px;margin-bottom:6px;box-sizing:border-box">
+     <div id="qpList" class="qplist">${_renderQPickerItems(qs)}</div>`,
+    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>`
+  );
+  // Focus search after render
+  setTimeout(()=>document.getElementById('qpSearch')?.focus(), 50);
+}
+function filterQPicker(q) {
+  const raw = (metadata||[]).filter(x => !HIDE_TYPES.has(qType(x)));
+  const lq  = q.trim().toLowerCase();
+  _qPickerList = lq ? raw.filter(x =>
+    (x.label||'').toLowerCase().includes(lq) ||
+    qTitle(x).toLowerCase().includes(lq) ||
+    (qType(x)||'').toLowerCase().includes(lq)
+  ) : raw;
+  const el = document.getElementById('qpList');
+  if (el) el.innerHTML = _renderQPickerItems(_qPickerList);
+}
+function _renderQPickerItems(qs) {
+  if (!qs.length) return '<div class="qpi-empty">Không tìm thấy câu hỏi</div>';
+  return qs.map((q,i) => {
+    const t   = qType(q);
+    const lbl = h(q.label||'');
+    const ttl = h(qTitle(q)||'');
+    return `<div tabindex="0"
+      onclick="qPickerSelect(${i})"
+      onkeydown="if(event.key==='Enter')qPickerSelect(${i})"
+      onmouseover="this.style.background='#f0f6ff'"
+      onmouseout="this.style.background='white'"
+      style="display:flex;flex-direction:row;align-items:center;gap:0;padding:0;cursor:pointer;border-bottom:1px solid #f0f2f5;background:white;outline:none">
+      <span style="flex-shrink:0;padding:9px 8px;display:flex;align-items:center">
+        <span class="tb ${typeBadgeClass(t)}" style="font-size:9px">${t}</span>
+      </span>
+      <span style="flex-shrink:0;font-weight:700;font-size:12px;color:#1a73e8;padding:9px 6px;min-width:56px">${lbl}</span>
+      <span style="flex:1;font-size:11px;color:#555;padding:9px 8px 9px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ttl}</span>
+    </div>`;
+  }).join('');
+}
+function qPickerSelect(idx) {
+  const q = _qPickerList[idx]; if (!q) return;
+  closeModal();
+  if (_qPickerCb) { _qPickerCb(q); _qPickerCb = null; }
+}
+
+// ════════════════════════════════════════════════════
+// ADD FROM QUESTION (drag or click)
+// ════════════════════════════════════════════════════
+function addBannerFromQ(q) {
+  if (!data.length) return;
+  if (!cfg().banner) cfg().banner = [{label:'Total',filter:null}];
+  const ch = qChoices(q);
+  const groups = ch.map(c => ({ label:c.label, value:typeof c.code==='number'?c.code:parseInt(c.code)||c.code }));
+  cfg().banner.push({ label: qTitle(q)||q.label||'?', question: q.label||'?', groups });
+  markDirty(); activeTab='layout'; renderMain();
+}
+function addStubFromQ(q) {
+  if (!data.length) return;
+  if (!cfg().stub) cfg().stub = [];
+  const t = qType(q);
+  cfg().stub.push({ question:q.label||'?', label:qTitle(q)||q.label||'?', stats:defaultStats(t) });
+  markDirty(); activeTab='layout'; renderMain();
+}
+
+// ════════════════════════════════════════════════════
+// CLICK ON PALETTE QUESTION → Info modal
+// ════════════════════════════════════════════════════
+function onQClick(idx) {
+  const q = lastFQ[idx]; if (!q) return;
+  const t      = qType(q);
+  const title  = qTitle(q);
+  const ch     = qChoices(q);
+  const rows   = qRows(q);
+  const defSt  = defaultStats(t);
+  const canBanner = (t==='SA'||t==='MA');
+  const hasDT  = data.length > 0;
+
+  modalSt = { type:'qinfo', q, idx,
+    tempStats: [...defSt]  // user can pick stats before adding
+  };
+
+  // Build choices/rows preview
+  let choicesHtml = '';
+  if (ch.length) {
+    choicesHtml = `<div class="choices-list">${ch.map(c=>`<span class="choice-chip">${h(String(c.code))} ${h(c.label)}</span>`).join('')}</div>`;
+  } else if (rows.length) {
+    choicesHtml = `<div class="choices-list">${rows.slice(0,8).map(r=>`<span class="choice-chip">${h(r.label||r.code)}</span>`).join('')}${rows.length>8?`<span class="choice-chip">…+${rows.length-8}</span>`:''}</div>`;
+  }
+
+  const infoHtml = `
+    <div class="qinfo-box">
+      <div class="qinfo-row"><span class="qinfo-label">Type</span>
+        <span class="qinfo-val"><span class="tb ${typeBadgeClass(t)}" style="font-size:11px">${t||'?'}</span></span></div>
+      ${title ? `<div class="qinfo-row"><span class="qinfo-label">Question</span><span class="qinfo-val">${h(title)}</span></div>` : ''}
+      ${ch.length||rows.length ? `<div class="qinfo-row"><span class="qinfo-label">${rows.length?'Rows':'Choices'}</span><span class="qinfo-val">${ch.length||rows.length} items${choicesHtml}</span></div>` : ''}
+    </div>`;
+
+  // Stats selection (for stub config before adding)
+  const statsHtml = `
+    <div class="cfg-section" id="qiStatsSec" ${!hasDT?'style="display:none"':''}>
+      <div class="cfg-title">📋 Cấu hình Stub</div>
+      <label class="fl">Stats khi thêm vào Stub</label>
+      <div class="sgrid" id="qiStats">
+        ${STATS_ALL.map(s=>`<label class="schip">
+          <input type="checkbox" value="${s}" ${defSt.includes(s)?'checked':''}> ${s}</label>`).join('')}
+      </div>
+    </div>`;
+
+  const addBtnsHtml = hasDT ? `
+    <div class="add-btns">
+      ${canBanner ? `<button class="btn btn-blu" onclick="qInfoAddBanner()">➕ Add to Banner</button>` : ''}
+      <button class="btn btn-grn" onclick="qInfoAddStub()">➕ Add to Stub</button>
+    </div>` : `<div style="color:#bbb;font-size:11px;margin-top:10px">Mở datatable.json trước để thêm câu hỏi</div>`;
+
+  showModal(
+    typeIcon(t) + ' ' + (q.label||'?'),
+    title || t,
+    infoHtml + statsHtml + addBtnsHtml,
+    `<button class="btn btn-sec" onclick="closeModal()">Đóng</button>`
+  );
+}
+
+function qInfoAddBanner() {
+  if (!modalSt?.q) return;
+  startBannerPlacement(modalSt.q);
+}
+function qInfoAddStub() {
+  if (!modalSt?.q) return;
+  // Read chosen stats
+  const checked = [...document.querySelectorAll('#qiStats input:checked')].map(cb=>cb.value);
+  const q = modalSt.q;
+  if (!cfg().stub) cfg().stub = [];
+  cfg().stub.push({ question:q.label||'?', label:qTitle(q)||q.label||'?', stats:checked.length?checked:defaultStats(qType(q)) });
+  markDirty(); activeTab='layout'; renderMain();
+  closeModal();
+}
+
+// ════════════════════════════════════════════════════
+// CLICK LAYOUT ITEM → Config modal
+// ════════════════════════════════════════════════════
+function openBannerModal(idx) {
+  const item = cfg().banner[idx];
+  const isTotal = item.filter===null && !item.question;
+  if (isTotal) return;
+  // Lookup metadata for info
+  const mq = findMetaQ(item.question);
+  const t  = mq ? qType(mq) : '';
+  modalSt  = { type:'banner', idx, item: JSON.parse(JSON.stringify(item)), mq };
+  showModal(
+    '📊 Banner Column',
+    item.label || item.question || '',
+    renderBannerModalBody(modalSt.item, mq),
+    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>
+     <button class="btn btn-pri" onclick="saveModal()">✓ Lưu</button>`,
+    {noBackdrop:true}
+  );
+}
+
+function openStubModal(idx) {
+  const item = cfg().stub[idx];
+  const mq   = findMetaQ(item.question);
+  modalSt    = { type:'stub', idx, item: JSON.parse(JSON.stringify(item)), mq };
+  const icon = item.row_group ? '🔵' : '📋';
+  showModal(
+    icon + ' ' + (item.row_group ? 'Row Group' : 'Stub Row'),
+    item.question || '',
+    renderStubModalBody(modalSt.item, mq),
+    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>
+     <button class="btn btn-pri" onclick="saveModal()">✓ Lưu</button>`
+  );
+}
+
+function openBannerLevelModal(colIdx, lvIdx) {
+  const col  = cfg().banner[colIdx];
+  const item = (col.levels||[])[lvIdx] || { question:'', label:'', groups:[] };
+  const mq   = findMetaQ(item.question);
+  modalSt    = { type:'banner-level', colIdx, lvIdx, item: JSON.parse(JSON.stringify(item)), mq };
+  showModal(
+    `📊 Level ${lvIdx+2} — ${h(col.label||col.question||'?')}`,
+    `nested under Lv ${lvIdx+1}`,
+    renderBannerModalBody(modalSt.item, mq),
+    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>
+     <button class="btn btn-pri" onclick="saveModal()">✓ Lưu</button>`,
+    {noBackdrop:true}
+  );
+}
+function addBannerLevel(colIdx, lvIdx) {
+  const colName = cfg().banner[colIdx]?.label || `col ${colIdx}`;
+  showQPicker(`➕ Level ${lvIdx+2} — ${colName}`, `Chọn câu hỏi để lồng dưới Lv ${lvIdx+1}`, q => {
+    _setBannerLevelFromQ(colIdx, lvIdx, q);
+    // Open config modal to edit groups
+    setTimeout(() => openBannerLevelModal(colIdx, lvIdx), 100);
+  });
+}
+function removeBannerLevel(colIdx, lvIdx) {
+  const col = cfg().banner[colIdx];
+  if (!col.levels) return;
+  col.levels.splice(lvIdx, 1);
+  while (col.levels.length && !col.levels[col.levels.length-1]) col.levels.pop();
+  if (!col.levels.length) delete col.levels;
+  markDirty(); renderMain();
+}
+
+function renderBannerModalBody(item, mq) {
+  const t     = mq ? qType(mq) : '';
+  const title = mq ? qTitle(mq) : '';
+  const ch    = mq ? qChoices(mq) : [];
+  const groups = item.groups||[];
+
+  const infoHtml = mq ? `
+    <div class="qinfo-box">
+      <div class="qinfo-row"><span class="qinfo-label">Type</span>
+        <span class="qinfo-val"><span class="tb ${typeBadgeClass(t)}">${t}</span></span></div>
+      ${title?`<div class="qinfo-row"><span class="qinfo-label">Question</span><span class="qinfo-val">${h(title)}</span></div>`:''}
+    </div>` : '';
+
+  return `${infoHtml}
+  <div class="fr" style="margin-bottom:12px">
+    <div class="fg"><label class="fl">Question label</label>
+      <input id="mb_q" type="text" value="${a(item.question||'')}" placeholder="Q10"></div>
+    <div class="fg"><label class="fl">Column label</label>
+      <input id="mb_l" type="text" value="${a(item.label||'')}" placeholder="Gender"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <span class="slabel">Groups (${groups.length})</span>
+    <button class="btn btn-sec btn-xs" onclick="mAddGroup()">+ Group</button>
+  </div>
+  <div id="mb_groups">
+    ${groups.map((g,i)=>renderModalGroup(g,i)).join('')}
+    ${!groups.length?'<div style="font-size:11px;color:#bbb;padding:6px 0">Chưa có groups — toàn bộ respondents dùng làm 1 column</div>':''}
+  </div>`;
+}
+
+function renderStubModalBody(item, mq) {
+  if (item.row_group) {
+    const items = item.items||[];
+    return `<div style="color:#888;font-size:12px">
+      <p style="margin-bottom:10px">Row Group — ${items.length} câu. Chỉnh sửa trong Raw JSON.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">
+        ${items.map(it=>`<span style="background:#f3e5f5;color:#7b1fa2;padding:3px 10px;border-radius:5px;font-size:12px">${h(it.question||'?')}</span>`).join('')}
+      </div>
+    </div>`;
+  }
+  const t     = mq ? qType(mq) : '';
+  const title = mq ? qTitle(mq) : '';
+  const ch    = mq ? qChoices(mq) : [];
+  const rows  = mq ? qRows(mq) : [];
+  const stats = item.stats||[];
+  const recommended = defaultStats(t);
+
+  const infoHtml = mq ? `
+    <div class="qinfo-box">
+      <div class="qinfo-row"><span class="qinfo-label">Type</span>
+        <span class="qinfo-val"><span class="tb ${typeBadgeClass(t)}">${t}</span></span></div>
+      ${title?`<div class="qinfo-row"><span class="qinfo-label">Question</span><span class="qinfo-val">${h(title)}</span></div>`:''}
+      ${ch.length?`<div class="qinfo-row"><span class="qinfo-label">Choices</span><span class="qinfo-val">${ch.slice(0,5).map(c=>`<span class="choice-chip">${h(c.label)}</span>`).join('')}${ch.length>5?`…+${ch.length-5}`:''}</span></div>`:''}
+      ${rows.length?`<div class="qinfo-row"><span class="qinfo-label">Rows</span><span class="qinfo-val">${rows.length} rows</span></div>`:''}
+    </div>` : '';
+
+  // Choices section — only for flat SA/MA (not matrix)
+  const selCodes = item.choice_codes ? item.choice_codes.map(String) : null; // null = all
+  const choicesHtml = (ch.length > 0) ? `
+  <div class="choices-sect">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+      <label class="fl" style="margin:0">📋 Choices <span style="color:#aaa;font-weight:normal;font-size:10px">${selCodes ? selCodes.length+'/'+ch.length+' selected' : 'all '+ch.length}</span></label>
+      <div class="choices-all">
+        <button class="btn btn-sec btn-xs" onclick="mChoiceSelectAll(true)">All</button>
+        <button class="btn btn-sec btn-xs" onclick="mChoiceSelectAll(false)">None</button>
+      </div>
+    </div>
+    <div class="choices-list">
+      ${ch.map(c => {
+        const cs = String(c.code);
+        const checked = selCodes === null || selCodes.includes(cs);
+        return `<label>
+          <input type="checkbox" value="${a(cs)}" ${checked?'checked':''} onchange="mChoiceToggle('${cs}',this.checked)">
+          <span class="cc-code">${cs}</span>
+          <span>${h(c.label)}</span>
+        </label>`;
+      }).join('')}
+    </div>
+  </div>` : '';
+
+  return `${infoHtml}
+  <div class="fr" style="margin-bottom:14px">
+    <div class="fg" style="flex:.7"><label class="fl">Question</label>
+      <input id="ms_q" type="text" value="${a(item.question||'')}" placeholder="Q10"></div>
+    <div class="fg" style="flex:1.5"><label class="fl">Label</label>
+      <input id="ms_l" type="text" value="${a(item.label||'')}" placeholder="Gender"></div>
+  </div>
+  <label class="fl">Stats ${recommended.length?`<span style="color:#1a73e8;font-weight:normal;text-transform:none">— recommended for ${t}: ${recommended.join(', ')}</span>`:''}
+  </label>
+  <div class="sgrid">
+    ${STATS_ALL.map(s=>`<label class="schip">
+      <input type="checkbox" ${stats.includes(s)?'checked':''} onchange="mStatToggle('${s}',this.checked)">
+      ${s}</label>`).join('')}
+  </div>
+  ${choicesHtml}`;
+}
+
+function renderModalGroup(g, i) {
+  const isMulti = Array.isArray(g.values);
+  const val = isMulti ? (g.values||[]).join(', ') : String(g.value??'');
+  return `<div class="bgr" id="mgr_${i}" draggable="true"
+    ondragstart="mGrpDragStart(event,${i})"
+    ondragend="mGrpDragEnd(event)"
+    ondragover="mGrpDragOver(event,${i})"
+    ondrop="mGrpDrop(event,${i})">
+    <div class="sdh" style="cursor:grab;padding:0 4px;font-size:15px;color:#ccc;align-self:flex-end;padding-bottom:6px" title="Drag to reorder">⠿</div>
+    <div class="fg" style="flex:1.5"><label class="fl">Label</label>
+      <input type="text" value="${a(g.label||'')}" oninput="mGrpF(${i},'label',this.value)" placeholder="Male"></div>
+    <div class="fg"><label class="fl">${isMulti?'Values (phẩy)':'Value'}</label>
+      <input type="text" value="${a(val)}" oninput="mGrpV(${i},this.value)" placeholder="${isMulti?'1,2,3':'1'}"></div>
+    <div><label class="fl">Mode</label>
+      <button class="btn btn-sec btn-xs" onclick="mGrpMode(${i})">${isMulti?'→ Single':'→ Multi'}</button></div>
+    <div><label class="fl">&nbsp;</label>
+      <button class="btn btn-dan btn-xs" onclick="mGrpRm(${i})">✕</button></div>
+  </div>`;
+}
+
+// Modal mutations
+function mAddGroup() {
+  if (!modalSt?.item) return;
+  if (!modalSt.item.groups) modalSt.item.groups=[];
+  modalSt.item.groups.push({label:'New',value:0});
+  _refreshGroups();
+}
+function mGrpF(i,k,v) { if (modalSt?.item?.groups?.[i]) modalSt.item.groups[i][k]=v; }
+function mGrpV(i,v) {
+  const g = modalSt?.item?.groups?.[i]; if (!g) return;
+  if (Array.isArray(g.values)) {
+    g.values = v.split(',').map(x=>{const n=parseInt(x.trim());return isNaN(n)?x.trim():n;}).filter(x=>x!=='');
+  } else { const n=parseInt(v); g.value=isNaN(n)?v:n; }
+}
+function mGrpMode(i) {
+  const g = modalSt?.item?.groups?.[i]; if (!g) return;
+  if (Array.isArray(g.values)){const f=g.values[0];delete g.values;g.value=f!==undefined?f:0;}
+  else{const v=g.value;delete g.value;g.values=v!==undefined&&v!==''?[v]:[];}
+  _refreshGroups();
+}
+function mGrpRm(i) {
+  if (!modalSt?.item?.groups) return;
+  modalSt.item.groups.splice(i,1);
+  _refreshGroups();
+}
+
+// ─── Group drag-to-reorder ───────────────────────────
+let _mGrpDragFrom = null;
+function mGrpDragStart(e, i) {
+  _mGrpDragFrom = i;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(i));
+  setTimeout(() => e.target.style.opacity = '0.4', 0);
+}
+function mGrpDragEnd(e) {
+  e.target.style.opacity = '';
+  _mGrpDragFrom = null;
+  document.querySelectorAll('.bgr').forEach(el => el.classList.remove('dov'));
+}
+function mGrpDragOver(e, i) {
+  e.preventDefault();
+  document.querySelectorAll('.bgr').forEach(el => el.classList.remove('dov'));
+  if (_mGrpDragFrom !== null && _mGrpDragFrom !== i) {
+    document.getElementById(`mgr_${i}`)?.classList.add('dov');
+  }
+}
+function mGrpDrop(e, i) {
+  e.preventDefault();
+  const from = _mGrpDragFrom;
+  if (from === null || from === i || !modalSt?.item?.groups) return;
+  const grps = modalSt.item.groups;
+  const [moved] = grps.splice(from, 1);
+  grps.splice(i, 0, moved);
+  _refreshGroups();
+}
+function _refreshGroups() {
+  const grps = modalSt?.item?.groups || [];
+  document.getElementById('mb_groups').innerHTML =
+    grps.map((g,i) => renderModalGroup(g,i)).join('') ||
+    '<div style="font-size:11px;color:#bbb;padding:6px 0">Chưa có groups</div>';
+}
+function mStatToggle(s,on) {
+  const it=modalSt?.item; if (!it) return;
+  if (!it.stats) it.stats=[];
+  if (on&&!it.stats.includes(s)) it.stats=STATS_ALL.filter(x=>it.stats.includes(x)||x===s);
+  else if (!on) it.stats=it.stats.filter(x=>x!==s);
+}
+function mChoiceToggle(codeStr, on) {
+  const it = modalSt?.item; if (!it) return;
+  const mq = modalSt?.mq;
+  const ch = mq ? qChoices(mq) : [];
+  const allCodes = ch.map(c => String(c.code));
+  const code = String(codeStr);
+  if (!it.choice_codes) {
+    if (on) return; // all were selected, toggling one on = no change
+    it.choice_codes = allCodes.filter(c => c !== code);
+  } else {
+    const cur = it.choice_codes.map(String);
+    if (on) {
+      if (!cur.includes(code)) it.choice_codes = allCodes.filter(c => cur.includes(c) || c === code);
+      if (it.choice_codes.length >= allCodes.length) delete it.choice_codes;
+    } else {
+      it.choice_codes = cur.filter(c => c !== code);
+    }
+  }
+}
+function mChoiceSelectAll(on) {
+  const it = modalSt?.item; if (!it) return;
+  if (on) { delete it.choice_codes; }
+  else     { it.choice_codes = []; }
+  // Re-render checkboxes only
+  const mq = modalSt?.mq;
+  const ch = mq ? qChoices(mq) : [];
+  document.querySelectorAll('.choices-list input[type=checkbox]').forEach((cb,i) => { cb.checked = on; });
+  document.getElementById('ch_all')&&(document.getElementById('ch_all').checked = on);
+}
+function saveModal() {
+  if (!modalSt) return;
+  if (modalSt.type==='banner') {
+    const q=document.getElementById('mb_q'), l=document.getElementById('mb_l');
+    if(q) modalSt.item.question=q.value;
+    if(l) modalSt.item.label=l.value;
+    cfg().banner[modalSt.idx]=modalSt.item;
+  }
+  if (modalSt.type==='banner-level') {
+    const q=document.getElementById('mb_q'), l=document.getElementById('mb_l');
+    if(q) modalSt.item.question=q.value;
+    if(l) modalSt.item.label=l.value;
+    const col = cfg().banner[modalSt.colIdx];
+    if (!col.levels) col.levels = [];
+    col.levels[modalSt.lvIdx] = modalSt.item;
+  }
+  if (modalSt.type==='stub' && !modalSt.item.row_group) {
+    const q=document.getElementById('ms_q'), l=document.getElementById('ms_l');
+    if(q) modalSt.item.question=q.value;
+    if(l) modalSt.item.label=l.value;
+    cfg().stub[modalSt.idx]=modalSt.item;
+  }
+  markDirty(); renderMain(); closeModal();
+}
+
+// ════════════════════════════════════════════════════
+// MODAL SYSTEM
+// ════════════════════════════════════════════════════
+let _modalNoBackdrop = false;
+function showModal(title, sub, bodyHtml, ftHtml, opts={}) {
+  _modalNoBackdrop = !!opts.noBackdrop;
+  document.getElementById('mTitle').textContent = title;
+  document.getElementById('mSub').textContent   = sub||'';
+  document.getElementById('mBody').innerHTML    = bodyHtml;
+  document.getElementById('mFt').innerHTML      = ftHtml;
+  document.getElementById('modal').style.display = 'flex';
+}
+function closeModal() {
+  document.getElementById('modal').style.display = 'none';
+  modalSt = null; _modalNoBackdrop = false;
+}
+function onModalOvClick(e) { if (!_modalNoBackdrop && e.target===document.getElementById('modal')) closeModal(); }
+
+// ════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════
+function render() { renderSidebar(); renderMain(); }
+
+function renderSidebar() {
+  const el=document.getElementById('tbsList');
+  if (!data.length) { el.innerHTML='<div style="padding:10px 11px;color:#bbb;font-size:11px">Chưa có table config</div>'; return; }
+  el.innerHTML = data.map((c,i)=>`
+    <div class="tbsi ${i===activeCfg?'on':''}" onclick="selCfg(${i})">
+      <div class="tbsi-name">${h(c.sub_title||'Table '+(i+1))}</div>
+      <div class="tbsi-sub">${h(c.title||'—')}</div>
+    </div>`).join('');
+}
+
+function renderMain() {
+  const el = document.getElementById('main');
+  if (!data.length) {
+    el.innerHTML=`<div class="welcome"><div class="welico">📋</div>
+      <div class="welh2">Chưa có table config</div>
+      <div class="welp">Nhấn <strong>+ Add Table</strong> ở sidebar để tạo mới</div></div>`;
+    return;
+  }
+  if (showRaw) {
+    el.innerHTML=`<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
+      <span style="font-size:11px;color:#666">Raw JSON</span>
+      <button class="btn btn-sec btn-sm" onclick="syncRaw();render()">↺ Áp dụng</button></div>
+      <textarea class="raw-ta" id="rawEd" spellcheck="false" style="height:calc(100vh - 155px)">${h(JSON.stringify(data,null,2))}</textarea>`;
+    return;
+  }
+  const c = data[activeCfg];
+  el.innerHTML=`
+    <div class="prow">
+      <div class="ptitle">
+        <h2>${h(c.sub_title||'Table '+(activeCfg+1))}</h2>
+        <p>${h(c.title||'—')}</p>
+      </div>
+      <button class="btn btn-dan btn-xs" onclick="removeCfg(${activeCfg})">🗑 Xóa</button>
+    </div>
+    <div class="tabs">
+      <button class="tab ${activeTab==='layout'?'on':''}" onclick="setTab('layout')">
+        📐 Layout <span class="tbg">${(c.banner||[]).length}+${(c.stub||[]).length}</span>
+      </button>
+      <button class="tab ${activeTab==='settings'?'on':''}" onclick="setTab('settings')">⚙ Settings</button>
+    </div>
+    <div id="tabBody">${activeTab==='layout'?renderLayout(c):renderSettings(c)}</div>`;
+}
+
+// ─── BANNER GRID ─────────────────────────────────
+function renderBannerGrid(banner) {
+  const MAX_LV = 5;
+  const placing = !!pendingBannerQ;
+  const pLabel  = placing ? h(pendingBannerQ.label||'?') : '';
+
+  const placingBar = placing ? `
+    <div class="banner-placing-bar">
+      <span>📌</span>
+      <span>Đang đặt <strong>${pLabel}</strong> — click ô trống hoặc kéo thả vào vị trí muốn</span>
+      <button class="btn btn-sec btn-xs" style="margin-left:auto" onclick="cancelBannerPlacement()">✕ Hủy</button>
+    </div>` : '';
+
+  if (!banner.length) {
+    return `${placingBar}<div class="bgwrap" id="bannerArea"
+        ondragover="onBAreaDragOver(event)"
+        ondragleave="onBAreaDragLeave(event)"
+        ondrop="onBAreaDrop(event)">
+      <div class="drophint" style="padding:24px 0">⬅ Kéo câu hỏi vào đây hoặc click câu hỏi → Add to Banner</div>
+    </div>`;
+  }
+
+  let rows = '';
+  for (let lv = 0; lv < MAX_LV; lv++) {
+    let cells = '';
+    cells += `<td class="bg-lvcol">Lv ${lv+1}</td>`;
+
+    banner.forEach((item, ci) => {
+      const isTotal = item.filter===null && !item.question;
+      if (isTotal) return; // hidden from grid — always kept in data but not shown
+
+      let lvItem = lv === 0
+        ? { question: item.question, label: item.label, groups: item.groups }
+        : ((item.levels||[])[lv-1] || null);
+
+      const hasQ = lvItem && lvItem.question;
+
+      if (hasQ) {
+        const mq       = findMetaQ(lvItem.question);
+        const t        = mq ? qType(mq) : '';
+        const isMatrix = t.startsWith('Matrix');
+        const clickFn  = lv===0 ? `openBannerModal(${ci})` : `openBannerLevelModal(${ci},${lv-1})`;
+        const rmFn     = lv===0 ? `removeBanner(${ci})`    : `removeBannerLevel(${ci},${lv-1})`;
+        const placeClick = placing&&lv===0
+          ? `_insertBannerFromQ(pendingBannerQ,${ci});pendingBannerQ=null;renderMain()`
+          : clickFn;
+
+        // show_total lives on `item` for lv0, on `lvItem` for lv1+
+        const stVal    = lv===0 ? !!item.show_total : !!lvItem.show_total;
+        const stFn     = lv===0
+          ? `setBannerTotal(${ci},this.checked)`
+          : `setBannerLevelTotal(${ci},${lv-1},this.checked)`;
+        const totalChk = !placing ? `
+          <label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px;color:${stVal?'#c8a840':'#bbb'};margin-top:3px;user-select:none">
+            <input type="checkbox" ${stVal?'checked':''} onchange="${stFn}" onclick="event.stopPropagation()" style="width:10px;height:10px;accent-color:#c8a840;cursor:pointer">
+            Total
+          </label>` : '';
+
+        cells += `<td class="bgcol${isMatrix?' is-matrix':''}" data-bcol="${ci}"
+          ${lv===0 ? `draggable="true" ondragstart="onBChipDragStart(event,${ci})" ondragend="onBChipDragEnd(event)" ondragover="onBChipDragOver(event,${ci})" ondrop="onBChipDrop(event,${ci})"` : ''}>
+          <div class="bgcell${placing&&lv===0?' place-before':''}" onclick="${placeClick}">
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;padding:2px 0;flex-wrap:wrap">
+              <span class="bgqid">${h(lvItem.question)}</span>
+              ${t?`<span class="tb ${typeBadgeClass(t)}" style="font-size:8px">${t}</span>`:''}
+              ${stVal?`<span style="font-size:8px;background:#fef9e7;color:#c8a840;border:1px solid #f0d060;padding:0 4px;border-radius:3px;font-weight:700">TOTAL</span>`:''}
+            </div>
+            ${!placing ? `<div class="bgqacts" style="justify-content:center">
+              <button class="btn btn-sec btn-xs" onclick="event.stopPropagation();${clickFn}" title="Edit">✎</button>
+              <button class="btn btn-dan btn-xs" onclick="event.stopPropagation();${rmFn}" title="Remove">✕</button>
+            </div>${totalChk}` : `<div style="font-size:9px;color:#1a73e8;text-align:center;margin-top:2px">insert here</div>`}
+          </div>
+        </td>`;
+      } else {
+        // Empty cell
+        const placeFn  = `placeBannerQ(${ci},${lv===0?'\'new\'':lv-1})`;
+        const addFn    = lv===0 ? `addBannerItem()` : `addBannerLevel(${ci},${lv-1})`;
+        const cellCls  = placing ? 'bgcell is-empty place-target' : 'bgcell is-empty';
+        const onclick  = placing ? placeFn : addFn;
+        cells += `<td class="bgcol" data-bcol="${ci}"
+          ondragover="onBCellDragOver(event,${ci},${lv===0?-1:lv-1})"
+          ondragleave="onBCellDragLeave(event)"
+          ondrop="onBCellDrop(event,${ci},${lv===0?-1:lv-1})">
+          <div class="${cellCls}" onclick="${onclick}">
+            ${placing
+              ? `<span style="font-size:10px;color:#1a73e8;font-weight:600">Place here</span>`
+              : `<button class="btn btn-sec btn-xs">+ add</button>`}
+          </div>
+        </td>`;
+      }
+    });
+
+    // "Add column" cell (Lv1 row only, rowspan=5)
+    if (lv === 0) {
+      const addColCls = placing ? 'bgaddcol place-target' : 'bgaddcol';
+      const addColFn  = placing ? `placeBannerQ(-1,'new')` : `addBannerItem()`;
+      cells += `<td class="${addColCls}" rowspan="${MAX_LV}"
+        ondragover="onBCellDragOver(event,-1,-1)"
+        ondragleave="onBCellDragLeave(event)"
+        ondrop="onBCellDrop(event,-1,-1)"
+        onclick="${addColFn}" title="Add new cross-tab column">
+        <div class="bgaddmain">
+          <span style="font-size:24px;line-height:1;color:#1a73e8">+</span>
+          <span style="font-size:9px;line-height:1.5;text-align:center;color:#1a73e8">add new<br>header<br>column</span>
+        </div>
+      </td>`;
+    }
+
+    rows += `<tr>${cells}</tr>`;
+  }
+
+  return `${placingBar}<div class="bgwrap" id="bannerArea"
+      ondragover="onBAreaDragOver(event)"
+      ondragleave="onBAreaDragLeave(event)"
+      ondrop="onBAreaDrop(event)">
+    <table class="bgtbl"><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+// ─── LAYOUT TAB ───────────────────────────────────
+function renderLayout(c) {
+  const banner = c.banner||[];
+  const stub   = c.stub||[];
+
+  const stubRows = stub.map((item,i) => {
+    if (item.row_group) {
+      const items = item.items||[];
+      return `<div class="srow rg" draggable="true"
+        ondragstart="onSRowDragStart(event,${i})"
+        ondragend="onSRowDragEnd(event)"
+        ondragover="onSRowDragOver(event,${i})"
+        ondrop="onSRowDrop(event,${i})"
+        onclick="openStubModal(${i})">
+        <span class="sdh">⠿</span>
+        <span class="tb tb-mx">GROUP</span>
+        <span class="sname">${items.map(it=>h(it.question||'?')).join(' · ')}</span>
+        <span class="sx" onclick="event.stopPropagation();removeStub(${i})">✕</span>
+      </div>`;
+    }
+    const mq    = findMetaQ(item.question);
+    const t     = mq ? qType(mq) : '';
+    const extra = (item.stats||[]).filter(s=>s!=='base'&&s!=='percent');
+    return `<div class="srow" draggable="true"
+      ondragstart="onSRowDragStart(event,${i})"
+      ondragend="onSRowDragEnd(event)"
+      ondragover="onSRowDragOver(event,${i})"
+      ondrop="onSRowDrop(event,${i})"
+      onclick="openStubModal(${i})">
+      <span class="sdh">⠿</span>
+      <span class="slbl">${h(item.question||'?')}</span>
+      <span class="sname">${h(item.label||'')}</span>
+      ${t?`<span class="tb ${typeBadgeClass(t)}" style="font-size:9px">${t}</span>`:''}
+      ${extra.length?`<span class="sstats">[${extra.join(',')}]</span>`:''}
+      <span class="sx" onclick="event.stopPropagation();removeStub(${i})">✕</span>
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="ls">
+    <div class="lsh">
+      <span class="lst">📊 Header — Banner Columns</span>
+      <span style="font-size:10px;color:#aaa;margin-left:4px">${banner.filter(b=>b.question||b.filter!==null).length} col · up to 5 levels</span>
+    </div>
+    ${renderBannerGrid(banner)}
+  </div>
+  <div class="ls">
+    <div class="lsh">
+      <span class="lst">📋 Rows — Stub Questions (${stub.length})</span>
+      <button class="btn btn-sec btn-xs" onclick="addStubItem()">+ Add Row</button>
+    </div>
+    <div class="sarea" id="stubArea"
+      ondragover="onSAreaDragOver(event)"
+      ondragleave="onSAreaDragLeave(event)"
+      ondrop="onSAreaDrop(event)">
+      ${stubRows}
+      ${!stubRows?'<div class="drophint">⬅ Kéo câu hỏi từ panel trái vào đây, hoặc click câu hỏi → Add to Stub</div>':''}
+    </div>
+  </div>`;
+}
+
+// ─── SETTINGS TAB ─────────────────────────────────
+function renderSettings(c) {
+  const sig=c.significance_test||{};
+  const sigOn=!!sig.enabled, sigLvl=sig.levels||[], sigM=sig.method||'independent';
+  const bm=c.banner_matrix, tables=c.tables||[];
+  return `
+  <div class="card">
+    <div class="cardh"><div class="chl">📝 Basic Info</div></div>
+    <div class="cardb">
+      <div class="fr">
+        <div class="fg"><label class="fl">Title</label>
+          <input type="text" value="${a(c.title||'')}" oninput="setF('title',this.value)" placeholder="VD: VN8932 - Data Table"></div>
+        <div class="fg"><label class="fl">Sub Title</label>
+          <input type="text" value="${a(c.sub_title||'')}" oninput="setF('sub_title',this.value)" placeholder="VD: General"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="cardh"><div class="chl">🔬 Significance Test</div></div>
+    <div class="cardb">
+      <div class="fr" style="align-items:center;margin-bottom:12px">
+        <div class="tw">
+          <label class="tgl"><input type="checkbox" ${sigOn?'checked':''} onchange="setSig('enabled',this.checked)"><span class="tgls"></span></label>
+          <span style="font-size:12px;color:${sigOn?'#1e8449':'#bbb'}">${sigOn?'Bật':'Tắt'}</span>
+        </div>
+      </div>
+      <div class="fr">
+        <div class="fg" style="flex:.8"><label class="fl">Method</label>
+          <select onchange="setSig('method',this.value)">
+            <option value="independent" ${sigM==='independent'?'selected':''}>independent</option>
+            <option value="paired" ${sigM==='paired'?'selected':''}>paired</option>
+          </select></div>
+        <div class="fg"><label class="fl">Levels</label>
+          <div style="display:flex;gap:14px;margin-top:5px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+              <input type="checkbox" ${sigLvl.includes(90)?'checked':''} onchange="toggleSigLvl(90,this.checked)" style="width:12px;height:12px;accent-color:#1a73e8"> 90%</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+              <input type="checkbox" ${sigLvl.includes(95)?'checked':''} onchange="toggleSigLvl(95,this.checked)" style="width:12px;height:12px;accent-color:#1a73e8"> 95%</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="cardh">
+      <div class="chl">🏷 Banner Matrix ${bm?`<span style="font-size:10px;background:#e8f0fe;color:#1565c0;padding:2px 8px;border-radius:10px">${h(bm.question||'?')} — ${h(bm.label||'')}</span>`:''}</div>
+      ${bm?`<button class="btn btn-dan btn-xs" onclick="removeBM()">Xóa</button>`:`<button class="btn btn-sec btn-xs" onclick="addBM()">+ Thêm</button>`}
+    </div>
+    ${bm?`<div class="cardb">
+      <div class="fr">
+        <div class="fg"><label class="fl">Label</label><input type="text" value="${a(bm.label||'')}" oninput="setBM('label',this.value)"></div>
+        <div class="fg"><label class="fl">Question</label><input type="text" value="${a(bm.question||'')}" oninput="setBM('question',this.value)" placeholder="Q17"></div>
+      </div>
+      <div style="font-size:11px;color:#888">${bm.groups?`${bm.groups.length} groups (chỉnh trong Raw JSON)`:'Tự động lấy tất cả rows từ metadata'}</div>
+    </div>`:`<div class="cardb" style="color:#bbb;font-size:12px">Chưa có banner_matrix</div>`}
+  </div>
+  <div class="card">
+    <div class="cardh">
+      <div class="chl">📑 Output Sheets (${tables.length})</div>
+      <button class="btn btn-sec btn-xs" onclick="addSheet()">+ Sheet</button>
+    </div>
+    <div class="cardb">
+      ${!tables.length?'<div style="color:#bbb;font-size:12px;padding:8px 0">Chưa có sheet</div>':''}
+      ${tables.map((t,i)=>`
+        <div class="shrow ${t.enabled===false?'dis':''}">
+          <div><label class="fl">Bật</label>
+            <label class="tgl"><input type="checkbox" ${t.enabled!==false?'checked':''} onchange="setSheet(${i},'enabled',this.checked)"><span class="tgls"></span></label></div>
+          <div class="fg" style="flex:.9"><label class="fl">Sheet</label>
+            <input type="text" value="${a(t.sheet||'')}" oninput="setSheet(${i},'sheet',this.value)"></div>
+          <div class="fg"><label class="fl">Cell content</label>
+            <select onchange="setSheet(${i},'cell_content',this.value)">
+              <option value="count" ${t.cell_content==='count'?'selected':''}>count</option>
+              <option value="percentage" ${t.cell_content==='percentage'?'selected':''}>percentage</option>
+            </select></div>
+          <div class="fg" style="flex:.7"><label class="fl">Show sig</label>
+            <select onchange="setSheet(${i},'show_sig',this.value==='true')">
+              <option value="false" ${!t.show_sig?'selected':''}>Không</option>
+              <option value="true" ${t.show_sig?'selected':''}>Có</option>
+            </select></div>
+          <div><label class="fl">&nbsp;</label>
+            <button class="btn btn-dan btn-xs" onclick="removeSheet(${i})">✕</button></div>
+        </div>`).join('')}
+      <div class="divider"></div>
+      <div class="slabel">Quick add</div>
+      <div class="qkbtns">
+        <button class="btn btn-sec btn-sm" onclick="quickSheet('Count','count',false)">+ Count</button>
+        <button class="btn btn-sec btn-sm" onclick="quickSheet('Pct','percentage',false)">+ Pct</button>
+        <button class="btn btn-sec btn-sm" onclick="quickSheet('Sig','percentage',true)">+ Sig</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════
+// MUTATIONS
+// ════════════════════════════════════════════════════
+function selCfg(i) { activeCfg=i; renderSidebar(); renderMain(); }
+function setTab(t) { activeTab=t; renderMain(); }
+function cfg()     { return data[activeCfg]; }
+
+function setF(k,v) {
+  cfg()[k]=v; markDirty();
+  const el=document.querySelectorAll('.tbsi')[activeCfg];
+  if (el) { el.querySelector('.tbsi-name').textContent=cfg().sub_title||'Table '+(activeCfg+1); el.querySelector('.tbsi-sub').textContent=cfg().title||'—'; }
+}
+function setSig(k,v) {
+  const c=cfg(); if(!c.significance_test) c.significance_test={enabled:false,levels:[90,95],method:'independent'};
+  c.significance_test[k]=v; markDirty(); if(k==='enabled') renderMain();
+}
+function toggleSigLvl(l,on) {
+  const c=cfg(); if(!c.significance_test) c.significance_test={enabled:false,levels:[90,95],method:'independent'};
+  let ls=[...(c.significance_test.levels||[])];
+  if(on&&!ls.includes(l)) ls.push(l); else if(!on) ls=ls.filter(x=>x!==l);
+  c.significance_test.levels=ls.sort((a,b)=>a-b); markDirty();
+}
+function addBM()    { cfg().banner_matrix={label:'Brand',question:'Q?'}; markDirty(); renderMain(); }
+function removeBM() { delete cfg().banner_matrix; markDirty(); renderMain(); }
+function setBM(k,v) { if(cfg().banner_matrix) cfg().banner_matrix[k]=v; markDirty(); }
+
+function addBannerItem() {
+  showQPicker('➕ Add Header Column', 'Chọn câu hỏi cho cột mới', q => {
+    addBannerFromQ(q);
+    // Open config modal so user can edit groups
+    setTimeout(() => {
+      const idx = (cfg().banner||[]).length - 1;
+      if (idx > 0) openBannerModal(idx);
+    }, 100);
+  });
+}
+function removeBanner(i) { cfg().banner.splice(i,1); markDirty(); renderMain(); }
+function setBannerTotal(ci, on) {
+  const b = cfg()?.banner?.[ci]; if (!b) return;
+  if (on) b.show_total = true; else delete b.show_total;
+  markDirty(); renderMain();
+}
+function setBannerLevelTotal(ci, lvIdx, on) {
+  const b = cfg()?.banner?.[ci]; if (!b) return;
+  if (!b.levels) b.levels = [];
+  if (!b.levels[lvIdx]) return;
+  if (on) b.levels[lvIdx].show_total = true; else delete b.levels[lvIdx].show_total;
+  markDirty(); renderMain();
+}
+
+function addStubItem() {
+  if(!cfg().stub) cfg().stub=[];
+  cfg().stub.push({question:'Q?',label:'New Question',stats:['base','percent']});
+  markDirty(); activeTab='layout'; renderMain();
+}
+function removeStub(i) { cfg().stub.splice(i,1); markDirty(); renderMain(); }
+
+function addSheet() {
+  if(!cfg().tables) cfg().tables=[];
+  cfg().tables.push({sheet:'New',cell_content:'percentage',show_sig:false,enabled:true});
+  markDirty(); renderMain();
+}
+function removeSheet(i) { cfg().tables.splice(i,1); markDirty(); renderMain(); }
+function setSheet(i,k,v) { cfg().tables[i][k]=v; markDirty(); if(k==='enabled') renderMain(); }
+function quickSheet(sh,ct,sig) {
+  if(!cfg().tables) cfg().tables=[];
+  const ex=cfg().tables.find(t=>t.sheet===sh);
+  if(ex) ex.enabled=true; else cfg().tables.push({sheet:sh,cell_content:ct,show_sig:sig,enabled:true});
+  markDirty(); renderMain();
+}
+function addCfg() {
+  data.push({title:'Survey - Data Table',sub_title:'Table '+(data.length+1),
+    significance_test:{enabled:false,levels:[90,95],method:'independent'},
+    banner:[{label:'Total',filter:null}],stub:[],
+    tables:[{sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true}]});
+  activeCfg=data.length-1; activeTab='layout';
+  document.getElementById('saveBtn').disabled=false;
+  markDirty(); render();
+}
+function removeCfg(i) {
+  if(!confirm(`Xóa table "${data[i].sub_title||'Table '+(i+1)}"?`)) return;
+  data.splice(i,1); activeCfg=Math.max(0,i-1); markDirty(); render();
+}
+
+// ════════════════════════════════════════════════════
+// RAW JSON
+// ════════════════════════════════════════════════════
+function toggleRaw() {
+  if(!showRaw&&!data.length) return;
+  if(showRaw) syncRaw();
+  showRaw=!showRaw;
+  document.getElementById('rawBtn').textContent=showRaw?'◀ Form':'{} Raw';
+  renderMain();
+}
+function syncRaw() {
+  const ta=document.getElementById('rawEd'); if(!ta) return;
+  try { const p=JSON.parse(ta.value); data=Array.isArray(p)?p:[p]; activeCfg=Math.min(activeCfg,Math.max(0,data.length-1)); ta.classList.remove('err'); markDirty(); }
+  catch(e) { ta.classList.add('err'); }
+}
+
+// ════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════
+function h(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function a(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function markDirty(){ dirty=true; setStatus('Có thay đổi chưa lưu — Ctrl+S để lưu','dirty'); }
+function setStatus(msg,type){ const el=document.getElementById('sbar'); el.className='sbar '+(type||''); el.querySelector('.msg').textContent=msg; }
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey)&&e.key==='s') { e.preventDefault(); if(data.length) saveFile(); }
+  if (e.key==='Escape') { if(document.getElementById('previewPanel').style.display!=='none') closePreview(); else closeModal(); }
+});
+
+// ════════════════════════════════════════════════════
+// RAWDATA CSV + CROSS-TAB PREVIEW ENGINE
+// ════════════════════════════════════════════════════
+let rawCsv      = null;   // [{col:val,...}]
+let rawHeaders  = [];
+let metaSubMap  = {};     // sub-question label → sub-question object
+let _pvResults  = null;   // last computed [{bannerCols, blocks, tableConfig}]
+
+// ── Rawdata loading ──────────────────────────────────
+function openRd() { document.getElementById('rdIn').click(); }
+function onRdIn(e) {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => loadRd(ev.target.result, f.name);
+  r.readAsText(f, 'utf-8'); e.target.value = '';
+}
+function loadRd(text, name) {
+  if (typeof Papa === 'undefined') { setStatus('⚠ PapaParse not loaded — check internet',''); return; }
+  const res = Papa.parse(text, { header:true, skipEmptyLines:true, dynamicTyping:false });
+  rawCsv    = res.data;
+  rawHeaders = res.meta.fields || [];
+  const b = document.getElementById('rdBadge');
+  b.textContent = `csv: ${rawCsv.length}r`;
+  b.className = 'fbadge ok';
+  setStatus(`CSV loaded: ${rawCsv.length} rows · ${rawHeaders.length} cols`, 'saved');
+  checkRunBtn();
+}
+function checkRunBtn() {
+  const ok  = !!(rawCsv && metadata.length && data.length);
+  const btn = document.getElementById('runBtn');
+  if (!btn) return;
+  btn.disabled       = !ok;
+  btn.style.opacity  = ok ? '1' : '.45';
+}
+
+// ── Sub-question map (built when metadata loads) ─────
+function buildMetaSubMap() {
+  metaSubMap = {};
+  for (const q of metadata) {
+    const subs = q.sub_questions;
+    if (!subs) continue;
+    Object.values(subs).forEach(sq => { if (sq.label) metaSubMap[sq.label] = sq; });
+  }
+}
+
+// ── Column resolution ────────────────────────────────
+// rawdata column name == question label (metadata.label field)
+function qToCol(label) { return label; }
+
+// Parse a rawdata cell → array of numeric codes
+// SA: "2" or 2 → [2];  MA: "1;3;5" → [1,3,5]
+function cellVals(v) {
+  if (v === null || v === undefined || v === '') return [];
+  const s = String(v).trim();
+  if (!s || s === 'nan') return [];
+  return s.split(';').map(x => parseFloat(x.trim())).filter(n => !isNaN(n));
+}
+
+// ── Banner flattening ────────────────────────────────
+// {filter:null} Total is always hoisted to the FRONT regardless of position in array.
+// show_total sub-column is placed AFTER the question's groups (not before).
+// ── Banner tree builder ───────────────────────────────
+
+// Filter parent rows by a banner group entry (value or values)
+function filterRowsByGroup(parentRows, col, g) {
+  const vals = (Array.isArray(g.values) ? g.values : [g.value]).map(Number);
+  return parentRows.filter(row => cellVals(row[col]).some(v => vals.includes(v)));
+}
+
+// Recursively build child nodes for one level item
+// parentRows: already-filtered rows for the parent node
+// levelItem: {question, label, groups, show_total}
+// nextLevels: remaining deeper level items
+function buildLevelChildren(parentRows, levelItem, nextLevels) {
+  const col    = qToCol(levelItem.question);
+  const groups = levelItem.groups || [];
+  const nodes  = [];
+
+  // show_total → Total sub-column FIRST (left side)
+  if (levelItem.show_total) {
+    const node = { label: 'Total', rows: parentRows, children: [], isSubTotal: true };
+    if (nextLevels.length)
+      node.children = buildLevelChildren(parentRows, nextLevels[0], nextLevels.slice(1));
+    nodes.push(node);
+  }
+
+  if (!groups.length) {
+    // No groups at this level → single pass-through child node
+    const node = { label: levelItem.label || levelItem.question, rows: parentRows, children: [] };
+    if (nextLevels.length)
+      node.children = buildLevelChildren(parentRows, nextLevels[0], nextLevels.slice(1));
+    nodes.push(node);
+  } else {
+    for (const g of groups) {
+      const rows = filterRowsByGroup(parentRows, col, g);
+      const node = { label: g.label, rows, children: [] };
+      if (nextLevels.length)
+        node.children = buildLevelChildren(rows, nextLevels[0], nextLevels.slice(1));
+      nodes.push(node);
+    }
+  }
+
+  return nodes;
+}
+
+// Build the full banner tree (array of root nodes)
+function buildBannerTree(banner) {
+  const roots = [];
+  const hasShowTotal = banner.some(it => it.show_total);
+
+  // Pass 1 — global Total always first (left-most column)
+  for (const item of banner) {
+    if (item.filter === null && !item.question) {
+      if (!hasShowTotal)
+        roots.push({ label: 'Total', rows: rawCsv, children: [] });
+    }
+  }
+
+  // Pass 2 — question-based banner items
+  for (const item of banner) {
+    if (item.filter === null && !item.question) continue;
+
+    const col         = qToCol(item.question);
+    const groups      = item.groups  || [];
+    const levels      = item.levels  || [];   // [lv2Item, lv3Item, ...]
+    const bannerLabel = item.label   || item.question;
+
+    // Completely flat (no groups, no sub-levels, no sub-total) → single leaf
+    if (!groups.length && !levels.length && !item.show_total) {
+      roots.push({ label: bannerLabel, rows: rawCsv, children: [] });
+      continue;
+    }
+
+    // Build Lv1 child nodes
+    const lv1Children = [];
+
+    if (!groups.length) {
+      // No Lv1 groups → one pass-through node
+      const node = { label: bannerLabel, rows: rawCsv, children: [] };
+      if (levels.length)
+        node.children = buildLevelChildren(rawCsv, levels[0], levels.slice(1));
+      lv1Children.push(node);
+    } else {
+      // show_total → Total FIRST (left side) before groups
+      if (item.show_total) {
+        const node = { label: 'Total', rows: rawCsv, children: [], isSubTotal: true };
+        if (levels.length)
+          node.children = buildLevelChildren(rawCsv, levels[0], levels.slice(1));
+        lv1Children.push(node);
+      }
+      for (const g of groups) {
+        const rows = filterRowsByGroup(rawCsv, col, g);
+        const node = { label: g.label, rows, children: [] };
+        if (levels.length)
+          node.children = buildLevelChildren(rows, levels[0], levels.slice(1));
+        lv1Children.push(node);
+      }
+    }
+
+    // Wrap Lv1 children under the banner-label group node
+    roots.push({ label: bannerLabel, rows: rawCsv, children: lv1Children });
+  }
+
+  return roots;
+}
+
+// ── Tree helpers ─────────────────────────────────────
+function countLeafs(node) {
+  if (!node.children || !node.children.length) return 1;
+  return node.children.reduce((s, c) => s + countLeafs(c), 0);
+}
+
+function getMaxDepth(nodes, d) {
+  d = d || 0;
+  if (!nodes || !nodes.length) return d;
+  let max = d;
+  for (const n of nodes) {
+    const cd = (!n.children || !n.children.length) ? d : getMaxDepth(n.children, d + 1);
+    if (cd > max) max = cd;
+  }
+  return max;
+}
+
+function getLeafs(nodes) {
+  const leafs = [];
+  for (const node of nodes) {
+    if (!node.children || !node.children.length) leafs.push(node);
+    else leafs.push(...getLeafs(node.children));
+  }
+  return leafs;
+}
+
+// ── Build multi-row header HTML ───────────────────────
+// Returns { headerHtml, nDataRows } where nDataRows = total header rows (label + n=)
+function buildBannerHeader(roots) {
+  const maxDepth = getMaxDepth(roots);       // 0 = all roots are leaves
+  const nLabelRows = maxDepth + 1;           // label rows (depth 0 … maxDepth)
+  const nTotalRows = nLabelRows + 1;         // +1 for n= row
+
+  // Accumulate HTML per label-row depth
+  const rowHtml = Array.from({ length: nLabelRows }, () => '');
+
+  function traverse(node, depth) {
+    if (!node.children || !node.children.length) {
+      // Leaf: span down through all remaining label rows
+      const rowspan = maxDepth - depth + 1;
+      const rsAttr  = rowspan > 1 ? ` rowspan="${rowspan}"` : '';
+      rowHtml[depth] += `<th class="dt-bh dt-bh2"${rsAttr}>${h(node.label)}</th>`;
+    } else {
+      // Internal group: colspan = number of leaf descendants
+      const cs = countLeafs(node);
+      const csAttr = cs > 1 ? ` colspan="${cs}"` : '';
+      rowHtml[depth] += `<th class="dt-bh dt-bh1"${csAttr}>${h(node.label)}</th>`;
+      node.children.forEach(c => traverse(c, depth + 1));
+    }
+  }
+  roots.forEach(r => traverse(r, 0));
+
+  // n= row (always the last header row)
+  const leafs = getLeafs(roots);
+  const nRow  = leafs.map(lf => `<th class="dt-bh dt-bh3">n=${lf.rows.length}</th>`).join('');
+
+  // Assemble: first label-row carries the stub-header cell (rowspan = nTotalRows)
+  let html = '';
+  for (let i = 0; i < nLabelRows; i++) {
+    if (i === 0) html += `<tr><th class="dt-stub-hdr" rowspan="${nTotalRows}"></th>${rowHtml[i]}</tr>`;
+    else         html += `<tr>${rowHtml[i]}</tr>`;
+  }
+  html += `<tr>${nRow}</tr>`;
+
+  return { headerHtml: html, nTotalRows, nLeafs: leafs.length };
+}
+
+// ── Stats helpers ────────────────────────────────────
+function baseCount(rows, col) {
+  return rows.filter(row => { const v = row[col]; return v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== 'nan'; }).length;
+}
+function countVal(rows, col, code) {
+  const c = Number(code);
+  return rows.filter(row => cellVals(row[col]).includes(c)).length;
+}
+
+function computeChoiceStats(rows, col, choiceCodes) {
+  const base = baseCount(rows, col);
+  const codes = choiceCodes.map(Number);
+  const counts = codes.map(c => ({ code:c, count: countVal(rows, col, c) }));
+  const sortedCodes = [...codes].sort((a,b) => a-b);
+  const t2bCodes  = new Set(sortedCodes.slice(-2));
+  const b2bCodes  = new Set(sortedCodes.slice(0, 2));
+  const t2b = counts.filter(x => t2bCodes.has(x.code)).reduce((s,x)=>s+x.count, 0);
+  const b2b = counts.filter(x => b2bCodes.has(x.code)).reduce((s,x)=>s+x.count, 0);
+  const totalWgt = counts.reduce((s,x) => s + x.code * x.count, 0);
+  const totalN   = counts.reduce((s,x) => s + x.count, 0);
+  const mean = totalN > 0 ? totalWgt / totalN : 0;
+  const variance = totalN > 0
+    ? counts.reduce((s,x) => s + x.count * (x.code - mean)**2, 0) / totalN : 0;
+  return { base, counts, t2b, b2b, mean, std: Math.sqrt(variance) };
+}
+
+// ── Significance test (z-test for proportions) ───────
+const Z_THR = { 90:1.645, 95:1.960 };
+function computeSig(colStats, levels) {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const n = colStats.length;
+  const res = colStats.map(() => ({ hi:[] }));
+  for (let i = 0; i < n; i++) {
+    for (let j = i+1; j < n; j++) {
+      const {count:x1, base:n1} = colStats[i], {count:x2, base:n2} = colStats[j];
+      if (!n1 || !n2) continue;
+      const p1=x1/n1, p2=x2/n2, p=(x1+x2)/(n1+n2);
+      const se = Math.sqrt(p*(1-p)*(1/n1+1/n2));
+      if (!se) continue;
+      const z = Math.abs(p1-p2)/se;
+      const maxLv = [...levels].sort((a,b)=>b-a).find(l => z >= Z_THR[l]);
+      if (maxLv) {
+        const mark = maxLv >= 95 ? '*' : '';
+        if (p1 > p2) res[i].hi.push((letters[j]||j)+mark);
+        else         res[j].hi.push((letters[i]||i)+mark);
+      }
+    }
+  }
+  return res;
+}
+
+// ── Format helpers ───────────────────────────────────
+function fmtPct(v) { return (isNaN(v)||v===null) ? '-' : v.toFixed(1)+'%'; }
+function fmtNum(v) { return (isNaN(v)||v===null) ? '-' : v.toFixed(2); }
+
+// ── Build row array for one flat question block ───────
+function buildRows(stats, choices, colData, cellContent, showSig, sigLevels) {
+  const rows = [];
+  if (stats.includes('base')) {
+    rows.push({ label:'Base', type:'base', cells: colData.map(cd => ({ display:String(cd.base), raw:cd.base })) });
+  }
+  choices.forEach(ch => {
+    const code = Number(ch.code);
+    const cells = colData.map(cd => {
+      const found = cd.counts.find(x => x.code === code);
+      const cnt = found?.count || 0;
+      const pct = cd.base > 0 ? cnt/cd.base*100 : 0;
+      const val = cellContent==='count' ? cnt : pct;
+      return { display: cellContent==='count' ? String(cnt) : fmtPct(pct), raw:val, count:cnt, base:cd.base };
+    });
+    let sigs = null;
+    if (showSig) sigs = computeSig(cells.map(c=>({count:c.count,base:c.base})), sigLevels);
+    rows.push({ label: i18nStr(ch.label)||String(ch.code), type:'choice', cells, sigs });
+  });
+  if (stats.includes('t2b')) rows.push({ label:'T2B', type:'summary', cells: colData.map(cd=>{
+    const v = cellContent==='count'?cd.t2b:(cd.base>0?cd.t2b/cd.base*100:0);
+    return { display:cellContent==='count'?String(cd.t2b):fmtPct(v), raw:v };
+  })});
+  if (stats.includes('b2b')) rows.push({ label:'B2B', type:'summary', cells: colData.map(cd=>{
+    const v = cellContent==='count'?cd.b2b:(cd.base>0?cd.b2b/cd.base*100:0);
+    return { display:cellContent==='count'?String(cd.b2b):fmtPct(v), raw:v };
+  })});
+  if (stats.includes('mean')) rows.push({ label:'Mean', type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.mean), raw:cd.mean })) });
+  if (stats.includes('std'))  rows.push({ label:'Std',  type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.std),  raw:cd.std  })) });
+  return rows;
+}
+
+// ── Block computation ────────────────────────────────
+function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
+  const qLabel = stubItem.question;
+  const stats  = stubItem.stats || ['base','percent'];
+  // Convert "percent" → use in buildRows logic (it checks 'base'/'percent' but cellContent drives format)
+  const mq = findMetaQ(qLabel);
+
+  if (mq) {
+    const t = qType(mq);
+    if (t.startsWith('Matrix') && mq.sub_questions) {
+      return computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels);
+    }
+    const col  = qToCol(mq.label);
+    const ch   = qChoices(mq);
+    const selCodes = stubItem.choice_codes ? stubItem.choice_codes.map(String) : null;
+    const filtCh = selCodes ? ch.filter(c=>selCodes.includes(String(c.code))) : ch;
+    const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, filtCh.map(c=>c.code)));
+    return { type:'flat', qLabel: stubItem.label||qLabel, answerType:t,
+      rows: buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels) };
+  }
+  // Sub-question reference (e.g. "Q17_r1")
+  const sq = metaSubMap[qLabel];
+  if (sq) {
+    const col    = qToCol(sq.label);
+    const ch     = qChoices(sq);
+    const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, ch.map(c=>c.code)));
+    return { type:'flat', qLabel: stubItem.label||qLabel, answerType: sq.answer_type||'',
+      rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels) };
+  }
+  return null;
+}
+
+function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels) {
+  const stats    = stubItem.stats || ['base','percent'];
+  const subQs    = mq.sub_questions || {};
+  const children = mq.children || Object.keys(subQs);
+  const subBlocks = children.map(key => {
+    const sq = subQs[key]; if (!sq) return null;
+    const col    = qToCol(sq.label);
+    const ch     = qChoices(sq);
+    const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, ch.map(c=>c.code)));
+    return { rowLabel: sq.row_label||sq.label, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels) };
+  }).filter(Boolean);
+  return { type:'matrix', qLabel: stubItem.label||mq.label, answerType: qType(mq), subBlocks };
+}
+
+// ── Full table computation ───────────────────────────
+function computeTable(cfgItem, tableConfig) {
+  const roots      = buildBannerTree(cfgItem.banner || []);
+  const bannerCols = getLeafs(roots);           // only leaf nodes are data columns
+  const showSig    = tableConfig.show_sig && cfgItem.significance_test?.enabled;
+  const sigLevels  = cfgItem.significance_test?.levels || [90,95];
+  const cc         = tableConfig.cell_content; // 'count' | 'percentage'
+  const blocks = (cfgItem.stub||[]).map(si => {
+    if (si.row_group) {
+      // row_group: multiple matrix questions sharing rows
+      const subBlocks = (si.items||[]).map(item => computeBlock(item, bannerCols, cc, showSig, sigLevels)).filter(Boolean);
+      return { type:'rowgroup', qLabel: '', subBlocks };
+    }
+    return computeBlock(si, bannerCols, cc, showSig, sigLevels);
+  }).filter(Boolean);
+  return { roots, bannerCols, blocks, tableConfig };
+}
+
+// ── HTML rendering ───────────────────────────────────
+function renderTableHTML(tableData) {
+  const { roots, bannerCols, blocks } = tableData;
+  const nCols = bannerCols.length;
+
+  // Multi-row header from tree
+  const { headerHtml } = buildBannerHeader(roots);
+
+  let body = '';
+  for (const block of blocks) {
+    if (block.type === 'matrix') {
+      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${h(block.qLabel)}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
+      for (const sub of block.subBlocks) {
+        body += `<tr><td class="dt-subhdr" colspan="${nCols+1}">↳ ${h(sub.rowLabel)}</td></tr>`;
+        body += sub.rows.map(row => renderRow(row, nCols)).join('');
+      }
+    } else {
+      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${h(block.qLabel)}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
+      body += block.rows.map(row => renderRow(row, nCols)).join('');
+    }
+  }
+
+  return `<table class="dt-tbl">
+    <thead>${headerHtml}</thead>
+    <tbody>${body}</tbody>
+  </table>`;
+}
+
+function renderRow(row, nCols) {
+  const lc = row.type==='base' ? 'dt-rlbl dt-rlbl-base' : row.type==='summary' ? 'dt-rlbl dt-rlbl-summ' : 'dt-rlbl';
+  const cells = row.cells.map((c,ci) => {
+    const sigTxt = row.sigs?.[ci]?.hi?.length ? ` <sup class="dt-sig">${row.sigs[ci].hi.join(',')}</sup>` : '';
+    const cc = row.type==='base' ? 'dt-cell dt-base' : row.type==='summary' ? 'dt-cell dt-summ' : 'dt-cell';
+    return `<td class="${cc}">${c.display}${sigTxt}</td>`;
+  }).join('');
+  return `<tr><td class="${lc}">${h(row.label)}</td>${cells}</tr>`;
+}
+
+// ── Preview panel ────────────────────────────────────
+let _pvActiveTab = 0;
+
+function showPreview() {
+  if (!rawCsv || !data.length) return;
+  const cfg    = data[activeCfg];
+  const tables = (cfg.tables||[]).filter(t => t.enabled !== false);
+  if (!tables.length) { setStatus('⚠ No enabled tables', ''); return; }
+
+  try {
+    _pvResults  = tables.map(t => computeTable(cfg, t));
+    _pvActiveTab = 0;
+
+    document.getElementById('pvTabs').innerHTML = tables.map((t,i) =>
+      `<button class="pvtab ${i===0?'on':''}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
+    ).join('');
+    document.getElementById('previewPanel').style.display = 'flex';
+    renderPvContent();
+  } catch(err) {
+    setStatus('⚠ Lỗi preview: '+err.message, '');
+    console.error(err);
+  }
+}
+function closePreview() { document.getElementById('previewPanel').style.display='none'; }
+function switchPvTab(i) {
+  _pvActiveTab = i;
+  document.querySelectorAll('.pvtab').forEach((el,idx) => el.classList.toggle('on', idx===i));
+  renderPvContent();
+}
+function renderPvContent() {
+  const r = _pvResults?.[_pvActiveTab]; if (!r) return;
+  document.getElementById('pvContent').innerHTML = renderTableHTML(r);
+}
+
+// ── xlsx export ──────────────────────────────────────
+
+// Build a flat AOA header from the banner tree (mirrors buildBannerHeader logic)
+function buildXlsxHeader(roots) {
+  const maxDepth   = getMaxDepth(roots);
+  const nLabelRows = maxDepth + 1;
+
+  // rowData[depth] = array of {label, colspan, rowspan}
+  const rowEntries = Array.from({ length: nLabelRows }, () => []);
+
+  function traverse(node, depth) {
+    if (!node.children || !node.children.length) {
+      const rowspan = maxDepth - depth + 1;
+      rowEntries[depth].push({ label: node.label, colspan: 1, rowspan });
+    } else {
+      const cs = countLeafs(node);
+      rowEntries[depth].push({ label: node.label, colspan: cs, rowspan: 1 });
+      node.children.forEach(c => traverse(c, depth + 1));
+    }
+  }
+  roots.forEach(r => traverse(r, 0));
+
+  const leafs = getLeafs(roots);
+
+  // Build AOA rows
+  const aoa = [];
+  // Track column offsets per row (for merged-cell fill)
+  // For xlsx AOA, we expand merged cells with '' as placeholder
+  for (let d = 0; d < nLabelRows; d++) {
+    const row = [''];  // stub column
+    for (const e of rowEntries[d]) {
+      row.push(e.label);
+      for (let i = 1; i < e.colspan; i++) row.push('');
+    }
+    aoa.push(row);
+  }
+  // n= row
+  aoa.push(['', ...leafs.map(lf => `n=${lf.rows.length}`)]);
+
+  return { aoa, leafs };
+}
+
+function downloadXlsx() {
+  if (!_pvResults) return;
+  if (typeof XLSX === 'undefined') { setStatus('⚠ SheetJS not loaded — check internet',''); return; }
+  const cfg    = data[activeCfg];
+  const tables = (cfg.tables||[]).filter(t => t.enabled !== false);
+  const wb     = XLSX.utils.book_new();
+
+  _pvResults.forEach((tableData, idx) => {
+    const { roots, bannerCols, blocks } = tableData;
+    const t      = tables[idx];
+    const shName = `${cfg.sub_title||'Table'} - ${t.sheet}`.slice(0,31);
+    const aoa    = [];
+
+    // Multi-level banner header
+    const { aoa: hdrAoa, leafs } = buildXlsxHeader(roots);
+    aoa.push(...hdrAoa);
+
+    const pushBlock = (block) => {
+      if (block.type === 'matrix') {
+        aoa.push([block.qLabel]);
+        for (const sub of block.subBlocks) {
+          aoa.push([`  ↳ ${sub.rowLabel}`]);
+          sub.rows.forEach(row => aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : c.raw)]));
+        }
+      } else {
+        aoa.push([block.qLabel]);
+        block.rows.forEach(row => aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : c.raw)]));
+      }
+    };
+    blocks.forEach(pushBlock);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    // Auto col width
+    const colWidths = aoa.reduce((acc, row) => {
+      row.forEach((v, i) => { acc[i] = Math.max(acc[i] || 0, String(v || '').length + 2); });
+      return acc;
+    }, []);
+    ws['!cols'] = colWidths.map(w => ({ wch: Math.min(w, 40) }));
+    XLSX.utils.book_append_sheet(wb, ws, shName);
+  });
+
+  const title = (cfg.title || 'datatable').replace(/[/\\?*[\]]/g, '_');
+  XLSX.writeFile(wb, `${title}.xlsx`);
+  setStatus('xlsx đã download!', 'saved');
+}
+(function init(){
+  if (!HAS_FS) document.getElementById('shortcut').textContent='Ctrl+S → download';
+})();
+
+
+// ════════════════════════════════════════════════════
+// API INTEGRATION
+// ════════════════════════════════════════════════════
+let currentSurveyId   = null;
+let currentSurveyName = null;
+let lastVersion       = null;
+let spSelected        = null;
+
+// ── survey panel ──────────────────────────────────
+
+function openSurveyPanel() {
+  document.getElementById('surveyPanel').style.display = 'flex';
+  const inp = document.getElementById('spSearch');
+  inp.value = '';
+  inp.focus();
+}
+function closeSurveyPanel() {
+  document.getElementById('surveyPanel').style.display = 'none';
+}
+
+async function doSurveySearch() {
+  const q = document.getElementById('spSearch').value.trim();
+  const res = document.getElementById('spResults');
+  res.innerHTML = '<div class="sp-empty">Đang tìm…</div>';
+  try {
+    const data = await fetch(`/api/surveys/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json());
+    const surveys = data.surveys || data.results || (Array.isArray(data) ? data : []);
+    if (!surveys.length) { res.innerHTML = '<div class="sp-empty">Không tìm thấy survey nào</div>'; return; }
+    res.innerHTML = surveys.map((s) => {
+      const id    = s.survey_id || s.id;
+      const title = s.display_title || s.title || s.name || `Survey ${id}`;
+      const sub   = [s.status, s.question_count ? `${s.question_count} câu` : ''].filter(Boolean).join(' · ');
+      return `<div class="sp-item" data-id="${id}" data-title="${title.replace(/"/g,'&quot;')}" onclick="selectSurveyItem(this)">
+        <div class="sp-item-title">[${id}] ${title}</div>
+        ${sub ? `<div class="sp-item-sub">${sub}</div>` : ''}
+      </div>`;
+    }).join('');
+    document.getElementById('spActions').style.display = 'flex';
+    document.getElementById('spFetchBtn').disabled = true;
+    document.getElementById('spIngestBtn').disabled = true;
+    document.getElementById('spSelectBtn').disabled = true;
+    document.getElementById('spLog').style.display = 'none';
+  } catch(e) {
+    res.innerHTML = `<div class="sp-empty">Lỗi: ${e.message}</div>`;
+  }
+}
+
+function selectSurveyItem(el) {
+  document.querySelectorAll('.sp-item').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  spSelected = { id: parseInt(el.dataset.id), title: el.dataset.title };
+  document.getElementById('spActions').style.display = 'flex';
+  document.getElementById('spFetchBtn').disabled = false;
+  checkSpStatus();
+}
+
+async function checkSpStatus() {
+  if (!spSelected) return;
+  try {
+    const st = await fetch(`/api/surveys/${spSelected.id}/status`).then(r => r.json());
+    document.getElementById('spIngestBtn').disabled = !st.has_mcp;
+    document.getElementById('spSelectBtn').disabled = !st.has_data;
+    _spLog(
+      `fetch: ${st.has_mcp ? '✓' : '—'}  ingest: ${st.has_data ? '✓' : '—'}  datatable: ${st.has_datatable ? '✓' : '—'}  versions: ${st.versions.join(', ') || '—'}`
+    );
+  } catch(e) {}
+}
+
+function _spLog(msg) {
+  const el = document.getElementById('spLog');
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+
+async function doFetch() {
+  if (!spSelected) return;
+  document.getElementById('spFetchBtn').disabled = true;
+  _spLog(`Đang fetch survey ${spSelected.id} từ QMe…`);
+  try {
+    const r = await fetch(`/api/surveys/${spSelected.id}/fetch`, {method:'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'fetch failed');
+    _spLog(`✓ Fetch xong: ${d.pages} trang · ${d.total_rows} rows`);
+    document.getElementById('spIngestBtn').disabled = false;
+  } catch(e) {
+    _spLog(`✗ Lỗi fetch: ${e.message}`);
+  } finally {
+    document.getElementById('spFetchBtn').disabled = false;
+  }
+}
+
+async function doIngest() {
+  if (!spSelected) return;
+  document.getElementById('spIngestBtn').disabled = true;
+  _spLog(`Đang ingest survey ${spSelected.id}…`);
+  try {
+    const r = await fetch(`/api/surveys/${spSelected.id}/ingest`, {method:'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'ingest failed');
+    _spLog(`✓ Ingest xong: ${d.n_rows} rows`);
+    document.getElementById('spSelectBtn').disabled = false;
+  } catch(e) {
+    _spLog(`✗ Lỗi ingest: ${e.message}`);
+  } finally {
+    document.getElementById('spIngestBtn').disabled = false;
+  }
+}
+
+async function doSelectSurvey() {
+  if (!spSelected) return;
+  closeSurveyPanel();
+  await activateSurvey(spSelected.id, spSelected.title);
+}
+
+async function activateSurvey(id, title) {
+  currentSurveyId   = id;
+  currentSurveyName = title;
+
+  const badge = document.getElementById('surveyBadge');
+  badge.textContent = `[${id}] ${title}`;
+  badge.className = 'fbadge ok';
+
+  const st = await fetch(`/api/surveys/${id}/status`).then(r => r.json());
+
+  if (st.has_mcp) {
+    document.getElementById('fetchBadge').textContent = 'fetch: ✓';
+    document.getElementById('fetchBadge').className = 'fbadge ok';
+  }
+  if (st.has_data) {
+    document.getElementById('ingestBadge').textContent = 'ingest: ✓';
+    document.getElementById('ingestBadge').className = 'fbadge ok';
+  }
+
+  if (st.has_data) {
+    await apiLoadMeta(id);
+    await apiLoadRd(id);
+  }
+  if (st.has_datatable) {
+    await apiLoadDT(id);
+  } else {
+    document.getElementById('loadDtBtn').disabled = false;
+  }
+  if (st.versions.length) {
+    lastVersion = st.versions[st.versions.length - 1];
+    const dlBtn = document.getElementById('dlServerBtn');
+    dlBtn.disabled = false;
+    dlBtn.dataset.version = lastVersion;
+  }
+  document.getElementById('pipelineBtn').disabled = !st.has_data;
+  setStatus(`Survey [${id}] đã load`, 'saved');
+}
+
+// ── API loaders ───────────────────────────────────
+
+async function apiLoadMeta(id) {
+  try {
+    const res = await fetch(`/api/surveys/${id}/metadata`);
+    if (!res.ok) return;
+    parseMeta(JSON.stringify(await res.json()), `${id}_metadata.json`);
+    document.getElementById('fetchBadge').textContent = 'meta: ✓';
+    document.getElementById('fetchBadge').className = 'fbadge ok';
+  } catch(e) { setStatus('⚠ Metadata lỗi: ' + e.message, ''); }
+}
+
+async function apiLoadRd(id) {
+  try {
+    const res = await fetch(`/api/surveys/${id}/rawdata`);
+    if (!res.ok) return;
+    loadRd(await res.text(), `${id}_rawdata.csv`);
+    document.getElementById('ingestBadge').textContent = 'csv: ✓';
+    document.getElementById('ingestBadge').className = 'fbadge ok';
+  } catch(e) { setStatus('⚠ Rawdata lỗi: ' + e.message, ''); }
+}
+
+async function apiLoadDT(id) {
+  try {
+    const res = await fetch(`/api/surveys/${id}/datatable`);
+    if (!res.ok) return;
+    loadDT(JSON.stringify(await res.json()), `${id}_datatable.json`);
+    document.getElementById('loadDtBtn').disabled = false;
+  } catch(e) {}
+}
+
+// ── overrides ─────────────────────────────────────
+
+function openMeta() { openSurveyPanel(); }
+
+async function openDT() {
+  if (currentSurveyId) { await apiLoadDT(currentSurveyId); }
+  else { document.getElementById('dtIn').click(); }
+}
+
+function openRd() {
+  if (currentSurveyId) { apiLoadRd(currentSurveyId); }
+  else { document.getElementById('rdIn').click(); }
+}
+
+async function saveFile() {
+  if (showRaw) syncRaw();
+  const text = JSON.stringify(data, null, 2);
+  if (!currentSurveyId) { dlFallback(text); return; }
+  try {
+    const res = await fetch(`/api/surveys/${currentSurveyId}/datatable`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: text,
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || 'save failed');
+    dirty = false;
+    setStatus('Đ\xe3 lưu datatable.json', 'saved');
+  } catch(e) {
+    setStatus('⚠ Save lỗi: ' + e.message, '');
+    dlFallback(text);
+  }
+}
+
+// ── pipeline ──────────────────────────────────────
+
+async function runPipeline() {
+  if (!currentSurveyId) return;
+  const btn = document.getElementById('pipelineBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  setStatus('Đang chạy pipeline…', '');
+  try {
+    await saveFile();
+    const res = await fetch(`/api/surveys/${currentSurveyId}/run`, {method:'POST'});
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.detail || 'run failed');
+    lastVersion = d.version;
+    const dlBtn = document.getElementById('dlServerBtn');
+    dlBtn.disabled = false;
+    dlBtn.dataset.version = d.version;
+    setStatus(`✓ Pipeline xong: ${d.version}`, 'saved');
+  } catch(e) {
+    setStatus('⚠ Pipeline lỗi: ' + e.message, '');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚙ Run';
+  }
+}
+
+function downloadServerXlsx() {
+  const btn = document.getElementById('dlServerBtn');
+  const version = btn.dataset.version || lastVersion;
+  if (currentSurveyId && version) {
+    window.location = `/api/surveys/${currentSurveyId}/download/${version}`;
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeSurveyPanel();
+});
+
+</script>
+</body>
+</html>
