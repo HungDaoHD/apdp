@@ -9,6 +9,11 @@ dist/
 build/
 .eggs/
 
+# Virtual environment
+.venv/
+venv/
+env/
+
 # Env
 .env
 .env.*
