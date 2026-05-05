@@ -1,0 +1,8 @@
+fastapi>=0.110.0
+uvicorn>=0.29.0
+httpx>=0.27.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.0
+surveyflow>=0.1.0
+openpyxl>=3.1.0
+pandas>=2.0.0
