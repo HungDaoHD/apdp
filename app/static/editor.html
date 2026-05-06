@@ -570,29 +570,6 @@ function loadDT(text, name) {
     render(); checkRunBtn();
   } catch(e) { setStatus('⚠ Datatable error: '+e.message,''); }
 }
-async function saveFile() {
-  if (showRaw) syncRaw();
-  const text = JSON.stringify(data, null, 2);
-  if (HAS_FS) {
-    if (!dtHandle) {
-      try { dtHandle = await window.showSaveFilePicker({ suggestedName:'datatable.json', types:[{description:'JSON',accept:{'application/json':['.json']}}] }); }
-      catch(e) { if (e.name!=='AbortError') dlFallback(text); return; }
-    }
-    try {
-      const w = await dtHandle.createWritable();
-      await w.write(text); await w.close();
-      dirty = false; setStatus('Saved: '+dtHandle.name,'saved'); return;
-    } catch(e) {}
-  }
-  dlFallback(text);
-}
-function dlFallback(text) {
-  const a = Object.assign(document.createElement('a'), {
-    href: URL.createObjectURL(new Blob([text],{type:'application/json'})),
-    download: dtHandle?.name||'datatable.json'
-  });
-  a.click(); dirty=false; setStatus('Downloaded','saved');
-}
 
 // ════════════════════════════════════════════════════
 // METADATA HELPERS
@@ -2565,9 +2542,6 @@ function downloadXlsx() {
   XLSX.writeFile(wb, `${title}.xlsx`);
   setStatus('xlsx downloaded!', 'saved');
 }
-(function init(){
-  if (!HAS_FS) document.getElementById('shortcut').textContent='Ctrl+S → download';
-})();
 
 
 // ════════════════════════════════════════════════════
@@ -2700,21 +2674,24 @@ function openRd() {
 }
 
 async function saveFile() {
+  if (!currentSurveyId) { setStatus('⚠ No survey loaded', ''); return; }
   if (showRaw) syncRaw();
-  const text = JSON.stringify(data, null, 2);
-  if (!currentSurveyId) { dlFallback(text); return; }
+  if (!data.length) { setStatus('⚠ Nothing to save', ''); return; }
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
   try {
     const res = await fetch(`/api/surveys/${currentSurveyId}/datatable`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: text,
+      body: JSON.stringify(data, null, 2),
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'save failed');
     dirty = false;
-    setStatus('datatable.json saved', 'saved');
+    setStatus('✓ Data table saved', 'saved');
   } catch(e) {
     setStatus('⚠ Save error: ' + e.message, '');
-    dlFallback(text);
+  } finally {
+    btn.disabled = false;
   }
 }
 
