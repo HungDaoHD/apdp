@@ -6,3 +6,4 @@ python-dotenv>=1.0.0
 surveyflow>=0.1.0
 openpyxl>=3.1.0
 pandas>=2.0.0
+supabase>=2.12.0,<2.13.0

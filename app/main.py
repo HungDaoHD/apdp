@@ -21,10 +21,16 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
+    return (_STATIC / "projects.html").read_text(encoding="utf-8")
+
+
+@app.get("/editor", response_class=HTMLResponse)
+async def editor():
     return (_STATIC / "editor.html").read_text(encoding="utf-8")
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", port=8000, reload=True)
 

@@ -248,6 +248,14 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 .cfg-section{border-top:1px solid #e8eaed;padding-top:12px}
 .cfg-title{font-size:11px;font-weight:700;color:#444;margin-bottom:10px;display:flex;align-items:center;gap:6px}
 
+/* ── Loading overlay ────────────────────────────── */
+#loadingOverlay{position:fixed;inset:0;background:rgba(16,25,56,.72);z-index:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;backdrop-filter:blur(2px)}
+#loadingOverlay.hidden{display:none}
+.lov-spin{width:36px;height:36px;border:3.5px solid rgba(255,255,255,.2);border-top-color:#a8c7fa;border-radius:50%;animation:lovspin .75s linear infinite}
+@keyframes lovspin{to{transform:rotate(360deg)}}
+.lov-msg{color:#c5d8f5;font-size:13px;font-weight:500;text-align:center;max-width:300px;line-height:1.5}
+.lov-sub{color:#6e8cb0;font-size:11px}
+
 /* ── Preview panel ──────────────────────────────── */
 #previewPanel{position:fixed;inset:0;z-index:500;background:#f0f2f5;display:none;flex-direction:column}
 .pvhdr{background:#16213e;color:white;padding:0 14px;height:44px;display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -255,17 +263,20 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 .pvtabs{display:flex;gap:2px;flex:1;overflow-x:auto}
 .pvtab{padding:4px 14px;border-radius:4px 4px 0 0;border:none;background:#2d3748;color:#aaa;cursor:pointer;font-size:11px;font-weight:600;transition:all .12s}
 .pvtab.on{background:#1a73e8;color:white}
-.pvbody{flex:1;overflow:auto;padding:14px}
+.pvbody{flex:1;overflow:hidden;padding:0;display:flex;flex-direction:column}
 /* Datatable HTML */
-.dt-wrap{overflow-x:auto}
+.dt-wrap{overflow:auto;flex:1;padding:14px}
 .dt-tbl{border-collapse:collapse;font-size:11px;white-space:nowrap;min-width:600px}
 .dt-tbl th,.dt-tbl td{border:1px solid #d8dde6;padding:3px 8px}
+.dt-tbl thead th{position:sticky;top:0;z-index:5}
 .dt-stub-hdr{background:#1a1a2e;color:white;min-width:200px;max-width:260px;position:sticky;left:0;z-index:2}
+.dt-tbl thead .dt-stub-hdr{z-index:20}
 .dt-bh{background:#16213e;color:#dde;text-align:center;font-size:10px;font-weight:700}
 .dt-bh1{background:#1a3050;color:#a8c7fa;border-bottom:2px solid #4285f4}
 .dt-bh2{background:#16213e;color:#c5d8f5}
 .dt-bh3{background:#0f172a;color:#9ab;font-weight:400;font-size:10px}
-.dt-qhdr{background:#1a3050;color:#a8c7fa;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0}
+.dt-qhdr{background:#1a3050;color:#cce4ff;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0}
+.dt-qcode{color:#93b4d9;font-weight:400;font-size:10px;margin-right:2px}
 .dt-subhdr{background:#253045;color:#93b4d9;font-size:10px;padding:3px 10px 3px 18px;position:sticky;left:0}
 .dt-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
 .dt-rlbl-base{font-weight:700;color:#333;background:#f0f2f5}
@@ -277,46 +288,31 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 .dt-sig{color:#c0392b;font-size:8px;font-weight:700;margin-left:2px}
 .dt-type{font-size:9px;background:#253870;color:#a8c7fa;padding:1px 5px;border-radius:3px;margin-left:6px;font-weight:400}
 
-/* Survey panel */
-.sp-ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;display:flex;align-items:center;justify-content:center}
-.sp-dlg{background:white;border-radius:10px;width:640px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25)}
-.sp-hd{padding:14px 18px;border-bottom:1px solid #e0e4ea;display:flex;align-items:center;justify-content:space-between}
-.sp-hd strong{font-size:14px;color:#1a1a2e}
-.sp-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px;overflow:hidden;flex:1}
-.sp-row{display:flex;gap:8px}
-.sp-inp{flex:1;padding:7px 10px;border:1px solid #dde1e7;border-radius:5px;font-size:13px;outline:none;font-family:inherit}
-.sp-inp:focus{border-color:#1a73e8}
-.sp-res{flex:1;overflow-y:auto;border:1px solid #e0e4ea;border-radius:6px;min-height:180px;max-height:320px}
-.sp-item{padding:9px 12px;cursor:pointer;border-bottom:1px solid #f0f2f5;transition:background .1s}
-.sp-item:hover{background:#eef4ff}
-.sp-item.sel{background:#e8f0fe;border-left:3px solid #1a73e8}
-.sp-item-title{font-size:12px;font-weight:600;color:#1a1a2e}
-.sp-item-sub{font-size:10px;color:#888;margin-top:2px}
-.sp-empty{padding:30px;text-align:center;color:#bbb;font-size:12px}
-.sp-act{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid #e0e4ea;align-items:center}
-.sp-log{font-size:11px;color:#555;padding:6px 10px;background:#f8f9fb;border-radius:4px;max-height:80px;overflow-y:auto;font-family:monospace;white-space:pre-wrap;flex:1}
 </style>
 </head>
 <body>
 
+<!-- Loading overlay -->
+<div id="loadingOverlay">
+  <div class="lov-spin"></div>
+  <div class="lov-msg" id="loadingMsg">Loading survey…</div>
+  <div class="lov-sub" id="loadingSub"></div>
+</div>
+
 <div class="hdr">
-  <span class="hdr-logo">📊 SurveyFlow Editor</span>
+  <a href="/" class="btn btn-gho btn-sm" style="text-decoration:none">← Projects</a>
   <div class="sep"></div>
-  <button class="btn btn-pri btn-sm" onclick="openSurveyPanel()">🔍 Survey</button>
-  <span class="fbadge none" id="surveyBadge" style="max-width:200px">Chưa chọn survey</span>
+  <span class="fbadge none" id="surveyBadge" style="max-width:260px">Loading…</span>
   <div class="sep"></div>
-  <span class="fbadge none" id="fetchBadge">fetch: —</span>
-  <span class="fbadge none" id="ingestBadge" style="margin-left:4px">ingest: —</span>
+  <span class="fbadge none" id="refreshBadge">data: —</span>
+  <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled>🔄 Refresh</button>
   <div class="sep"></div>
-  <span class="fbadge none" id="dtBadge">datatable: —</span>
-  <button class="btn btn-gho btn-sm" onclick="openDT()" id="loadDtBtn" disabled>📂 Load DT</button>
   <button class="btn" id="runBtn" disabled onclick="showPreview()"
     style="background:#7c3aed;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
   <div class="gap"></div>
   <button class="btn btn-gho" onclick="toggleQP()" id="qpToggle">◀ Questions</button>
-  <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save</button>
-  <button class="btn btn-pri btn-sm" onclick="runPipeline()" id="pipelineBtn" disabled>⚙ Run</button>
-  <button class="btn btn-grn btn-sm" onclick="downloadServerXlsx()" id="dlServerBtn" disabled>⬇ xlsx</button>
+  <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save Data Table</button>
+  <button class="btn btn-pri btn-sm" onclick="downloadXlsxDirect()" id="downloadBtn" disabled>⬇ Download</button>
   <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn">{} Raw</button>
 </div>
 
@@ -326,7 +322,7 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
     <div class="qpi">
       <div class="qph">
         <div class="qpt">Questions palette</div>
-        <input class="qps" id="qSearch" type="text" placeholder="Tìm câu hỏi…" oninput="renderQL()">
+        <input class="qps" id="qSearch" type="text" placeholder="Search questions…" oninput="renderQL()">
         <div class="qpf">
           <button class="qfb on" data-f="all"    onclick="setQF('all')">All</button>
           <button class="qfb"    data-f="SA"     onclick="setQF('SA')">SA</button>
@@ -336,7 +332,7 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
         </div>
       </div>
       <div class="ql" id="qList">
-        <div class="qempty">Mở <strong>metadata.json</strong><br>để xem danh sách câu hỏi</div>
+        <div class="qempty">Open <strong>metadata.json</strong><br>to view the question list</div>
       </div>
     </div>
   </div>
@@ -355,10 +351,9 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
     <div class="welcome">
       <div class="welico">📋</div>
       <div class="welh2">datatable.json Editor</div>
-      <div class="welp">Mở <strong>metadata.json</strong> → kéo hoặc click câu hỏi vào Layout.<br>
-        Mở <strong>datatable.json</strong> để chỉnh sửa file hiện có.</div>
+      <div class="welp">Drag or click questions from the palette into the Layout.<br>
+        Use <strong>Load DT</strong> to load an existing datatable config.</div>
       <div style="display:flex;gap:9px;margin-top:6px">
-        <button class="btn btn-pri" onclick="openSurveyPanel()">🔍 Chọn Survey</button>
         <button class="btn btn-sec" onclick="openDT()">📂 Load Datatable</button>
       </div>
     </div>
@@ -367,9 +362,9 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 
 <div class="sbar" id="sbar">
   <div class="dot"></div>
-  <span class="msg">Chưa mở file nào</span>
+  <span class="msg">No file open</span>
   <span style="flex:1"></span>
-  <span style="color:#ccc" id="shortcut">Ctrl+S để lưu</span>
+  <span style="color:#ccc" id="shortcut">Ctrl+S to save</span>
 </div>
 
 <!-- Modal -->
@@ -394,38 +389,13 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 <input type="file" id="dtIn"   accept=".json" style="display:none" onchange="onDTIn(event)">
 <input type="file" id="rdIn"   accept=".csv"  style="display:none" onchange="onRdIn(event)">
 
-<!-- Survey panel modal -->
-<div class="sp-ov" id="surveyPanel" style="display:none">
-  <div class="sp-dlg">
-    <div class="sp-hd">
-      <strong>🔍 Chọn Survey</strong>
-      <button class="mbtn-close" onclick="closeSurveyPanel()">&#x2715;</button>
-    </div>
-    <div class="sp-body">
-      <div class="sp-row">
-        <input class="sp-inp" id="spSearch" placeholder="Tìm tên survey…" onkeydown="if(event.key==='Enter')doSurveySearch()">
-        <button class="btn btn-pri btn-sm" onclick="doSurveySearch()">🔍 Tìm</button>
-      </div>
-      <div class="sp-res" id="spResults">
-        <div class="sp-empty">Nhập từ khóa và nhấn Tìm</div>
-      </div>
-    </div>
-    <div class="sp-act" id="spActions" style="display:none">
-      <button class="btn btn-pri btn-sm" onclick="doFetch()" id="spFetchBtn">📥 Fetch từ QMe</button>
-      <button class="btn btn-sec btn-sm" onclick="doIngest()" id="spIngestBtn" disabled>&#x2699; Ingest</button>
-      <button class="btn btn-suc btn-sm" onclick="doSelectSurvey()" id="spSelectBtn" disabled>&#x2713; Load &amp; Đóng</button>
-      <div class="sp-log" id="spLog" style="display:none"></div>
-    </div>
-  </div>
-</div>
-
 <!-- Preview panel -->
 <div id="previewPanel">
   <div class="pvhdr">
     <span class="pvhdr-title">📊 Preview</span>
     <div class="pvtabs" id="pvTabs"></div>
     <button class="btn btn-grn btn-sm" onclick="downloadXlsx()" style="flex-shrink:0">⬇ xlsx</button>
-    <button class="btn btn-sec btn-sm" onclick="closePreview()" style="flex-shrink:0">✕ Đóng</button>
+    <button class="btn btn-sec btn-sm" onclick="closePreview()" style="flex-shrink:0">✕ Close</button>
   </div>
   <div class="pvbody">
     <div class="dt-wrap" id="pvContent"></div>
@@ -438,8 +408,9 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 // ════════════════════════════════════════════════════
 const HAS_FS   = typeof window.showOpenFilePicker === 'function';
 let metaHandle = null, dtHandle = null;
-let metadata   = [];       // flat array of normalized question objects
-let lastFQ     = [];       // result of last filteredQ() — used for index-based drag
+let metadata         = [];   // flat array of normalized question objects
+let metaSurveyTitle  = '';   // top-level title from metadata.json (used as default table title)
+let lastFQ           = [];   // result of last filteredQ() — used for index-based drag
 let data       = [];       // datatable.json array
 let activeCfg  = 0;
 let activeTab  = 'layout';
@@ -498,15 +469,14 @@ function parseMeta(text, name) {
   try {
     const raw = JSON.parse(text);
     metadata = normalizeMeta(raw);
+    // metadata.json top-level: { title, english_title, survey_id, questions, … }
+    metaSurveyTitle = raw.title || raw.english_title || '';
     buildMetaSubMap();    // build sub-question lookup
-    const b = document.getElementById('metaBadge');
-    b.textContent = 'meta: ' + name.replace(/\.json$/i,'');
-    b.className = 'fbadge ok';
-    setStatus(`Metadata: ${metadata.length} câu hỏi`, 'saved');
+    setStatus(`Metadata: ${metadata.length} questions loaded`, 'saved');
     renderQL();
     if (data.length) renderMain();
     checkRunBtn();
-  } catch(e) { setStatus('⚠ Metadata lỗi: '+e.message,''); }
+  } catch(e) { setStatus('⚠ Metadata error: '+e.message,''); }
 }
 
 /** Normalize any metadata.json or definition.json → flat array */
@@ -552,12 +522,9 @@ function loadDT(text, name) {
     if (!Array.isArray(p)) p = [p];
     data = p; activeCfg = 0; activeTab = 'layout'; dirty = false;
     document.getElementById('saveBtn').disabled = false;
-    const b = document.getElementById('dtBadge');
-    b.textContent = 'dt: ' + name.replace(/\.json$/i,'');
-    b.className = 'fbadge ok';
-    setStatus('Đã mở: '+name, 'saved');
+    setStatus('Opened: '+name, 'saved');
     render(); checkRunBtn();
-  } catch(e) { setStatus('⚠ Datatable lỗi: '+e.message,''); }
+  } catch(e) { setStatus('⚠ Datatable error: '+e.message,''); }
 }
 async function saveFile() {
   if (showRaw) syncRaw();
@@ -570,7 +537,7 @@ async function saveFile() {
     try {
       const w = await dtHandle.createWritable();
       await w.write(text); await w.close();
-      dirty = false; setStatus('Đã lưu: '+dtHandle.name,'saved'); return;
+      dirty = false; setStatus('Saved: '+dtHandle.name,'saved'); return;
     } catch(e) {}
   }
   dlFallback(text);
@@ -580,7 +547,7 @@ function dlFallback(text) {
     href: URL.createObjectURL(new Blob([text],{type:'application/json'})),
     download: dtHandle?.name||'datatable.json'
   });
-  a.click(); dirty=false; setStatus('Đã download','saved');
+  a.click(); dirty=false; setStatus('Downloaded','saved');
 }
 
 // ════════════════════════════════════════════════════
@@ -674,8 +641,8 @@ function renderQL() {
   lastFQ = filteredQ();
   if (!lastFQ.length) {
     el.innerHTML = metadata.length
-      ? '<div class="qempty">Không tìm thấy<br>câu hỏi phù hợp</div>'
-      : '<div class="qempty">Mở <strong>metadata.json</strong><br>để xem danh sách</div>';
+      ? '<div class="qempty">No matching<br>questions found</div>'
+      : '<div class="qempty">Open <strong>metadata.json</strong><br>to view the list</div>';
     return;
   }
   el.innerHTML = lastFQ.map((q, idx) => {
@@ -936,7 +903,7 @@ function showQPicker(title, sub, cb) {
        oninput="filterQPicker(this.value)"
        style="width:100%;padding:7px 10px;border:1.5px solid #d8dde6;border-radius:6px;font-size:12px;margin-bottom:6px;box-sizing:border-box">
      <div id="qpList" class="qplist">${_renderQPickerItems(qs)}</div>`,
-    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>`
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>`
   );
   // Focus search after render
   setTimeout(()=>document.getElementById('qpSearch')?.focus(), 50);
@@ -953,7 +920,7 @@ function filterQPicker(q) {
   if (el) el.innerHTML = _renderQPickerItems(_qPickerList);
 }
 function _renderQPickerItems(qs) {
-  if (!qs.length) return '<div class="qpi-empty">Không tìm thấy câu hỏi</div>';
+  if (!qs.length) return '<div class="qpi-empty">No questions found</div>';
   return qs.map((q,i) => {
     const t   = qType(q);
     const lbl = h(q.label||'');
@@ -1033,8 +1000,8 @@ function onQClick(idx) {
   // Stats selection (for stub config before adding)
   const statsHtml = `
     <div class="cfg-section" id="qiStatsSec" ${!hasDT?'style="display:none"':''}>
-      <div class="cfg-title">📋 Cấu hình Stub</div>
-      <label class="fl">Stats khi thêm vào Stub</label>
+      <div class="cfg-title">📋 Stub Settings</div>
+      <label class="fl">Default stats when added to Stub</label>
       <div class="sgrid" id="qiStats">
         ${STATS_ALL.map(s=>`<label class="schip">
           <input type="checkbox" value="${s}" ${defSt.includes(s)?'checked':''}> ${s}</label>`).join('')}
@@ -1045,13 +1012,13 @@ function onQClick(idx) {
     <div class="add-btns">
       ${canBanner ? `<button class="btn btn-blu" onclick="qInfoAddBanner()">➕ Add to Banner</button>` : ''}
       <button class="btn btn-grn" onclick="qInfoAddStub()">➕ Add to Stub</button>
-    </div>` : `<div style="color:#bbb;font-size:11px;margin-top:10px">Mở datatable.json trước để thêm câu hỏi</div>`;
+    </div>` : `<div style="color:#bbb;font-size:11px;margin-top:10px">Open datatable.json first to add questions</div>`;
 
   showModal(
     typeIcon(t) + ' ' + (q.label||'?'),
     title || t,
     infoHtml + statsHtml + addBtnsHtml,
-    `<button class="btn btn-sec" onclick="closeModal()">Đóng</button>`
+    `<button class="btn btn-sec" onclick="closeModal()">Close</button>`
   );
 }
 
@@ -1085,8 +1052,8 @@ function openBannerModal(idx) {
     '📊 Banner Column',
     item.label || item.question || '',
     renderBannerModalBody(modalSt.item, mq),
-    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>
-     <button class="btn btn-pri" onclick="saveModal()">✓ Lưu</button>`,
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
     {noBackdrop:true}
   );
 }
@@ -1100,8 +1067,8 @@ function openStubModal(idx) {
     icon + ' ' + (item.row_group ? 'Row Group' : 'Stub Row'),
     item.question || '',
     renderStubModalBody(modalSt.item, mq),
-    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>
-     <button class="btn btn-pri" onclick="saveModal()">✓ Lưu</button>`
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`
   );
 }
 
@@ -1114,14 +1081,14 @@ function openBannerLevelModal(colIdx, lvIdx) {
     `📊 Level ${lvIdx+2} — ${h(col.label||col.question||'?')}`,
     `nested under Lv ${lvIdx+1}`,
     renderBannerModalBody(modalSt.item, mq),
-    `<button class="btn btn-sec" onclick="closeModal()">Hủy</button>
-     <button class="btn btn-pri" onclick="saveModal()">✓ Lưu</button>`,
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
     {noBackdrop:true}
   );
 }
 function addBannerLevel(colIdx, lvIdx) {
   const colName = cfg().banner[colIdx]?.label || `col ${colIdx}`;
-  showQPicker(`➕ Level ${lvIdx+2} — ${colName}`, `Chọn câu hỏi để lồng dưới Lv ${lvIdx+1}`, q => {
+  showQPicker(`➕ Level ${lvIdx+2} — ${colName}`, `Select question to nest under Lv ${lvIdx+1}`, q => {
     _setBannerLevelFromQ(colIdx, lvIdx, q);
     // Open config modal to edit groups
     setTimeout(() => openBannerLevelModal(colIdx, lvIdx), 100);
@@ -1162,7 +1129,7 @@ function renderBannerModalBody(item, mq) {
   </div>
   <div id="mb_groups">
     ${groups.map((g,i)=>renderModalGroup(g,i)).join('')}
-    ${!groups.length?'<div style="font-size:11px;color:#bbb;padding:6px 0">Chưa có groups — toàn bộ respondents dùng làm 1 column</div>':''}
+    ${!groups.length?'<div style="font-size:11px;color:#bbb;padding:6px 0">No groups — all respondents used as 1 column</div>':''}
   </div>`;
 }
 
@@ -1170,7 +1137,7 @@ function renderStubModalBody(item, mq) {
   if (item.row_group) {
     const items = item.items||[];
     return `<div style="color:#888;font-size:12px">
-      <p style="margin-bottom:10px">Row Group — ${items.length} câu. Chỉnh sửa trong Raw JSON.</p>
+      <p style="margin-bottom:10px">Row Group — ${items.length} questions. Edit in Raw JSON.</p>
       <div style="display:flex;flex-wrap:wrap;gap:5px">
         ${items.map(it=>`<span style="background:#f3e5f5;color:#7b1fa2;padding:3px 10px;border-radius:5px;font-size:12px">${h(it.question||'?')}</span>`).join('')}
       </div>
@@ -1244,7 +1211,7 @@ function renderModalGroup(g, i) {
     <div class="sdh" style="cursor:grab;padding:0 4px;font-size:15px;color:#ccc;align-self:flex-end;padding-bottom:6px" title="Drag to reorder">⠿</div>
     <div class="fg" style="flex:1.5"><label class="fl">Label</label>
       <input type="text" value="${a(g.label||'')}" oninput="mGrpF(${i},'label',this.value)" placeholder="Male"></div>
-    <div class="fg"><label class="fl">${isMulti?'Values (phẩy)':'Value'}</label>
+    <div class="fg"><label class="fl">${isMulti?'Values (comma)':'Value'}</label>
       <input type="text" value="${a(val)}" oninput="mGrpV(${i},this.value)" placeholder="${isMulti?'1,2,3':'1'}"></div>
     <div><label class="fl">Mode</label>
       <button class="btn btn-sec btn-xs" onclick="mGrpMode(${i})">${isMulti?'→ Single':'→ Multi'}</button></div>
@@ -1312,7 +1279,7 @@ function _refreshGroups() {
   const grps = modalSt?.item?.groups || [];
   document.getElementById('mb_groups').innerHTML =
     grps.map((g,i) => renderModalGroup(g,i)).join('') ||
-    '<div style="font-size:11px;color:#bbb;padding:6px 0">Chưa có groups</div>';
+    '<div style="font-size:11px;color:#bbb;padding:6px 0">No groups</div>';
 }
 function mStatToggle(s,on) {
   const it=modalSt?.item; if (!it) return;
@@ -1399,7 +1366,7 @@ function render() { renderSidebar(); renderMain(); }
 
 function renderSidebar() {
   const el=document.getElementById('tbsList');
-  if (!data.length) { el.innerHTML='<div style="padding:10px 11px;color:#bbb;font-size:11px">Chưa có table config</div>'; return; }
+  if (!data.length) { el.innerHTML='<div style="padding:10px 11px;color:#bbb;font-size:11px">No table config</div>'; return; }
   el.innerHTML = data.map((c,i)=>`
     <div class="tbsi ${i===activeCfg?'on':''}" onclick="selCfg(${i})">
       <div class="tbsi-name">${h(c.sub_title||'Table '+(i+1))}</div>
@@ -1411,14 +1378,14 @@ function renderMain() {
   const el = document.getElementById('main');
   if (!data.length) {
     el.innerHTML=`<div class="welcome"><div class="welico">📋</div>
-      <div class="welh2">Chưa có table config</div>
-      <div class="welp">Nhấn <strong>+ Add Table</strong> ở sidebar để tạo mới</div></div>`;
+      <div class="welh2">No table config</div>
+      <div class="welp">Click <strong>+ Add Table</strong> in the sidebar to create one</div></div>`;
     return;
   }
   if (showRaw) {
     el.innerHTML=`<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
       <span style="font-size:11px;color:#666">Raw JSON</span>
-      <button class="btn btn-sec btn-sm" onclick="syncRaw();render()">↺ Áp dụng</button></div>
+      <button class="btn btn-sec btn-sm" onclick="syncRaw();render()">↺ Apply</button></div>
       <textarea class="raw-ta" id="rawEd" spellcheck="false" style="height:calc(100vh - 155px)">${h(JSON.stringify(data,null,2))}</textarea>`;
     return;
   }
@@ -1429,7 +1396,7 @@ function renderMain() {
         <h2>${h(c.sub_title||'Table '+(activeCfg+1))}</h2>
         <p>${h(c.title||'—')}</p>
       </div>
-      <button class="btn btn-dan btn-xs" onclick="removeCfg(${activeCfg})">🗑 Xóa</button>
+      <button class="btn btn-dan btn-xs" onclick="removeCfg(${activeCfg})">🗑 Delete</button>
     </div>
     <div class="tabs">
       <button class="tab ${activeTab==='layout'?'on':''}" onclick="setTab('layout')">
@@ -1449,8 +1416,8 @@ function renderBannerGrid(banner) {
   const placingBar = placing ? `
     <div class="banner-placing-bar">
       <span>📌</span>
-      <span>Đang đặt <strong>${pLabel}</strong> — click ô trống hoặc kéo thả vào vị trí muốn</span>
-      <button class="btn btn-sec btn-xs" style="margin-left:auto" onclick="cancelBannerPlacement()">✕ Hủy</button>
+      <span>Placing <strong>${pLabel}</strong> — click an empty slot or drag to desired position</span>
+      <button class="btn btn-sec btn-xs" style="margin-left:auto" onclick="cancelBannerPlacement()">✕ Cancel</button>
     </div>` : '';
 
   if (!banner.length) {
@@ -1458,7 +1425,7 @@ function renderBannerGrid(banner) {
         ondragover="onBAreaDragOver(event)"
         ondragleave="onBAreaDragLeave(event)"
         ondrop="onBAreaDrop(event)">
-      <div class="drophint" style="padding:24px 0">⬅ Kéo câu hỏi vào đây hoặc click câu hỏi → Add to Banner</div>
+      <div class="drophint" style="padding:24px 0">⬅ Drag a question here or click question → Add to Banner</div>
     </div>`;
   }
 
@@ -1614,7 +1581,7 @@ function renderLayout(c) {
       ondragleave="onSAreaDragLeave(event)"
       ondrop="onSAreaDrop(event)">
       ${stubRows}
-      ${!stubRows?'<div class="drophint">⬅ Kéo câu hỏi từ panel trái vào đây, hoặc click câu hỏi → Add to Stub</div>':''}
+      ${!stubRows?'<div class="drophint">⬅ Drag questions from the left panel here, or click question → Add to Stub</div>':''}
     </div>
   </div>`;
 }
@@ -1642,7 +1609,7 @@ function renderSettings(c) {
       <div class="fr" style="align-items:center;margin-bottom:12px">
         <div class="tw">
           <label class="tgl"><input type="checkbox" ${sigOn?'checked':''} onchange="setSig('enabled',this.checked)"><span class="tgls"></span></label>
-          <span style="font-size:12px;color:${sigOn?'#1e8449':'#bbb'}">${sigOn?'Bật':'Tắt'}</span>
+          <span style="font-size:12px;color:${sigOn?'#1e8449':'#bbb'}">${sigOn?'On':'Off'}</span>
         </div>
       </div>
       <div class="fr">
@@ -1665,15 +1632,15 @@ function renderSettings(c) {
   <div class="card">
     <div class="cardh">
       <div class="chl">🏷 Banner Matrix ${bm?`<span style="font-size:10px;background:#e8f0fe;color:#1565c0;padding:2px 8px;border-radius:10px">${h(bm.question||'?')} — ${h(bm.label||'')}</span>`:''}</div>
-      ${bm?`<button class="btn btn-dan btn-xs" onclick="removeBM()">Xóa</button>`:`<button class="btn btn-sec btn-xs" onclick="addBM()">+ Thêm</button>`}
+      ${bm?`<button class="btn btn-dan btn-xs" onclick="removeBM()">Remove</button>`:`<button class="btn btn-sec btn-xs" onclick="addBM()">+ Add</button>`}
     </div>
     ${bm?`<div class="cardb">
       <div class="fr">
         <div class="fg"><label class="fl">Label</label><input type="text" value="${a(bm.label||'')}" oninput="setBM('label',this.value)"></div>
         <div class="fg"><label class="fl">Question</label><input type="text" value="${a(bm.question||'')}" oninput="setBM('question',this.value)" placeholder="Q17"></div>
       </div>
-      <div style="font-size:11px;color:#888">${bm.groups?`${bm.groups.length} groups (chỉnh trong Raw JSON)`:'Tự động lấy tất cả rows từ metadata'}</div>
-    </div>`:`<div class="cardb" style="color:#bbb;font-size:12px">Chưa có banner_matrix</div>`}
+      <div style="font-size:11px;color:#888">${bm.groups?`${bm.groups.length} groups (edit in Raw JSON)`:'Auto-load all rows from metadata'}</div>
+    </div>`:`<div class="cardb" style="color:#bbb;font-size:12px">No banner_matrix</div>`}
   </div>
   <div class="card">
     <div class="cardh">
@@ -1681,10 +1648,10 @@ function renderSettings(c) {
       <button class="btn btn-sec btn-xs" onclick="addSheet()">+ Sheet</button>
     </div>
     <div class="cardb">
-      ${!tables.length?'<div style="color:#bbb;font-size:12px;padding:8px 0">Chưa có sheet</div>':''}
+      ${!tables.length?'<div style="color:#bbb;font-size:12px;padding:8px 0">No sheets</div>':''}
       ${tables.map((t,i)=>`
         <div class="shrow ${t.enabled===false?'dis':''}">
-          <div><label class="fl">Bật</label>
+          <div><label class="fl">Enable</label>
             <label class="tgl"><input type="checkbox" ${t.enabled!==false?'checked':''} onchange="setSheet(${i},'enabled',this.checked)"><span class="tgls"></span></label></div>
           <div class="fg" style="flex:.9"><label class="fl">Sheet</label>
             <input type="text" value="${a(t.sheet||'')}" oninput="setSheet(${i},'sheet',this.value)"></div>
@@ -1695,8 +1662,8 @@ function renderSettings(c) {
             </select></div>
           <div class="fg" style="flex:.7"><label class="fl">Show sig</label>
             <select onchange="setSheet(${i},'show_sig',this.value==='true')">
-              <option value="false" ${!t.show_sig?'selected':''}>Không</option>
-              <option value="true" ${t.show_sig?'selected':''}>Có</option>
+              <option value="false" ${!t.show_sig?'selected':''}>No</option>
+              <option value="true" ${t.show_sig?'selected':''}>Yes</option>
             </select></div>
           <div><label class="fl">&nbsp;</label>
             <button class="btn btn-dan btn-xs" onclick="removeSheet(${i})">✕</button></div>
@@ -1739,7 +1706,7 @@ function removeBM() { delete cfg().banner_matrix; markDirty(); renderMain(); }
 function setBM(k,v) { if(cfg().banner_matrix) cfg().banner_matrix[k]=v; markDirty(); }
 
 function addBannerItem() {
-  showQPicker('➕ Add Header Column', 'Chọn câu hỏi cho cột mới', q => {
+  showQPicker('➕ Add Header Column', 'Select question for new column', q => {
     addBannerFromQ(q);
     // Open config modal so user can edit groups
     setTimeout(() => {
@@ -1783,7 +1750,8 @@ function quickSheet(sh,ct,sig) {
   markDirty(); renderMain();
 }
 function addCfg() {
-  data.push({title:'Survey - Data Table',sub_title:'Table '+(data.length+1),
+  const autoTitle = metaSurveyTitle ? `${metaSurveyTitle} - Data Table` : 'Survey - Data Table';
+  data.push({title: autoTitle, sub_title: 'Table ' + (data.length + 1),
     significance_test:{enabled:false,levels:[90,95],method:'independent'},
     banner:[{label:'Total',filter:null}],stub:[],
     tables:[{sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true}]});
@@ -1792,7 +1760,7 @@ function addCfg() {
   markDirty(); render();
 }
 function removeCfg(i) {
-  if(!confirm(`Xóa table "${data[i].sub_title||'Table '+(i+1)}"?`)) return;
+  if(!confirm(`Delete table "${data[i].sub_title||'Table '+(i+1)}"?`)) return;
   data.splice(i,1); activeCfg=Math.max(0,i-1); markDirty(); render();
 }
 
@@ -1817,7 +1785,7 @@ function syncRaw() {
 // ════════════════════════════════════════════════════
 function h(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function a(s){ return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
-function markDirty(){ dirty=true; setStatus('Có thay đổi chưa lưu — Ctrl+S để lưu','dirty'); }
+function markDirty(){ dirty=true; setStatus('Unsaved changes — Ctrl+S to save','dirty'); }
 function setStatus(msg,type){ const el=document.getElementById('sbar'); el.className='sbar '+(type||''); el.querySelector('.msg').textContent=msg; }
 
 document.addEventListener('keydown', e => {
@@ -2081,7 +2049,33 @@ function computeChoiceStats(rows, col, choiceCodes) {
   const mean = totalN > 0 ? totalWgt / totalN : 0;
   const variance = totalN > 0
     ? counts.reduce((s,x) => s + x.count * (x.code - mean)**2, 0) / totalN : 0;
-  return { base, counts, t2b, b2b, mean, std: Math.sqrt(variance) };
+  // MA selection-count stats (# choices selected per respondent)
+  const selCounts = rows.map(r => {
+    const v = r[col];
+    if (v === null || v === undefined || String(v).trim() === '' || String(v).trim() === 'nan') return null;
+    const n = cellVals(v).length;
+    return n > 0 ? n : null;
+  }).filter(v => v !== null);
+  const ma_mean = selCounts.length > 0 ? selCounts.reduce((s,v)=>s+v,0)/selCounts.length : 0;
+  const ma_std  = selCounts.length > 0 ? Math.sqrt(selCounts.reduce((s,v)=>s+(v-ma_mean)**2,0)/selCounts.length) : 0;
+  const ma_min  = selCounts.length > 0 ? Math.min(...selCounts) : 0;
+  const ma_max  = selCounts.length > 0 ? Math.max(...selCounts) : 0;
+  return { base, counts, t2b, b2b, mean, std: Math.sqrt(variance), ma_mean, ma_std, ma_min, ma_max };
+}
+
+function computeNumericStats(rows, col) {
+  const vals = rows.map(r => {
+    const v = r[col];
+    if (v === null || v === undefined || String(v).trim() === '' || String(v).trim() === 'nan') return null;
+    const n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }).filter(v => v !== null);
+  const base = vals.length;
+  if (!base) return { base: 0, mean: 0, std: 0, se: 0, min: 0, max: 0 };
+  const mean = vals.reduce((s, v) => s + v, 0) / base;
+  const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / base;
+  const std = Math.sqrt(variance);
+  return { base, mean, std, se: std / Math.sqrt(base), min: Math.min(...vals), max: Math.max(...vals) };
 }
 
 // ── Significance test (z-test for proportions) ───────
@@ -2114,7 +2108,7 @@ function fmtPct(v) { return (isNaN(v)||v===null) ? '-' : v.toFixed(1)+'%'; }
 function fmtNum(v) { return (isNaN(v)||v===null) ? '-' : v.toFixed(2); }
 
 // ── Build row array for one flat question block ───────
-function buildRows(stats, choices, colData, cellContent, showSig, sigLevels) {
+function buildRows(stats, choices, colData, cellContent, showSig, sigLevels, isMA = false) {
   const rows = [];
   if (stats.includes('base')) {
     rows.push({ label:'Base', type:'base', cells: colData.map(cd => ({ display:String(cd.base), raw:cd.base })) });
@@ -2130,7 +2124,7 @@ function buildRows(stats, choices, colData, cellContent, showSig, sigLevels) {
     });
     let sigs = null;
     if (showSig) sigs = computeSig(cells.map(c=>({count:c.count,base:c.base})), sigLevels);
-    rows.push({ label: i18nStr(ch.label)||String(ch.code), type:'choice', cells, sigs });
+    rows.push({ label: `${ch.code}. ${i18nStr(ch.label)||String(ch.code)}`, type:'choice', cells, sigs });
   });
   if (stats.includes('t2b')) rows.push({ label:'T2B', type:'summary', cells: colData.map(cd=>{
     const v = cellContent==='count'?cd.t2b:(cd.base>0?cd.t2b/cd.base*100:0);
@@ -2140,8 +2134,21 @@ function buildRows(stats, choices, colData, cellContent, showSig, sigLevels) {
     const v = cellContent==='count'?cd.b2b:(cd.base>0?cd.b2b/cd.base*100:0);
     return { display:cellContent==='count'?String(cd.b2b):fmtPct(v), raw:v };
   })});
+  if (stats.includes('mean')) rows.push({ label:'Mean', type:'summary', cells: colData.map(cd=>{ const v=isMA?cd.ma_mean:cd.mean; return { display:fmtNum(v), raw:v }; }) });
+  if (stats.includes('std'))  rows.push({ label:'Std',  type:'summary', cells: colData.map(cd=>{ const v=isMA?cd.ma_std:cd.std;   return { display:fmtNum(v), raw:v }; }) });
+  if (stats.includes('min'))  rows.push({ label:'Min',  type:'summary', cells: colData.map(cd=>{ const v=isMA?cd.ma_min:0;        return { display:fmtNum(v), raw:v }; }) });
+  if (stats.includes('max'))  rows.push({ label:'Max',  type:'summary', cells: colData.map(cd=>{ const v=isMA?cd.ma_max:0;        return { display:fmtNum(v), raw:v }; }) });
+  return rows;
+}
+
+function buildNumericRows(stats, colData) {
+  const rows = [];
+  if (stats.includes('base')) rows.push({ label:'Base', type:'base',    cells: colData.map(cd=>({ display:String(cd.base), raw:cd.base })) });
   if (stats.includes('mean')) rows.push({ label:'Mean', type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.mean), raw:cd.mean })) });
   if (stats.includes('std'))  rows.push({ label:'Std',  type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.std),  raw:cd.std  })) });
+  if (stats.includes('se'))   rows.push({ label:'SE',   type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.se),   raw:cd.se   })) });
+  if (stats.includes('min'))  rows.push({ label:'Min',  type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.min),  raw:cd.min  })) });
+  if (stats.includes('max'))  rows.push({ label:'Max',  type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.max),  raw:cd.max  })) });
   return rows;
 }
 
@@ -2158,12 +2165,17 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
       return computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels);
     }
     const col  = qToCol(mq.label);
+    if (t === 'NUM' || t === 'ranking' || t === 'multiplenumber') {
+      const colData = bannerCols.map(bc => computeNumericStats(bc.rows, col));
+      return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qLabel, answerType: t,
+        rows: buildNumericRows(stats, colData) };
+    }
     const ch   = qChoices(mq);
     const selCodes = stubItem.choice_codes ? stubItem.choice_codes.map(String) : null;
     const filtCh = selCodes ? ch.filter(c=>selCodes.includes(String(c.code))) : ch;
     const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, filtCh.map(c=>c.code)));
-    return { type:'flat', qLabel: stubItem.label||qLabel, answerType:t,
-      rows: buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels) };
+    return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qLabel, answerType:t,
+      rows: buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels, t==='SA'||t==='MA') };
   }
   // Sub-question reference (e.g. "Q17_r1")
   const sq = metaSubMap[qLabel];
@@ -2171,14 +2183,16 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
     const col    = qToCol(sq.label);
     const ch     = qChoices(sq);
     const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, ch.map(c=>c.code)));
-    return { type:'flat', qLabel: stubItem.label||qLabel, answerType: sq.answer_type||'',
+    return { type:'flat', qCode: qLabel, qLabel: stubItem.label||qLabel, answerType: sq.answer_type||'',
       rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels) };
   }
   return null;
 }
 
 function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels) {
-  const stats    = stubItem.stats || ['base','percent'];
+  const stats      = stubItem.stats || ['base','percent'];
+  const parentType = qType(mq);
+  const isMA       = parentType === 'Matrix_MA' || parentType === 'Matrix_SA';
   const subQs    = mq.sub_questions || {};
   const children = mq.children || Object.keys(subQs);
   const subBlocks = children.map(key => {
@@ -2186,9 +2200,9 @@ function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigL
     const col    = qToCol(sq.label);
     const ch     = qChoices(sq);
     const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, ch.map(c=>c.code)));
-    return { rowLabel: sq.row_label||sq.label, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels) };
+    return { rowLabel: sq.row_label||sq.label, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, isMA) };
   }).filter(Boolean);
-  return { type:'matrix', qLabel: stubItem.label||mq.label, answerType: qType(mq), subBlocks };
+  return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType: qType(mq), subBlocks };
 }
 
 // ── Full table computation ───────────────────────────
@@ -2219,14 +2233,17 @@ function renderTableHTML(tableData) {
 
   let body = '';
   for (const block of blocks) {
+    const qHead = block.qCode && block.qCode !== block.qLabel
+      ? `<span class="dt-qcode">${h(block.qCode)}</span> - ${h(block.qLabel)}`
+      : h(block.qLabel);
     if (block.type === 'matrix') {
-      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${h(block.qLabel)}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
+      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${qHead}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
       for (const sub of block.subBlocks) {
         body += `<tr><td class="dt-subhdr" colspan="${nCols+1}">↳ ${h(sub.rowLabel)}</td></tr>`;
         body += sub.rows.map(row => renderRow(row, nCols)).join('');
       }
     } else {
-      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${h(block.qLabel)}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
+      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${qHead}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
       body += block.rows.map(row => renderRow(row, nCols)).join('');
     }
   }
@@ -2266,7 +2283,7 @@ function showPreview() {
     document.getElementById('previewPanel').style.display = 'flex';
     renderPvContent();
   } catch(err) {
-    setStatus('⚠ Lỗi preview: '+err.message, '');
+    setStatus('⚠ Preview error: '+err.message, '');
     console.error(err);
   }
 }
@@ -2279,6 +2296,14 @@ function switchPvTab(i) {
 function renderPvContent() {
   const r = _pvResults?.[_pvActiveTab]; if (!r) return;
   document.getElementById('pvContent').innerHTML = renderTableHTML(r);
+  const tbl = document.querySelector('#pvContent .dt-tbl');
+  if (tbl) {
+    let top = 0;
+    tbl.querySelectorAll('thead tr').forEach(tr => {
+      tr.querySelectorAll('th').forEach(th => { th.style.top = top + 'px'; });
+      top += tr.offsetHeight;
+    });
+  }
 }
 
 // ── xlsx export ──────────────────────────────────────
@@ -2366,7 +2391,7 @@ function downloadXlsx() {
 
   const title = (cfg.title || 'datatable').replace(/[/\\?*[\]]/g, '_');
   XLSX.writeFile(wb, `${title}.xlsx`);
-  setStatus('xlsx đã download!', 'saved');
+  setStatus('xlsx downloaded!', 'saved');
 }
 (function init(){
   if (!HAS_FS) document.getElementById('shortcut').textContent='Ctrl+S → download';
@@ -2378,151 +2403,85 @@ function downloadXlsx() {
 // ════════════════════════════════════════════════════
 let currentSurveyId   = null;
 let currentSurveyName = null;
-let lastVersion       = null;
-let spSelected        = null;
 
-// ── survey panel ──────────────────────────────────
-
-function openSurveyPanel() {
-  document.getElementById('surveyPanel').style.display = 'flex';
-  const inp = document.getElementById('spSearch');
-  inp.value = '';
-  inp.focus();
-}
-function closeSurveyPanel() {
-  document.getElementById('surveyPanel').style.display = 'none';
-}
-
-async function doSurveySearch() {
-  const q = document.getElementById('spSearch').value.trim();
-  const res = document.getElementById('spResults');
-  res.innerHTML = '<div class="sp-empty">Đang tìm…</div>';
-  try {
-    const data = await fetch(`/api/surveys/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json());
-    const surveys = data.surveys || data.results || (Array.isArray(data) ? data : []);
-    if (!surveys.length) { res.innerHTML = '<div class="sp-empty">Không tìm thấy survey nào</div>'; return; }
-    res.innerHTML = surveys.map((s) => {
-      const id    = s.survey_id || s.id;
-      const title = s.display_title || s.title || s.name || `Survey ${id}`;
-      const sub   = [s.status, s.question_count ? `${s.question_count} câu` : ''].filter(Boolean).join(' · ');
-      return `<div class="sp-item" data-id="${id}" data-title="${title.replace(/"/g,'&quot;')}" onclick="selectSurveyItem(this)">
-        <div class="sp-item-title">[${id}] ${title}</div>
-        ${sub ? `<div class="sp-item-sub">${sub}</div>` : ''}
-      </div>`;
-    }).join('');
-    document.getElementById('spActions').style.display = 'flex';
-    document.getElementById('spFetchBtn').disabled = true;
-    document.getElementById('spIngestBtn').disabled = true;
-    document.getElementById('spSelectBtn').disabled = true;
-    document.getElementById('spLog').style.display = 'none';
-  } catch(e) {
-    res.innerHTML = `<div class="sp-empty">Lỗi: ${e.message}</div>`;
+function _setLoading(msg, sub = '') {
+  const ov = document.getElementById('loadingOverlay');
+  if (msg) {
+    document.getElementById('loadingMsg').textContent = msg;
+    document.getElementById('loadingSub').textContent = sub;
+    ov.classList.remove('hidden');
+  } else {
+    ov.classList.add('hidden');
   }
-}
-
-function selectSurveyItem(el) {
-  document.querySelectorAll('.sp-item').forEach(x => x.classList.remove('sel'));
-  el.classList.add('sel');
-  spSelected = { id: parseInt(el.dataset.id), title: el.dataset.title };
-  document.getElementById('spActions').style.display = 'flex';
-  document.getElementById('spFetchBtn').disabled = false;
-  checkSpStatus();
-}
-
-async function checkSpStatus() {
-  if (!spSelected) return;
-  try {
-    const st = await fetch(`/api/surveys/${spSelected.id}/status`).then(r => r.json());
-    document.getElementById('spIngestBtn').disabled = !st.has_mcp;
-    document.getElementById('spSelectBtn').disabled = !st.has_data;
-    _spLog(
-      `fetch: ${st.has_mcp ? '✓' : '—'}  ingest: ${st.has_data ? '✓' : '—'}  datatable: ${st.has_datatable ? '✓' : '—'}  versions: ${st.versions.join(', ') || '—'}`
-    );
-  } catch(e) {}
-}
-
-function _spLog(msg) {
-  const el = document.getElementById('spLog');
-  el.style.display = 'block';
-  el.textContent = msg;
-}
-
-async function doFetch() {
-  if (!spSelected) return;
-  document.getElementById('spFetchBtn').disabled = true;
-  _spLog(`Đang fetch survey ${spSelected.id} từ QMe…`);
-  try {
-    const r = await fetch(`/api/surveys/${spSelected.id}/fetch`, {method:'POST'});
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || 'fetch failed');
-    _spLog(`✓ Fetch xong: ${d.pages} trang · ${d.total_rows} rows`);
-    document.getElementById('spIngestBtn').disabled = false;
-  } catch(e) {
-    _spLog(`✗ Lỗi fetch: ${e.message}`);
-  } finally {
-    document.getElementById('spFetchBtn').disabled = false;
-  }
-}
-
-async function doIngest() {
-  if (!spSelected) return;
-  document.getElementById('spIngestBtn').disabled = true;
-  _spLog(`Đang ingest survey ${spSelected.id}…`);
-  try {
-    const r = await fetch(`/api/surveys/${spSelected.id}/ingest`, {method:'POST'});
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || 'ingest failed');
-    _spLog(`✓ Ingest xong: ${d.n_rows} rows`);
-    document.getElementById('spSelectBtn').disabled = false;
-  } catch(e) {
-    _spLog(`✗ Lỗi ingest: ${e.message}`);
-  } finally {
-    document.getElementById('spIngestBtn').disabled = false;
-  }
-}
-
-async function doSelectSurvey() {
-  if (!spSelected) return;
-  closeSurveyPanel();
-  await activateSurvey(spSelected.id, spSelected.title);
 }
 
 async function activateSurvey(id, title) {
   currentSurveyId   = id;
   currentSurveyName = title;
 
+  _setLoading('Loading survey…', title);
+
+  // title from URL already contains full formatted string e.g. "[723122] VN8947 — Survey name"
   const badge = document.getElementById('surveyBadge');
-  badge.textContent = `[${id}] ${title}`;
+  badge.textContent = title;
   badge.className = 'fbadge ok';
+  document.title = `SurveyFlow — ${title}`;
 
   const st = await fetch(`/api/surveys/${id}/status`).then(r => r.json());
 
-  if (st.has_mcp) {
-    document.getElementById('fetchBadge').textContent = 'fetch: ✓';
-    document.getElementById('fetchBadge').className = 'fbadge ok';
-  }
+  const rfBadge = document.getElementById('refreshBadge');
   if (st.has_data) {
-    document.getElementById('ingestBadge').textContent = 'ingest: ✓';
-    document.getElementById('ingestBadge').className = 'fbadge ok';
+    rfBadge.textContent = 'data: ✓';
+    rfBadge.className = 'fbadge ok';
+  } else {
+    rfBadge.textContent = 'data: —';
+    rfBadge.className = 'fbadge none';
   }
+  document.getElementById('refreshBtn').disabled = false;
 
   if (st.has_data) {
+    _setLoading('Loading questions & data…', title);
     await apiLoadMeta(id);
     await apiLoadRd(id);
   }
   if (st.has_datatable) {
+    _setLoading('Loading datatable config…', title);
     await apiLoadDT(id);
   } else {
-    document.getElementById('loadDtBtn').disabled = false;
   }
-  if (st.versions.length) {
-    lastVersion = st.versions[st.versions.length - 1];
-    const dlBtn = document.getElementById('dlServerBtn');
-    dlBtn.disabled = false;
-    dlBtn.dataset.version = lastVersion;
+  document.getElementById('downloadBtn').disabled = !st.has_data;
+  _setLoading(null);
+  setStatus(`Survey loaded · ${st.has_data ? 'data ✓' : 'no data — click 🔄 Refresh'}`, st.has_data ? 'saved' : '');
+}
+
+// ── Refresh: re-fetch from QMe + re-ingest ────────
+
+async function doRefresh() {
+  if (!currentSurveyId) return;
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  _setLoading('Fetching data from QMe…', currentSurveyName);
+  setStatus('Fetching from QMe…', '');
+  try {
+    const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'refresh failed');
+    _setLoading('Re-loading questions & data…', currentSurveyName);
+    setStatus(`✓ Fetched ${d.n_rows} rows — reloading…`, 'saved');
+    await apiLoadMeta(currentSurveyId);
+    await apiLoadRd(currentSurveyId);
+    // Update badge
+    const rfBadge = document.getElementById('refreshBadge');
+    rfBadge.textContent = 'data: ✓';
+    rfBadge.className = 'fbadge ok';
+    document.getElementById('downloadBtn').disabled = false;
+    setStatus(`✓ Refresh complete — ${d.n_rows} rows`, 'saved');
+  } catch(e) {
+    setStatus('⚠ Refresh error: ' + e.message, '');
+  } finally {
+    btn.disabled = false;
+    _setLoading(null);
   }
-  document.getElementById('pipelineBtn').disabled = !st.has_data;
-  setStatus(`Survey [${id}] đã load`, 'saved');
 }
 
 // ── API loaders ───────────────────────────────────
@@ -2532,9 +2491,7 @@ async function apiLoadMeta(id) {
     const res = await fetch(`/api/surveys/${id}/metadata`);
     if (!res.ok) return;
     parseMeta(JSON.stringify(await res.json()), `${id}_metadata.json`);
-    document.getElementById('fetchBadge').textContent = 'meta: ✓';
-    document.getElementById('fetchBadge').className = 'fbadge ok';
-  } catch(e) { setStatus('⚠ Metadata lỗi: ' + e.message, ''); }
+  } catch(e) { setStatus('⚠ Metadata error: ' + e.message, ''); }
 }
 
 async function apiLoadRd(id) {
@@ -2542,9 +2499,10 @@ async function apiLoadRd(id) {
     const res = await fetch(`/api/surveys/${id}/rawdata`);
     if (!res.ok) return;
     loadRd(await res.text(), `${id}_rawdata.csv`);
-    document.getElementById('ingestBadge').textContent = 'csv: ✓';
-    document.getElementById('ingestBadge').className = 'fbadge ok';
-  } catch(e) { setStatus('⚠ Rawdata lỗi: ' + e.message, ''); }
+    const rfBadge = document.getElementById('refreshBadge');
+    rfBadge.textContent = 'data: ✓';
+    rfBadge.className = 'fbadge ok';
+  } catch(e) { setStatus('⚠ Rawdata error: ' + e.message, ''); }
 }
 
 async function apiLoadDT(id) {
@@ -2552,13 +2510,12 @@ async function apiLoadDT(id) {
     const res = await fetch(`/api/surveys/${id}/datatable`);
     if (!res.ok) return;
     loadDT(JSON.stringify(await res.json()), `${id}_datatable.json`);
-    document.getElementById('loadDtBtn').disabled = false;
   } catch(e) {}
 }
 
 // ── overrides ─────────────────────────────────────
 
-function openMeta() { openSurveyPanel(); }
+function openMeta() { /* no-op — metadata comes from API */ }
 
 async function openDT() {
   if (currentSurveyId) { await apiLoadDT(currentSurveyId); }
@@ -2582,49 +2539,57 @@ async function saveFile() {
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'save failed');
     dirty = false;
-    setStatus('Đ\xe3 lưu datatable.json', 'saved');
+    setStatus('datatable.json saved', 'saved');
   } catch(e) {
-    setStatus('⚠ Save lỗi: ' + e.message, '');
+    setStatus('⚠ Save error: ' + e.message, '');
     dlFallback(text);
   }
 }
 
-// ── pipeline ──────────────────────────────────────
+// ── download (run pipeline + download xlsx in one step) ───────────────────────
 
-async function runPipeline() {
+async function downloadXlsxDirect() {
   if (!currentSurveyId) return;
-  const btn = document.getElementById('pipelineBtn');
+  const btn = document.getElementById('downloadBtn');
   btn.disabled = true;
-  btn.textContent = '⏳ Running…';
-  setStatus('Đang chạy pipeline…', '');
+  btn.textContent = '⏳ Generating…';
+  setStatus('Generating datatable.xlsx…', '');
   try {
     await saveFile();
-    const res = await fetch(`/api/surveys/${currentSurveyId}/run`, {method:'POST'});
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.detail || 'run failed');
-    lastVersion = d.version;
-    const dlBtn = document.getElementById('dlServerBtn');
-    dlBtn.disabled = false;
-    dlBtn.dataset.version = d.version;
-    setStatus(`✓ Pipeline xong: ${d.version}`, 'saved');
+    const res = await fetch(`/api/surveys/${currentSurveyId}/generate`, {method:'POST'});
+    if (!res.ok) {
+      const d = await res.json();
+      throw new Error(d.detail || 'generate failed');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: `datatable_${currentSurveyId}.xlsx`,
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus('✓ Downloaded datatable.xlsx', 'saved');
   } catch(e) {
-    setStatus('⚠ Pipeline lỗi: ' + e.message, '');
+    setStatus('⚠ Download error: ' + e.message, '');
   } finally {
     btn.disabled = false;
-    btn.textContent = '⚙ Run';
+    btn.textContent = '⬇ Download';
   }
 }
 
-function downloadServerXlsx() {
-  const btn = document.getElementById('dlServerBtn');
-  const version = btn.dataset.version || lastVersion;
-  if (currentSurveyId && version) {
-    window.location = `/api/surveys/${currentSurveyId}/download/${version}`;
-  }
-}
+// ── Init: load survey from URL params ─────────────
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeSurveyPanel();
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const sid    = params.get('survey_id');
+  const title  = params.get('title');
+  if (sid) {
+    activateSurvey(parseInt(sid), title || `Survey ${sid}`);
+  } else {
+    // No survey selected — redirect to projects page
+    window.location = '/';
+  }
 });
 
 </script>

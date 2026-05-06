@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SurveyFlow — Projects</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#1a1a2e;background:#f0f2f5;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── Header ── */
+.hdr{background:#16213e;color:white;padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.hdr-logo{font-size:15px;font-weight:700;display:flex;align-items:center;gap:7px}
+.hdr-logo span{color:#a8c7fa}
+.gap{flex:1}
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .12s;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-pri{background:#1a73e8;color:white}.btn-pri:not(:disabled):hover{background:#1557b0}
+.btn-suc{background:#1e8449;color:white}.btn-suc:not(:disabled):hover{background:#166138}
+.btn-gho{background:transparent;color:#9ab;border:1px solid #3d4757}.btn-gho:hover{background:#3d4757;color:#e0e6ef}
+
+/* ── Main ── */
+.main{flex:1;max-width:1100px;width:100%;margin:0 auto;padding:28px 24px}
+
+/* ── Page title row ── */
+.page-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.page-title{font-size:20px;font-weight:700;color:#1a1a2e;display:flex;align-items:center;gap:9px}
+.page-title .cnt{font-size:13px;font-weight:400;color:#999;background:#e8eaed;padding:2px 9px;border-radius:10px}
+.page-actions{display:flex;gap:8px;align-items:center}
+
+/* ── Filter bar ── */
+.filter-bar{display:flex;gap:8px;margin-bottom:18px;align-items:center}
+.filter-inp{flex:1;max-width:340px;padding:7px 12px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;background:white;font-family:inherit;transition:border-color .12s}
+.filter-inp:focus{border-color:#1a73e8;box-shadow:0 0 0 2px rgba(26,115,232,.1)}
+.filter-label{font-size:12px;color:#999}
+
+/* ── Project grid ── */
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+
+/* ── Project card ── */
+.pcard{background:white;border:1px solid #e0e4ea;border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;transition:box-shadow .15s,border-color .15s;cursor:pointer;position:relative}
+.pcard:hover{border-color:#a8c7fa;box-shadow:0 4px 16px rgba(26,115,232,.1)}
+.pcard-top{display:flex;align-items:flex-start;gap:10px}
+.pcard-id{font-size:11px;font-weight:700;background:#e8f0fe;color:#1a73e8;padding:3px 8px;border-radius:5px;flex-shrink:0;letter-spacing:.3px;font-family:monospace}
+.pcard-code{font-size:11px;font-weight:700;background:#fce8e6;color:#c0392b;padding:3px 8px;border-radius:5px;flex-shrink:0;letter-spacing:.3px;font-family:monospace}
+.pcard-title{font-size:13px;font-weight:600;color:#1a1a2e;line-height:1.4;flex:1}
+.pcard-status{display:flex;gap:6px;flex-wrap:wrap}
+.stag{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;display:inline-flex;align-items:center;gap:3px}
+.stag-ok{background:#e6f4ea;color:#1e8449;border:1px solid #b7dfbf}
+.stag-no{background:#f5f5f5;color:#aaa;border:1px solid #e0e0e0}
+.pcard-open{margin-top:auto;padding-top:4px;display:flex;justify-content:flex-end}
+.pcard-open .btn{padding:5px 14px;font-size:11px}
+
+/* ── Empty state ── */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 24px;text-align:center;color:#aaa}
+.empty-ico{font-size:48px;opacity:.5}
+.empty h3{font-size:16px;font-weight:600;color:#555}
+.empty p{font-size:12px;line-height:1.7;max-width:320px}
+
+/* ── Loading ── */
+.loading{display:flex;align-items:center;justify-content:center;padding:48px;gap:10px;color:#888;font-size:13px}
+.spin{width:20px;height:20px;border:2.5px solid #e0e4ea;border-top-color:#1a73e8;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Modal overlay ── */
+.mov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.mdlg{background:white;border-radius:12px;width:620px;max-width:100%;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.mhd{padding:16px 20px;border-bottom:1px solid #e0e4ea;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.mhd strong{font-size:15px;color:#1a1a2e;display:flex;align-items:center;gap:8px}
+.mbtn-close{background:none;border:none;cursor:pointer;font-size:18px;color:#999;padding:2px 6px;border-radius:4px;line-height:1}
+.mbtn-close:hover{background:#f0f2f5;color:#333}
+.mbody{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:12px}
+.mft{padding:12px 20px;border-top:1px solid #e0e4ea;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;align-items:center}
+.mft-status{flex:1;font-size:11px;color:#555;font-family:monospace;background:#f8f9fb;padding:5px 9px;border-radius:5px;max-height:52px;overflow-y:auto;white-space:pre-wrap}
+.mft-status.err{color:#c0392b;background:#fce8e6}
+.mft-status.ok{color:#1e8449;background:#e6f4ea}
+
+/* Search dialog */
+.search-row{display:flex;gap:8px}
+.search-inp{flex:1;padding:8px 12px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit}
+.search-inp:focus{border-color:#1a73e8}
+.res-list{border:1px solid #e0e4ea;border-radius:8px;max-height:320px;overflow-y:auto}
+.res-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;transition:background .1s}
+.res-item:last-child{border-bottom:none}
+.res-item:hover{background:#eef4ff}
+.res-item.sel{background:#e8f0fe;border-left:3px solid #1a73e8}
+.res-item-title{font-size:13px;font-weight:600;color:#1a1a2e}
+.res-item-sub{font-size:11px;color:#888;margin-top:2px}
+.res-empty{padding:28px;text-align:center;color:#bbb;font-size:12px}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d0d4dc;border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-logo">📊 <span>SurveyFlow</span></div>
+  <div class="gap"></div>
+  <button class="btn btn-pri" onclick="openNewDialog()">＋ New Survey</button>
+</div>
+
+<div class="main">
+  <div class="page-hd">
+    <div class="page-title">
+      Projects
+      <span class="cnt" id="projCount">—</span>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-gho" style="font-size:11px" onclick="loadProjects()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <input class="filter-inp" id="filterInp" type="text" placeholder="Filter projects…" oninput="renderCards()">
+    <span class="filter-label" id="filterLabel"></span>
+  </div>
+
+  <div id="projArea">
+    <div class="loading"><div class="spin"></div> Loading projects…</div>
+  </div>
+</div>
+
+<!-- New Survey dialog -->
+<div class="mov" id="newDlg" style="display:none" onclick="onOvClick(event)">
+  <div class="mdlg" onclick="event.stopPropagation()">
+    <div class="mhd">
+      <strong>＋ New Survey</strong>
+      <button class="mbtn-close" onclick="closeNewDialog()">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="search-row">
+        <input class="search-inp" id="dlgSearch" placeholder="Search survey name in QMe…" onkeydown="if(event.key==='Enter')doSearch()">
+        <button class="btn btn-pri" onclick="doSearch()">🔍 Search</button>
+      </div>
+      <div class="res-list" id="dlgResults">
+        <div class="res-empty">Enter keyword and press Search</div>
+      </div>
+    </div>
+    <div class="mft">
+      <div class="mft-status" id="dlgStatus" style="display:none"></div>
+      <button class="btn btn-gho" onclick="closeNewDialog()">Cancel</button>
+      <button class="btn btn-suc" id="dlgAddBtn" disabled onclick="doAddSurvey()">🔄 Fetch &amp; Open</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════
+let allProjects = [];
+let dlgSelected = null;
+
+// ════════════════════════════════════════════════════
+// PROJECTS LIST
+// ════════════════════════════════════════════════════
+function fmtProject(p) {
+  // Format: [ID] CODE — Title   or   [ID] Title
+  const parts = [`[${p.survey_id}]`];
+  if (p.code) parts.push(p.code + ' —');
+  parts.push(p.title || `Survey ${p.survey_id}`);
+  return parts.join(' ');
+}
+
+async function loadProjects() {
+  document.getElementById('projArea').innerHTML =
+    '<div class="loading"><div class="spin"></div> Loading projects…</div>';
+  try {
+    allProjects = await fetch('/api/surveys/projects').then(r => r.json());
+    renderCards();
+  } catch(e) {
+    document.getElementById('projArea').innerHTML =
+      `<div class="empty"><div class="empty-ico">⚠️</div><h3>Failed to load</h3><p>${e.message}</p></div>`;
+  }
+}
+
+function renderCards() {
+  const q = (document.getElementById('filterInp').value || '').toLowerCase();
+  const filtered = q
+    ? allProjects.filter(p => {
+        const s = `${p.survey_id} ${p.code||''} ${p.title||''}`.toLowerCase();
+        return s.includes(q);
+      })
+    : allProjects;
+
+  document.getElementById('projCount').textContent = allProjects.length;
+  document.getElementById('filterLabel').textContent =
+    q && filtered.length !== allProjects.length ? `${filtered.length} of ${allProjects.length}` : '';
+
+  if (!filtered.length) {
+    document.getElementById('projArea').innerHTML = q
+      ? `<div class="empty"><div class="empty-ico">🔍</div><h3>No matching projects</h3><p>No projects match "<strong>${esc(q)}</strong>"</p></div>`
+      : `<div class="empty"><div class="empty-ico">📋</div><h3>No projects yet</h3><p>Click <strong>New Survey</strong> to fetch a survey from QMe and start working on it.</p></div>`;
+    return;
+  }
+
+  document.getElementById('projArea').innerHTML =
+    `<div class="proj-grid">${filtered.map(renderCard).join('')}</div>`;
+}
+
+function renderCard(p) {
+  const idBadge    = `<span class="pcard-id">${p.survey_id}</span>`;
+  const codeBadge  = p.code ? `<span class="pcard-code">${esc(p.code)}</span>` : '';
+  const title      = esc(p.title || `Survey ${p.survey_id}`);
+  const tagData    = p.has_data
+    ? `<span class="stag stag-ok">✓ Data</span>`
+    : `<span class="stag stag-no">— Data</span>`;
+  const tagDT      = p.has_datatable
+    ? `<span class="stag stag-ok">✓ Datatable</span>`
+    : `<span class="stag stag-no">— Datatable</span>`;
+  const url        = openUrl(p);
+
+  return `<div class="pcard" onclick="window.location='${url}'">
+    <div class="pcard-top">
+      ${idBadge}${codeBadge}
+      <div class="pcard-title">${title}</div>
+    </div>
+    <div class="pcard-status">${tagData}${tagDT}</div>
+    <div class="pcard-open">
+      <button class="btn btn-pri" onclick="event.stopPropagation();window.location='${url}'">Open →</button>
+    </div>
+  </div>`;
+}
+
+function openUrl(p) {
+  const params = new URLSearchParams({
+    survey_id: p.survey_id,
+    title: fmtProject(p),
+  });
+  return `/editor?${params}`;
+}
+
+// ════════════════════════════════════════════════════
+// NEW SURVEY DIALOG
+// ════════════════════════════════════════════════════
+function openNewDialog() {
+  dlgSelected = null;
+  document.getElementById('dlgSearch').value = '';
+  document.getElementById('dlgResults').innerHTML = '<div class="res-empty">Enter keyword and press Search</div>';
+  document.getElementById('dlgAddBtn').disabled = true;
+  setDlgStatus('', '');
+  document.getElementById('newDlg').style.display = 'flex';
+  setTimeout(() => document.getElementById('dlgSearch').focus(), 50);
+}
+function closeNewDialog() {
+  document.getElementById('newDlg').style.display = 'none';
+}
+function onOvClick(e) {
+  if (e.target === document.getElementById('newDlg')) closeNewDialog();
+}
+
+async function doSearch() {
+  const q = document.getElementById('dlgSearch').value.trim();
+  const res = document.getElementById('dlgResults');
+  res.innerHTML = '<div class="res-empty">Searching…</div>';
+  dlgSelected = null;
+  document.getElementById('dlgAddBtn').disabled = true;
+  try {
+    const data = await fetch(`/api/surveys/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json());
+    const surveys = data.surveys || data.results || (Array.isArray(data) ? data : []);
+    if (!surveys.length) { res.innerHTML = '<div class="res-empty">No surveys found</div>'; return; }
+    res.innerHTML = surveys.map(s => {
+      const id    = s.survey_id || s.id;
+      const title = s.display_title || s.title || s.name || `Survey ${id}`;
+      const code  = s.code || s.survey_code || '';
+      const sub   = [code, s.status, s.question_count ? `${s.question_count} questions` : ''].filter(Boolean).join(' · ');
+      return `<div class="res-item" data-id="${id}" data-title="${esc(title)}" data-code="${esc(code)}" onclick="selectResult(this)">
+        <div class="res-item-title">[${id}]${code?' '+code+' —':''} ${esc(title)}</div>
+        ${sub ? `<div class="res-item-sub">${esc(sub)}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    res.innerHTML = `<div class="res-empty">Error: ${e.message}</div>`;
+  }
+}
+
+function selectResult(el) {
+  document.querySelectorAll('.res-item').forEach(x => x.classList.remove('sel'));
+  el.classList.add('sel');
+  dlgSelected = {
+    id: parseInt(el.dataset.id),
+    title: el.dataset.title,
+    code: el.dataset.code || null,
+  };
+  document.getElementById('dlgAddBtn').disabled = false;
+  setDlgStatus('', '');
+}
+
+async function doAddSurvey() {
+  if (!dlgSelected) return;
+  const btn = document.getElementById('dlgAddBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching…';
+  setDlgStatus(`Fetching survey ${dlgSelected.id} from QMe…`, '');
+  try {
+    const r = await fetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'refresh failed');
+    setDlgStatus(`✓ Done — ${d.n_rows} rows`, 'ok');
+
+    // Re-read the project info from the API to get the correct title/code from definition.json
+    let displayTitle = `[${dlgSelected.id}] ${dlgSelected.title}`;
+    try {
+      const projects = await fetch('/api/surveys/projects').then(r => r.json());
+      const p = projects.find(x => x.survey_id === dlgSelected.id);
+      if (p) displayTitle = fmtProject(p);
+    } catch(_) {}
+
+    setTimeout(() => {
+      window.location = `/editor?survey_id=${dlgSelected.id}&title=${encodeURIComponent(displayTitle)}`;
+    }, 500);
+  } catch(e) {
+    setDlgStatus(`✗ Error: ${e.message}`, 'err');
+    btn.disabled = false;
+    btn.textContent = '🔄 Fetch & Open';
+  }
+}
+
+function setDlgStatus(msg, cls) {
+  const el = document.getElementById('dlgStatus');
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg;
+  el.className = 'mft-status' + (cls ? ' ' + cls : '');
+}
+
+// ════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeNewDialog();
+});
+
+// ── Init ──
+loadProjects();
+</script>
+</body>
+</html>

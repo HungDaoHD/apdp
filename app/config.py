@@ -1,5 +1,9 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Optional
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _APP_DIR = Path(__file__).parent
 
@@ -7,6 +11,12 @@ _APP_DIR = Path(__file__).parent
 class Settings(BaseSettings):
     QME_API_KEY: str
     DATA_DIR: str = "data"
+
+    # Storage backend: "local" (default) or "supabase"
+    STORAGE_BACKEND: str = "local"
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_KEY: Optional[str] = None
+    SUPABASE_BUCKET: str = "surveyflow"
 
     model_config = SettingsConfigDict(
         env_file=str(_APP_DIR / ".env"),
@@ -16,12 +26,6 @@ class Settings(BaseSettings):
     @property
     def QME_MCP_URL(self) -> str:
         return f"https://retail.qand.me/api/mcp?key={self.QME_API_KEY}"
-
-    def survey_dir(self, survey_id: int) -> Path:
-        p = Path(self.DATA_DIR)
-        if not p.is_absolute():
-            p = _APP_DIR / p
-        return p / str(survey_id)
 
 
 settings = Settings()

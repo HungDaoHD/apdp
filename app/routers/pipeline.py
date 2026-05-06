@@ -1,87 +1,118 @@
 """Ingestion, datatable CRUD, run, and download endpoints."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, PlainTextResponse, Response
+from fastapi.responses import PlainTextResponse, Response
 
 from config import settings
 from services import pipeline_svc
+from services.mcp_client import MCPClient, MCPError
+from services.storage import get_storage
 
 router = APIRouter(prefix="/api/surveys", tags=["pipeline"])
 
 
-def _mcp_dir(survey_id: int) -> Path:
-    return settings.survey_dir(survey_id) / "mcp"
+def _mcp() -> MCPClient:
+    return MCPClient(settings.QME_MCP_URL)
 
 
-def _data_dir(survey_id: int) -> Path:
-    return settings.survey_dir(survey_id) / "data"
+# ── refresh (fetch + ingest combined) ────────────────────────────────────────
+
+@router.post("/{survey_id}/refresh")
+async def refresh_survey(survey_id: int):
+    """Fetch fresh data from QMe then run ingestion — replaces separate fetch+ingest."""
+    mcp = _mcp()
+    try:
+        definition = await mcp.get_survey_definition(survey_id)
+        rows_pages = await mcp.get_all_rows(survey_id)
+    except MCPError as exc:
+        raise HTTPException(502, str(exc))
+
+    try:
+        result = pipeline_svc.refresh(survey_id, definition, rows_pages)
+        return {"status": "ok", **result}
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
 
 
-def _dt_dir(survey_id: int) -> Path:
-    return settings.survey_dir(survey_id) / "datatable"
+# ── generate xlsx (no storage write) ─────────────────────────────────────────
+
+@router.post("/{survey_id}/generate")
+async def generate_xlsx(survey_id: int):
+    """Run table step and return xlsx bytes directly — nothing written to storage."""
+    storage = get_storage()
+    if not storage.exists(f"{survey_id}/data/rawdata.csv"):
+        raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
+    if not storage.exists(f"{survey_id}/datatable/datatable.json"):
+        raise HTTPException(400, "No datatable.json found")
+
+    try:
+        xlsx_bytes = pipeline_svc.generate_xlsx(survey_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="datatable_{survey_id}.xlsx"'},
+    )
 
 
 # ── ingestion ─────────────────────────────────────────────────────────────────
 
 @router.post("/{survey_id}/ingest")
 async def ingest_survey(survey_id: int):
-    mcp_dir = _mcp_dir(survey_id)
-    def_path  = mcp_dir / "definition.json"
-    rows_path = mcp_dir / "rows_pages.json"
-
-    if not def_path.exists() or not rows_path.exists():
+    storage = get_storage()
+    if not storage.exists(f"{survey_id}/mcp/definition.json") or \
+       not storage.exists(f"{survey_id}/mcp/rows_pages.json"):
         raise HTTPException(400, "Run /fetch first — MCP data not found")
 
-    definition = json.loads(def_path.read_text("utf-8"))
-    rows_pages = json.loads(rows_path.read_text("utf-8"))
+    definition = storage.read_json(f"{survey_id}/mcp/definition.json")
+    rows_pages  = storage.read_json(f"{survey_id}/mcp/rows_pages.json")
 
     try:
-        result = pipeline_svc.ingest(settings.survey_dir(survey_id), definition, rows_pages)
+        return pipeline_svc.ingest(survey_id, definition, rows_pages)
     except Exception as exc:
         raise HTTPException(500, str(exc))
-
-    return result
 
 
 # ── metadata + rawdata ────────────────────────────────────────────────────────
 
 @router.get("/{survey_id}/metadata")
 async def get_metadata(survey_id: int):
-    path = _data_dir(survey_id) / "metadata.json"
-    if not path.exists():
+    storage = get_storage()
+    key = f"{survey_id}/data/metadata.json"
+    if not storage.exists(key):
         raise HTTPException(404, "Run /ingest first")
-    return json.loads(path.read_text("utf-8"))
+    return storage.read_json(key)
 
 
 @router.get("/{survey_id}/rawdata")
 async def get_rawdata(survey_id: int):
-    path = _data_dir(survey_id) / "rawdata.csv"
-    if not path.exists():
+    storage = get_storage()
+    key = f"{survey_id}/data/rawdata.csv"
+    if not storage.exists(key):
         raise HTTPException(404, "Run /ingest first")
-    return PlainTextResponse(path.read_text("utf-8"), media_type="text/csv")
+    return PlainTextResponse(storage.read_text(key), media_type="text/csv")
 
 
 # ── datatable CRUD ────────────────────────────────────────────────────────────
 
 @router.get("/{survey_id}/datatable")
 async def get_datatable(survey_id: int):
-    path = _dt_dir(survey_id) / "datatable.json"
-    if not path.exists():
+    storage = get_storage()
+    key = f"{survey_id}/datatable/datatable.json"
+    if not storage.exists(key):
         raise HTTPException(404, "No datatable.json yet")
-    return json.loads(path.read_text("utf-8"))
+    return storage.read_json(key)
 
 
 @router.post("/{survey_id}/datatable")
 async def save_datatable(survey_id: int, request: Request):
     body = await request.json()
-    dt_dir = _dt_dir(survey_id)
-    dt_dir.mkdir(parents=True, exist_ok=True)
-    path = dt_dir / "datatable.json"
-    path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    get_storage().write_json(f"{survey_id}/datatable/datatable.json", body)
     return {"status": "saved"}
 
 
@@ -89,29 +120,30 @@ async def save_datatable(survey_id: int, request: Request):
 
 @router.post("/{survey_id}/run")
 async def run_pipeline(survey_id: int, version: str | None = None):
-    survey_dir = settings.survey_dir(survey_id)
-    if not (survey_dir / "data" / "rawdata.csv").exists():
+    storage = get_storage()
+    if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run /ingest first — rawdata.csv not found")
+    if not storage.exists(f"{survey_id}/datatable/datatable.json"):
+        raise HTTPException(400, "No datatable.json found")
 
     try:
-        result = pipeline_svc.run_table(survey_dir, version)
+        return pipeline_svc.run_table(survey_id, version)
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
         raise HTTPException(500, str(exc))
-
-    return result
 
 
 # ── download xlsx ─────────────────────────────────────────────────────────────
 
 @router.get("/{survey_id}/download/{version}")
 async def download_xlsx(survey_id: int, version: str):
-    path = settings.survey_dir(survey_id) / version / "datatable.xlsx"
-    if not path.exists():
+    storage = get_storage()
+    key = f"{survey_id}/{version}/datatable.xlsx"
+    if not storage.exists(key):
         raise HTTPException(404, f"datatable.xlsx not found for {version}")
-    return FileResponse(
-        str(path),
+    return Response(
+        content=storage.read_bytes(key),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=f"datatable_{survey_id}_{version}.xlsx",
+        headers={"Content-Disposition": f'attachment; filename="datatable_{survey_id}_{version}.xlsx"'},
     )
