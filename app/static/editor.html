@@ -62,6 +62,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .tb-mx{background:#f3e5f5;color:#7b1fa2;border:1px solid #ce93d8}
 .tb-ft{background:#fff3e0;color:#e65100;border:1px solid #ffcc80}
 .tb-nm{background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da}
+.tb-rk{background:#fff8e1;color:#e65100;border:1px solid #ffcc02}
 .tb-ot{background:#f5f5f5;color:#888;border:1px solid #ddd}
 
 /* Tables Sidebar */
@@ -306,13 +307,18 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <div class="sep"></div>
   <span class="fbadge none" id="refreshBadge">data: —</span>
   <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled>🔄 Refresh</button>
+  <div id="langSelectorWrap" style="display:none;align-items:center;gap:5px;margin-left:6px">
+    <span style="font-size:10px;color:#999;white-space:nowrap">🌐 Lang</span>
+    <select id="langSelector" onchange="setLang(this.value)"
+      style="font-size:11px;padding:2px 5px;border:1px solid #d0d5dd;border-radius:5px;background:white;color:#333;cursor:pointer;height:24px"></select>
+  </div>
   <div class="sep"></div>
   <button class="btn" id="runBtn" disabled onclick="showPreview()"
     style="background:#7c3aed;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
   <div class="gap"></div>
   <button class="btn btn-gho" onclick="toggleQP()" id="qpToggle">◀ Questions</button>
   <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save Data Table</button>
-  <button class="btn btn-pri btn-sm" onclick="downloadXlsxDirect()" id="downloadBtn" disabled>⬇ Download</button>
+  <button class="btn btn-pri btn-sm" onclick="downloadXlsxDirect()" id="downloadBtn" disabled><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table</button>
   <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn">{} Raw</button>
 </div>
 
@@ -324,11 +330,13 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
         <div class="qpt">Questions palette</div>
         <input class="qps" id="qSearch" type="text" placeholder="Search questions…" oninput="renderQL()">
         <div class="qpf">
-          <button class="qfb on" data-f="all"    onclick="setQF('all')">All</button>
-          <button class="qfb"    data-f="SA"     onclick="setQF('SA')">SA</button>
-          <button class="qfb"    data-f="MA"     onclick="setQF('MA')">MA</button>
-          <button class="qfb"    data-f="Matrix" onclick="setQF('Matrix')">Matrix</button>
-          <button class="qfb"    data-f="other"  onclick="setQF('other')">Num/Text</button>
+          <button class="qfb on" data-f="all"     onclick="setQF('all')">All</button>
+          <button class="qfb"    data-f="SA"      onclick="setQF('SA')">SA</button>
+          <button class="qfb"    data-f="MA"      onclick="setQF('MA')">MA</button>
+          <button class="qfb"    data-f="Matrix"  onclick="setQF('Matrix')">Matrix</button>
+          <button class="qfb"    data-f="ranking" onclick="setQF('ranking')">Ranking</button>
+          <button class="qfb"    data-f="num"     onclick="setQF('num')">Num</button>
+          <button class="qfb"    data-f="text"    onclick="setQF('text')">Text</button>
         </div>
       </div>
       <div class="ql" id="qList">
@@ -410,6 +418,8 @@ const HAS_FS   = typeof window.showOpenFilePicker === 'function';
 let metaHandle = null, dtHandle = null;
 let metadata         = [];   // flat array of normalized question objects
 let metaSurveyTitle  = '';   // top-level title from metadata.json (used as default table title)
+let availLangs       = [];   // e.g. ['vi','en'] detected from metadata
+let activeLang       = '';   // currently selected language code
 let lastFQ           = [];   // result of last filteredQ() — used for index-based drag
 let data       = [];       // datatable.json array
 let activeCfg  = 0;
@@ -433,7 +443,7 @@ let _qPickerList = [];     // current filtered list for index-based selection
 let modalSt = null;        // { type:'qinfo'|'banner'|'stub', q?, idx?, item? }
 
 const STATS_ALL  = ['base','percent','t2b','b2b','mean','std','se','min','max'];
-const CODEABLE   = new Set(['SA','MA','Matrix_SA','Matrix_MA','Matrix_NUM']);
+const CODEABLE   = new Set(['SA','MA','Matrix_SA','Matrix_MA','Matrix_NUM','ranking']);
 // Types we include in palette (exclude purely admin/system types)
 const HIDE_TYPES = new Set(['instruction','user-name','user-phone','reward','record','photo','area']);
 // Recommended stats by type
@@ -444,7 +454,7 @@ const TYPE_STATS = {
   'Matrix_MA'  : ['base','percent'],
   'Matrix_NUM' : ['base','mean','std'],
   'NUM'        : ['base','mean','std','min','max'],
-  'ranking'    : ['base','mean'],
+  'ranking'    : ['base','percent'],
   'FT'         : [],
 };
 
@@ -472,11 +482,45 @@ function parseMeta(text, name) {
     // metadata.json top-level: { title, english_title, survey_id, questions, … }
     metaSurveyTitle = raw.title || raw.english_title || '';
     buildMetaSubMap();    // build sub-question lookup
+    detectLangs();        // detect available languages & update selector
     setStatus(`Metadata: ${metadata.length} questions loaded`, 'saved');
     renderQL();
     if (data.length) renderMain();
     checkRunBtn();
   } catch(e) { setStatus('⚠ Metadata error: '+e.message,''); }
+}
+
+/** Collect all language keys from question_i18n across questions, update header selector. */
+function detectLangs() {
+  const langSet = new Set();
+  for (const q of metadata) {
+    const v = q.question_i18n;
+    if (v && typeof v === 'object') Object.keys(v).forEach(k => langSet.add(k));
+  }
+  availLangs = [...langSet].sort();
+  // Keep activeLang if still valid, else pick first
+  if (!availLangs.includes(activeLang)) activeLang = availLangs[0] || '';
+
+  const wrap = document.getElementById('langSelectorWrap');
+  const sel  = document.getElementById('langSelector');
+  if (!wrap || !sel) return;
+
+  if (availLangs.length <= 1) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'flex';
+  const LANG_NAMES = { vi:'🇻🇳 Vietnamese', en:'🇬🇧 English', ja:'🇯🇵 Japanese',
+                       zh:'🇨🇳 Chinese', ko:'🇰🇷 Korean', th:'🇹🇭 Thai', id:'🇮🇩 Indonesian' };
+  sel.innerHTML = availLangs.map(l =>
+    `<option value="${l}" ${l===activeLang?'selected':''}>${LANG_NAMES[l]||l.toUpperCase()}</option>`
+  ).join('');
+}
+
+function setLang(l) {
+  activeLang = l;
+  renderQL();
+  if (data.length) renderMain();
 }
 
 /** Normalize any metadata.json or definition.json → flat array */
@@ -558,6 +602,7 @@ function qTitle(q) {
   const v = q.question_i18n || q.title || q.name || '';
   if (!v) return '';
   if (typeof v === 'string') return v;
+  if (activeLang && v[activeLang]) return v[activeLang];
   return v.vi || v.en || v.ja || Object.values(v).find(x=>x&&typeof x==='string') || '';
 }
 /** choices_i18n dict {"1":{"vi":"...","en":"..."}} → [{code, label}] */
@@ -566,7 +611,16 @@ function qChoices(q) {
   if (!ci) return [];
   if (Array.isArray(ci)) return ci.map(c=>({ code:c.code??c.value, label:i18nStr(c.label||c) }));
   if (typeof ci === 'object') {
-    if ('rows' in ci || 'columns' in ci) return [];  // matrix
+    if ('rows' in ci || 'columns' in ci) {
+      // Ranking questions store their item choices inside rows (not matrix sub-questions)
+      if (qType(q) === 'ranking' && ci.rows) {
+        return Object.entries(ci.rows).map(([code, val]) => ({
+          code: /^\d+$/.test(code) ? parseInt(code) : code,
+          label: i18nStr(val)
+        }));
+      }
+      return [];  // true matrix → choices come from rows/columns separately
+    }
     return Object.entries(ci).map(([code, val]) => ({
       code: /^\d+$/.test(code) ? parseInt(code) : code,
       label: i18nStr(val)
@@ -585,7 +639,10 @@ function qRows(q) {
 function i18nStr(v) {
   if (!v) return '';
   if (typeof v === 'string') return v;
-  if (typeof v === 'object') return v.vi || v.en || v.ja || Object.values(v).find(x=>x&&typeof x==='string') || '';
+  if (typeof v === 'object') {
+    if (activeLang && v[activeLang]) return v[activeLang];
+    return v.vi || v.en || v.ja || Object.values(v).find(x=>x&&typeof x==='string') || '';
+  }
   return String(v);
 }
 function findMetaQ(label) { return metadata.find(q => q.label === label) || null; }
@@ -594,7 +651,8 @@ function typeBadgeClass(t) {
   if (t==='MA') return 'tb-ma';
   if (t.startsWith('Matrix')) return 'tb-mx';
   if (t==='FT') return 'tb-ft';
-  if (t==='NUM'||t==='ranking'||t==='multiplenumber') return 'tb-nm';
+  if (t==='ranking') return 'tb-rk';
+  if (t==='NUM'||t==='multiplenumber') return 'tb-nm';
   return 'tb-ot';
 }
 function typeIcon(t) {
@@ -602,6 +660,7 @@ function typeIcon(t) {
   if (t==='MA') return '☑️';
   if (t.startsWith('Matrix')) return '📊';
   if (t==='FT') return '📝';
+  if (t==='ranking') return '🏆';
   if (t==='NUM') return '🔢';
   return '❓';
 }
@@ -624,10 +683,14 @@ function filteredQ() {
   const s = (document.getElementById('qSearch')?.value||'').toLowerCase();
   return metadata.filter(q => {
     const t = qType(q);
-    if (qf==='SA'     && t!=='SA') return false;
-    if (qf==='MA'     && t!=='MA') return false;
-    if (qf==='Matrix' && !t.startsWith('Matrix')) return false;
-    if (qf==='other'  && (t==='SA'||t==='MA'||t.startsWith('Matrix'))) return false;
+    const _isNum = t==='NUM' || t==='multiplenumber';
+    const _isText = !_isNum && t!=='SA' && t!=='MA' && !t.startsWith('Matrix') && t!=='ranking';
+    if (qf==='SA'      && t!=='SA') return false;
+    if (qf==='MA'      && t!=='MA') return false;
+    if (qf==='Matrix'  && !t.startsWith('Matrix')) return false;
+    if (qf==='ranking' && t!=='ranking') return false;
+    if (qf==='num'     && !_isNum) return false;
+    if (qf==='text'    && !_isText) return false;
     if (s) {
       const l = (q.label||'').toLowerCase();
       const n = qTitle(q).toLowerCase();
@@ -1183,6 +1246,29 @@ function renderStubModalBody(item, mq) {
     </div>
   </div>` : '';
 
+  // ── Ranking-specific options ──
+  const rankingHtml = (t === 'ranking') ? `
+  <div class="cfg-section" style="margin-top:14px">
+    <div class="cfg-title">🏆 Ranking display mode</div>
+    <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:10px">
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px">
+        <input type="radio" name="ranking_mode" value="rank_dist" style="margin-top:2px;flex-shrink:0"
+          ${(item.ranking_mode||'rank_dist')==='rank_dist'?'checked':''}
+          onchange="modalSt.item.ranking_mode='rank_dist';document.getElementById('rankOptExtra').innerHTML=_rankOptExtra()">
+        <div><strong>Rank distribution</strong><br>
+          <span style="color:#888">Each rank position (Top 1, Top 2 …) is a section showing which choice respondents placed there.</span></div>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px">
+        <input type="radio" name="ranking_mode" value="any_rank" style="margin-top:2px;flex-shrink:0"
+          ${item.ranking_mode==='any_rank'?'checked':''}
+          onchange="modalSt.item.ranking_mode='any_rank';document.getElementById('rankOptExtra').innerHTML=_rankOptExtra()">
+        <div><strong>Any rank (MA-style)</strong><br>
+          <span style="color:#888">For each choice, show % of respondents who ranked it at any position.</span></div>
+      </label>
+    </div>
+    <div id="rankOptExtra">${_rankOptExtra_for(item)}</div>
+  </div>` : '';
+
   return `${infoHtml}
   <div class="fr" style="margin-bottom:14px">
     <div class="fg" style="flex:.7"><label class="fl">Question</label>
@@ -1197,8 +1283,19 @@ function renderStubModalBody(item, mq) {
       <input type="checkbox" ${stats.includes(s)?'checked':''} onchange="mStatToggle('${s}',this.checked)">
       ${s}</label>`).join('')}
   </div>
-  ${choicesHtml}`;
+  ${choicesHtml}${rankingHtml}`;
 }
+
+function _rankOptExtra_for(item) {
+  if ((item.ranking_mode||'rank_dist') !== 'rank_dist') return '';
+  return `<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+    <label class="fl" style="margin:0;white-space:nowrap">Show top N positions</label>
+    <input type="number" id="rankTopN" min="1" max="20" value="${item.ranking_top_n||''}" placeholder="All"
+      style="width:72px" onchange="modalSt.item.ranking_top_n=this.value?parseInt(this.value):0">
+    <span style="font-size:11px;color:#aaa">leave blank = all</span>
+  </div>`;
+}
+function _rankOptExtra() { return _rankOptExtra_for(modalSt.item); }
 
 function renderModalGroup(g, i) {
   const isMulti = Array.isArray(g.values);
@@ -1336,6 +1433,11 @@ function saveModal() {
     const q=document.getElementById('ms_q'), l=document.getElementById('ms_l');
     if(q) modalSt.item.question=q.value;
     if(l) modalSt.item.label=l.value;
+    // Ranking options — read directly from DOM in case onchange didn't fire
+    const modeEl = document.querySelector('input[name="ranking_mode"]:checked');
+    if (modeEl) modalSt.item.ranking_mode = modeEl.value;
+    const topNEl = document.getElementById('rankTopN');
+    if (topNEl) modalSt.item.ranking_top_n = topNEl.value ? parseInt(topNEl.value) : 0;
     cfg().stub[modalSt.idx]=modalSt.item;
   }
   markDirty(); renderMain(); closeModal();
@@ -2165,7 +2267,10 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
       return computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels);
     }
     const col  = qToCol(mq.label);
-    if (t === 'NUM' || t === 'ranking' || t === 'multiplenumber') {
+    if (t === 'ranking') {
+      return computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels);
+    }
+    if (t === 'NUM' || t === 'multiplenumber') {
       const colData = bannerCols.map(bc => computeNumericStats(bc.rows, col));
       return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qLabel, answerType: t,
         rows: buildNumericRows(stats, colData) };
@@ -2187,6 +2292,73 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
       rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels) };
   }
   return null;
+}
+
+// ── Ranking block (two modes) ────────────────────────
+// Ranking rawdata format: single column, semicolon-separated codes in rank order.
+// e.g. "2;1;3;5;4" → choice 2 ranked 1st, choice 1 ranked 2nd, choice 3 ranked 3rd …
+function computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels) {
+  const stats  = stubItem.stats || ['base','percent'];
+  const mode   = stubItem.ranking_mode || 'rank_dist';
+  const topN   = stubItem.ranking_top_n || 0;  // 0 = all positions
+  const col    = qToCol(mq.label);
+  const ch     = qChoices(mq);
+  if (!ch.length) return null;  // no choices → skip
+
+  const allCodes = ch.map(c => Number(c.code));
+
+  // Determine how many rank positions to show
+  // Default: number of choices (= max possible rank positions)
+  const maxPos = topN > 0 ? topN : ch.length;
+
+  // Helper: build counts array [{code, count}, …] expected by buildRows
+  function rankCounts(validRows, getCodes) {
+    const tally = Object.fromEntries(allCodes.map(c => [c, 0]));
+    for (const row of validRows) {
+      const codes = getCodes(row);
+      codes.forEach(c => { const n = Number(c); if (tally.hasOwnProperty(n)) tally[n]++; });
+    }
+    return allCodes.map(c => ({ code: c, count: tally[c] }));
+  }
+
+  if (mode === 'any_rank') {
+    // ── MA-style: each choice → % of respondents who ranked it at ANY position ──
+    const colData = bannerCols.map(bc => {
+      const validRows = bc.rows.filter(r => {
+        const v = r[col]; return v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== 'nan';
+      });
+      const base = validRows.length;
+      const counts = rankCounts(validRows, row => {
+        const seen = new Set();
+        return cellVals(row[col]).filter(c => { const cs = c; if (seen.has(cs)) return false; seen.add(cs); return true; });
+      });
+      return { base, counts, t2b:0, b2b:0, mean:0, std:0, ma_mean:0, ma_std:0, ma_min:0, ma_max:0 };
+    });
+    return { type:'flat', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType:'ranking (any)',
+      rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false) };
+  }
+
+  // ── rank_dist: each rank position N → which choice did respondents place there? ──
+  const subBlocks = [];
+  for (let n = 1; n <= maxPos; n++) {
+    const idx = n - 1;  // 0-based index into the split array
+    const colData = bannerCols.map(bc => {
+      // base = respondents who provided at least N rankings
+      const validRows = bc.rows.filter(r => {
+        const v = r[col];
+        if (v === null || v === undefined || String(v).trim() === '' || String(v).trim() === 'nan') return false;
+        return cellVals(v).length >= n;
+      });
+      const base = validRows.length;
+      const counts = rankCounts(validRows, row => {
+        const codes = cellVals(row[col]);
+        return codes[idx] !== undefined ? [codes[idx]] : [];
+      });
+      return { base, counts, t2b:0, b2b:0, mean:0, std:0, ma_mean:0, ma_std:0, ma_min:0, ma_max:0 };
+    });
+    subBlocks.push({ rowLabel: `Rank ${n}`, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false) });
+  }
+  return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType:'ranking', subBlocks };
 }
 
 function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels) {
@@ -2574,7 +2746,7 @@ async function downloadXlsxDirect() {
     setStatus('⚠ Download error: ' + e.message, '');
   } finally {
     btn.disabled = false;
-    btn.textContent = '⬇ Download';
+    btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table';
   }
 }
 
