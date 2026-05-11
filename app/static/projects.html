@@ -1,20 +1,21 @@
 <!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8">
+<link rel="shortcut icon" href="/static/favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SurveyFlow — Projects</title>
+<title>Q&Me — Projects</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#1a1a2e;background:#f0f2f5;min-height:100vh;display:flex;flex-direction:column}
 
 /* ── Header ── */
 .hdr{background:#16213e;color:white;padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.25)}
-.hdr-logo{font-size:15px;font-weight:700;display:flex;align-items:center;gap:7px}
-.hdr-logo span{color:#a8c7fa}
+.hdr-logo{display:flex;align-items:center}
+.hdr-logo img{height:30px;display:block}
 .gap{flex:1}
 .btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .12s;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-pri{background:#1a73e8;color:white}.btn-pri:not(:disabled):hover{background:#1557b0}
+.btn-pri{background:#f36a17;color:white}.btn-pri:not(:disabled):hover{background:#d45a0f}
 .btn-suc{background:#1e8449;color:white}.btn-suc:not(:disabled):hover{background:#166138}
 .btn-gho{background:transparent;color:#9ab;border:1px solid #3d4757}.btn-gho:hover{background:#3d4757;color:#e0e6ef}
 
@@ -94,10 +95,72 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 </head>
 <body>
 
+<!-- QMe gate — shown when not connected, covers entire page -->
+<div id="qmeGate" style="display:none;position:fixed;inset:0;background:#0d1117;z-index:9999;
+     flex-direction:column;align-items:center;justify-content:center;gap:20px">
+  <img src="/static/logo.png" alt="Q&Me" style="height:52px;filter:brightness(0) invert(1)">
+  <div style="color:#8899aa;font-size:13px">Kết nối QMe MCP để tiếp tục</div>
+  <button class="btn btn-pri" style="padding:10px 28px;font-size:13px;margin-top:8px"
+          onclick="connectQme()">🔗 Connect QMe</button>
+  <div id="qmeGateErr" style="color:#f87171;font-size:12px;display:none"></div>
+</div>
+
 <div class="hdr">
-  <div class="hdr-logo">📊 <span>SurveyFlow</span></div>
+  <div class="hdr-logo"><img src="/static/logo.png" alt="Q&Me"></div>
   <div class="gap"></div>
   <button class="btn btn-pri" onclick="openNewDialog()">＋ New Survey</button>
+  <button id="qmeBtn" class="btn btn-gho" onclick="connectQme()" style="font-size:11px;gap:5px">
+    <span id="qmeDot" style="width:7px;height:7px;border-radius:50%;background:#666;display:inline-block"></span>
+    <span id="qmeLbl">QMe</span>
+  </button>
+</div>
+
+<!-- Global loading overlay -->
+<div id="loadingOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);
+     z-index:8000;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div class="spin" style="width:36px;height:36px;border-width:4px"></div>
+  <div id="loadingMsg" style="color:#e0e6ef;font-size:13px;font-weight:500">Loading…</div>
+</div>
+
+<!-- QMe login modal -->
+<div id="qmeMov" class="mov" style="display:none;z-index:10000" onclick="if(event.target===this)closeQmeModal()">
+  <div class="mdlg" style="width:400px">
+    <div class="mhd">
+      <strong>🔗 Connect QMe</strong>
+      <button class="mbtn-close" onclick="closeQmeModal()">✕</button>
+    </div>
+
+    <!-- Step 1: email + password -->
+    <div id="qmeStep1">
+      <div class="mbody" style="gap:10px">
+        <input id="qmeEmail" type="email" placeholder="Email" autocomplete="email"
+          style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit">
+        <input id="qmePassword" type="password" placeholder="Password" autocomplete="current-password"
+          style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit"
+          onkeydown="if(event.key==='Enter')qmeDoLogin()">
+      </div>
+      <div class="mft">
+        <div id="qmeLoginStatus" class="mft-status" style="display:none"></div>
+        <button class="btn btn-gho" onclick="closeQmeModal()">Cancel</button>
+        <button id="qmeLoginBtn" class="btn btn-pri" onclick="qmeDoLogin()">Send OTP</button>
+      </div>
+    </div>
+
+    <!-- Step 2: OTP -->
+    <div id="qmeStep2" style="display:none">
+      <div class="mbody" style="gap:10px">
+        <p style="font-size:12px;color:#555">OTP đã được gửi tới email của bạn.</p>
+        <input id="qmeOtp" type="text" placeholder="Nhập OTP" maxlength="10"
+          style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:18px;letter-spacing:6px;text-align:center;outline:none;font-family:monospace"
+          onkeydown="if(event.key==='Enter')qmeDoVerify()">
+      </div>
+      <div class="mft">
+        <div id="qmeOtpStatus" class="mft-status" style="display:none"></div>
+        <button class="btn btn-gho" onclick="qmeBackToLogin()">← Back</button>
+        <button id="qmeVerifyBtn" class="btn btn-pri" onclick="qmeDoVerify()">Verify</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="main">
@@ -147,6 +210,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 
 <script>
 // ════════════════════════════════════════════════════
+// LOADING LOCK
+// ════════════════════════════════════════════════════
+function showLoading(msg = 'Loading…') {
+  const el = document.getElementById('loadingOverlay');
+  document.getElementById('loadingMsg').textContent = msg;
+  el.style.display = 'flex';
+}
+function hideLoading() {
+  document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+// ════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════
 let allProjects = [];
@@ -164,6 +239,7 @@ function fmtProject(p) {
 }
 
 async function loadProjects() {
+  showLoading('Loading projects…');
   document.getElementById('projArea').innerHTML =
     '<div class="loading"><div class="spin"></div> Loading projects…</div>';
   try {
@@ -172,6 +248,8 @@ async function loadProjects() {
   } catch(e) {
     document.getElementById('projArea').innerHTML =
       `<div class="empty"><div class="empty-ico">⚠️</div><h3>Failed to load</h3><p>${e.message}</p></div>`;
+  } finally {
+    hideLoading();
   }
 }
 
@@ -256,6 +334,7 @@ async function doSearch() {
   res.innerHTML = '<div class="res-empty">Searching…</div>';
   dlgSelected = null;
   document.getElementById('dlgAddBtn').disabled = true;
+  showLoading('Searching QMe…');
   try {
     const data = await fetch(`/api/surveys/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json());
     const surveys = data.surveys || data.results || (Array.isArray(data) ? data : []);
@@ -272,6 +351,8 @@ async function doSearch() {
     }).join('');
   } catch(e) {
     res.innerHTML = `<div class="res-empty">Error: ${e.message}</div>`;
+  } finally {
+    hideLoading();
   }
 }
 
@@ -293,13 +374,14 @@ async function doAddSurvey() {
   btn.disabled = true;
   btn.textContent = '⏳ Fetching…';
   setDlgStatus(`Fetching survey ${dlgSelected.id} from QMe…`, '');
+  showLoading(`Fetching survey ${dlgSelected.id} from QMe…`);
   try {
     const r = await fetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
     const d = await r.json();
     if (!r.ok) throw new Error(d.detail || 'refresh failed');
     setDlgStatus(`✓ Done — ${d.n_rows} rows`, 'ok');
+    showLoading('Opening project…');
 
-    // Re-read the project info from the API to get the correct title/code from definition.json
     let displayTitle = `[${dlgSelected.id}] ${dlgSelected.title}`;
     try {
       const projects = await fetch('/api/surveys/projects').then(r => r.json());
@@ -314,6 +396,7 @@ async function doAddSurvey() {
     setDlgStatus(`✗ Error: ${e.message}`, 'err');
     btn.disabled = false;
     btn.textContent = '🔄 Fetch & Open';
+    hideLoading();
   }
 }
 
@@ -335,8 +418,122 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeNewDialog();
 });
 
+// ════════════════════════════════════════════════════
+// QMe CONNECTION
+// ════════════════════════════════════════════════════
+async function checkQmeStatus() {
+  try {
+    const { connected, email } = await fetch('/api/qme/status').then(r => r.json());
+    const dot = document.getElementById('qmeDot');
+    const lbl = document.getElementById('qmeLbl');
+    const btn = document.getElementById('qmeBtn');
+    const gate = document.getElementById('qmeGate');
+    if (connected) {
+      gate.style.display = 'none';
+      dot.style.background = '#22c55e';
+      lbl.textContent = email || 'QMe Connected';
+      btn.title = `Connected as ${email || 'QMe'} — click to disconnect`;
+      btn.onclick = disconnectQme;
+    } else {
+      gate.style.display = 'flex';
+      dot.style.background = '#f87171';
+      lbl.textContent = 'Connect QMe';
+      btn.title = 'Click to connect QMe';
+      btn.onclick = connectQme;
+    }
+  } catch(_) {}
+}
+
+let _qmeRef = '';
+
+function connectQme() {
+  document.getElementById('qmeMov').style.display = 'flex';
+  document.getElementById('qmeStep1').style.display = '';
+  document.getElementById('qmeStep2').style.display = 'none';
+  document.getElementById('qmeLoginStatus').style.display = 'none';
+  setTimeout(() => document.getElementById('qmeEmail').focus(), 50);
+}
+
+function closeQmeModal() {
+  document.getElementById('qmeMov').style.display = 'none';
+}
+
+function qmeBackToLogin() {
+  document.getElementById('qmeStep2').style.display = 'none';
+  document.getElementById('qmeStep1').style.display = '';
+}
+
+async function qmeDoLogin() {
+  const email = document.getElementById('qmeEmail').value.trim();
+  const password = document.getElementById('qmePassword').value;
+  if (!email || !password) return;
+
+  const btn = document.getElementById('qmeLoginBtn');
+  const status = document.getElementById('qmeLoginStatus');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  status.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/qme/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+    _qmeRef = data.ref || '';
+    document.getElementById('qmeStep1').style.display = 'none';
+    document.getElementById('qmeStep2').style.display = '';
+    document.getElementById('qmeOtpStatus').style.display = 'none';
+    document.getElementById('qmeOtp').value = '';
+    document.getElementById('qmeOtp').focus();
+  } catch(e) {
+    status.style.display = '';
+    status.className = 'mft-status err';
+    status.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send OTP';
+  }
+}
+
+async function qmeDoVerify() {
+  const email = document.getElementById('qmeEmail').value.trim();
+  const otp = document.getElementById('qmeOtp').value.trim();
+  if (!otp) return;
+
+  const btn = document.getElementById('qmeVerifyBtn');
+  const status = document.getElementById('qmeOtpStatus');
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  status.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/qme/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, ref: _qmeRef, otp }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+    closeQmeModal();
+    checkQmeStatus();
+  } catch(e) {
+    status.style.display = '';
+    status.className = 'mft-status err';
+    status.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verify';
+  }
+}
+
+async function disconnectQme() {
+  if (!confirm('Disconnect QMe?')) return;
+  await fetch('/api/qme/disconnect', { method: 'DELETE' });
+  checkQmeStatus();
+}
+
 // ── Init ──
 loadProjects();
+checkQmeStatus();
 </script>
 </body>
 </html>

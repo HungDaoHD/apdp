@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="vi"><head>
 <meta charset="UTF-8">
+<link rel="shortcut icon" href="/static/favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SurveyFlow — datatable.json Editor</title>
+<title>Q&Me — datatable.json Editor</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
@@ -11,7 +12,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 
 /* Header */
 .hdr{background:#16213e;color:white;padding:0 14px;height:48px;display:flex;align-items:center;gap:8px;flex-shrink:0}
-.hdr-logo{font-size:13px;font-weight:700;margin-right:4px;white-space:nowrap}
+.hdr-logo{display:flex;align-items:center;margin-right:2px}
+.hdr-logo img{height:24px;display:block}
 .sep{width:1px;height:22px;background:#2d3748;flex-shrink:0}
 .fbadge{font-size:11px;padding:2px 9px;border-radius:4px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fbadge.none{background:#252f3f;color:#555}
@@ -19,7 +21,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .gap{flex:1}
 .btn{padding:5px 11px;border-radius:5px;border:none;cursor:pointer;font-size:11px;font-weight:500;transition:background .12s;white-space:nowrap}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-pri{background:#1a73e8;color:white}.btn-pri:not(:disabled):hover{background:#1557b0}
+.btn-pri{background:#f36a17;color:white}.btn-pri:not(:disabled):hover{background:#d45a0f}
 .btn-suc{background:#1e8449;color:white}.btn-suc:not(:disabled):hover{background:#166138}
 .btn-sec{background:#3d4757;color:#e0e6ef}.btn-sec:hover{background:#4a5568}
 .btn-dan{background:#c0392b;color:white}.btn-dan:hover{background:#992218}
@@ -85,6 +87,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .sbar .dot{width:6px;height:6px;border-radius:50%;background:#ccc;flex-shrink:0}
 .sbar.dirty .dot{background:#e67e22}.sbar.dirty .msg{color:#e67e22}
 .sbar.saved .dot{background:#27ae60}.sbar.saved .msg{color:#27ae60}
+/* Profile-status filter */
+.psfilt{display:flex;align-items:center;gap:3px;margin-left:3px}
+.psfilt-lbl{font-size:9px;color:#8899aa;text-transform:uppercase;letter-spacing:.4px;margin-right:1px;white-space:nowrap}
+.psbtn{padding:2px 8px;border:1px solid #d0d5dd;border-radius:10px;background:white;font-size:10px;font-weight:500;cursor:pointer;color:#667;transition:all .12s;white-space:nowrap}
+.psbtn.on{background:#1a73e8;border-color:#1a73e8;color:white}
+.psbtn.on-pend{background:#7c3aed;border-color:#7c3aed;color:white}
 
 /* Tabs */
 .tabs{display:flex;gap:2px;margin-bottom:14px;background:white;border:1px solid #e0e4ea;border-radius:7px;padding:3px;width:fit-content}
@@ -270,16 +278,16 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 .dt-tbl{border-collapse:collapse;font-size:11px;white-space:nowrap;min-width:600px}
 .dt-tbl th,.dt-tbl td{border:1px solid #d8dde6;padding:3px 8px}
 .dt-tbl thead th{position:sticky;top:0;z-index:5}
-.dt-stub-hdr{background:#1a1a2e;color:white;min-width:200px;max-width:260px;position:sticky;left:0;z-index:2}
+.dt-stub-hdr{background:#1a1a2e;color:white;width:30vw;min-width:30vw;max-width:30vw;position:sticky;left:0;z-index:2;white-space:normal;word-break:break-word}
 .dt-tbl thead .dt-stub-hdr{z-index:20}
-.dt-bh{background:#16213e;color:#dde;text-align:center;font-size:10px;font-weight:700}
-.dt-bh1{background:#1a3050;color:#a8c7fa;border-bottom:2px solid #4285f4}
-.dt-bh2{background:#16213e;color:#c5d8f5}
-.dt-bh3{background:#0f172a;color:#9ab;font-weight:400;font-size:10px}
-.dt-qhdr{background:#1a3050;color:#cce4ff;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0}
+.dt-bh{background:#16213e;color:#dde;text-align:center;font-size:10px;font-weight:700;white-space:normal;word-break:break-word}
+.dt-bh1{background:#1a3050;color:#a8c7fa;border-bottom:2px solid #4285f4;white-space:normal;word-break:break-word}
+.dt-bh2{background:#16213e;color:#c5d8f5;white-space:normal;word-break:break-word}
+.dt-bh3{background:#0f172a;color:#9ab;font-weight:400;font-size:10px;white-space:normal;word-break:break-word}
+.dt-qhdr{background:#1a3050;color:#cce4ff;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-qcode{color:#93b4d9;font-weight:400;font-size:10px;margin-right:2px}
-.dt-subhdr{background:#253045;color:#93b4d9;font-size:10px;padding:3px 10px 3px 18px;position:sticky;left:0}
-.dt-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.dt-subhdr{background:#253045;color:#93b4d9;font-size:10px;padding:3px 10px 3px 18px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
+.dt-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-rlbl-base{font-weight:700;color:#333;background:#f0f2f5}
 .dt-rlbl-summ{font-weight:700;color:#7b1fa2;background:#f9f0ff;font-style:italic}
 .dt-cell{text-align:right;padding:3px 8px;color:#222;background:white}
@@ -301,6 +309,8 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 </div>
 
 <div class="hdr">
+  <div class="hdr-logo"><img src="/static/logo.png" alt="Q&Me"></div>
+  <div class="sep"></div>
   <a href="/" class="btn btn-gho btn-sm" style="text-decoration:none">← Projects</a>
   <div class="sep"></div>
   <span class="fbadge none" id="surveyBadge" style="max-width:260px">Loading…</span>
@@ -313,6 +323,12 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
       style="font-size:11px;padding:2px 5px;border:1px solid #d0d5dd;border-radius:5px;background:white;color:#333;cursor:pointer;height:24px"></select>
   </div>
   <div class="sep"></div>
+  <div class="psfilt" title="Filter respondents by profile status">
+    <span class="psfilt-lbl">Status:</span>
+    <button class="psbtn on" id="psApproved" onclick="toggleStatus('approved')">Approved</button>
+    <button class="psbtn" id="psPending" onclick="toggleStatus('pending')">Pending</button>
+  </div>
+  <div class="sep"></div>
   <button class="btn" id="runBtn" disabled onclick="showPreview()"
     style="background:#7c3aed;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
   <div class="gap"></div>
@@ -320,6 +336,7 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save Data Table</button>
   <button class="btn btn-pri btn-sm" onclick="downloadXlsxDirect()" id="downloadBtn" disabled><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table</button>
   <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn">{} Raw</button>
+  <a href="/logout" class="btn btn-gho" style="text-decoration:none;font-size:11px" title="Logout">⏏</a>
 </div>
 
 <div class="body">
@@ -1836,7 +1853,7 @@ function addCfg() {
     tables:[{sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true}]});
   activeCfg=data.length-1; activeTab='layout';
   document.getElementById('saveBtn').disabled=false;
-  markDirty(); render();
+  markDirty(); render(); checkRunBtn();
 }
 function removeCfg(i) {
   if(!confirm(`Delete table "${data[i].sub_title||'Table '+(i+1)}"?`)) return;
@@ -1905,6 +1922,35 @@ function checkRunBtn() {
   if (!btn) return;
   btn.disabled       = !ok;
   btn.style.opacity  = ok ? '1' : '.45';
+}
+
+// ── Profile-status filter ─────────────────────────────
+// Returns array of active statuses, e.g. ['approved'] or ['approved','pending']
+function getProfileStatuses() {
+  const s = [];
+  if (document.getElementById('psApproved')?.classList.contains('on')) s.push('approved');
+  if (document.getElementById('psPending')?.classList.contains('on'))  s.push('pending');
+  return s.length ? s : ['approved'];  // fallback: never empty
+}
+
+function toggleStatus(key) {
+  const btn = document.getElementById(key === 'approved' ? 'psApproved' : 'psPending');
+  if (!btn) return;
+  const current = getProfileStatuses();
+  const isOn = btn.classList.contains('on');
+  // Don't allow deselecting if it's the only one active
+  if (isOn && current.length === 1) return;
+  btn.classList.toggle('on');
+  if (key === 'pending') btn.classList.toggle('on-pend', btn.classList.contains('on'));
+}
+
+// Filter rawCsv rows by the active profile statuses
+function filteredRows() {
+  if (!rawCsv) return [];
+  const statuses = getProfileStatuses();
+  if (!rawHeaders.includes('profile_status')) return rawCsv; // no column → no filter
+  const allowed = new Set(statuses.map(s => s.toLowerCase()));
+  return rawCsv.filter(r => allowed.has((r['profile_status'] || '').toLowerCase()));
 }
 
 // ── Sub-question map (built when metadata loads) ─────
@@ -1981,12 +2027,13 @@ function buildLevelChildren(parentRows, levelItem, nextLevels) {
 function buildBannerTree(banner) {
   const roots = [];
   const hasShowTotal = banner.some(it => it.show_total);
+  const allRows = filteredRows();   // ← respects active profile-status filter
 
   // Pass 1 — global Total always first (left-most column)
   for (const item of banner) {
     if (item.filter === null && !item.question) {
       if (!hasShowTotal)
-        roots.push({ label: 'Total', rows: rawCsv, children: [] });
+        roots.push({ label: 'Total', rows: allRows, children: [] });
     }
   }
 
@@ -2001,7 +2048,7 @@ function buildBannerTree(banner) {
 
     // Completely flat (no groups, no sub-levels, no sub-total) → single leaf
     if (!groups.length && !levels.length && !item.show_total) {
-      roots.push({ label: bannerLabel, rows: rawCsv, children: [] });
+      roots.push({ label: bannerLabel, rows: allRows, children: [] });
       continue;
     }
 
@@ -2010,20 +2057,20 @@ function buildBannerTree(banner) {
 
     if (!groups.length) {
       // No Lv1 groups → one pass-through node
-      const node = { label: bannerLabel, rows: rawCsv, children: [] };
+      const node = { label: bannerLabel, rows: allRows, children: [] };
       if (levels.length)
-        node.children = buildLevelChildren(rawCsv, levels[0], levels.slice(1));
+        node.children = buildLevelChildren(allRows, levels[0], levels.slice(1));
       lv1Children.push(node);
     } else {
       // show_total → Total FIRST (left side) before groups
       if (item.show_total) {
-        const node = { label: 'Total', rows: rawCsv, children: [], isSubTotal: true };
+        const node = { label: 'Total', rows: allRows, children: [], isSubTotal: true };
         if (levels.length)
-          node.children = buildLevelChildren(rawCsv, levels[0], levels.slice(1));
+          node.children = buildLevelChildren(allRows, levels[0], levels.slice(1));
         lv1Children.push(node);
       }
       for (const g of groups) {
-        const rows = filterRowsByGroup(rawCsv, col, g);
+        const rows = filterRowsByGroup(allRows, col, g);
         const node = { label: g.label, rows, children: [] };
         if (levels.length)
           node.children = buildLevelChildren(rows, levels[0], levels.slice(1));
@@ -2032,7 +2079,7 @@ function buildBannerTree(banner) {
     }
 
     // Wrap Lv1 children under the banner-label group node
-    roots.push({ label: bannerLabel, rows: rawCsv, children: lv1Children });
+    roots.push({ label: bannerLabel, rows: allRows, children: lv1Children });
   }
 
   return roots;
@@ -2571,7 +2618,7 @@ async function activateSurvey(id, title) {
   const badge = document.getElementById('surveyBadge');
   badge.textContent = title;
   badge.className = 'fbadge ok';
-  document.title = `SurveyFlow — ${title}`;
+  document.title = `Q&Me — ${title}`;
 
   const st = await fetch(`/api/surveys/${id}/status`).then(r => r.json());
 
@@ -2705,7 +2752,8 @@ async function downloadXlsxDirect() {
   setStatus('Generating datatable.xlsx…', '');
   try {
     await saveFile();
-    const res = await fetch(`/api/surveys/${currentSurveyId}/generate`, {method:'POST'});
+    const psParam = getProfileStatuses().join(',');
+    const res = await fetch(`/api/surveys/${currentSurveyId}/generate?profile_status=${encodeURIComponent(psParam)}`, {method:'POST'});
     if (!res.ok) {
       const d = await res.json();
       throw new Error(d.detail || 'generate failed');

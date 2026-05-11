@@ -9,23 +9,27 @@ _APP_DIR = Path(__file__).parent
 
 
 class Settings(BaseSettings):
-    QME_API_KEY: str
-    DATA_DIR: str = "data"
+    # QMe MCP (OAuth 2.0)
+    QME_MCP_BASE_URL:  str = "https://retail.qand.me/api/mcp"
+    QME_CLIENT_ID:     str = ""
+    QME_CLIENT_SECRET: str = ""
+    QME_REDIRECT_URI:  str = "http://localhost:8000/api/qme/callback"
 
-    # Storage backend: "local" (default) or "supabase"
-    STORAGE_BACKEND: str = "local"
-    SUPABASE_URL: Optional[str] = None
-    SUPABASE_KEY: Optional[str] = None
-    SUPABASE_BUCKET: str = "surveyflow"
+    # Storage
+    DATA_DIR:         str = "data"
+    STORAGE_BACKEND:  str = "local"
+
+    # AWS S3
+    AWS_S3_BUCKET:         Optional[str] = None
+    AWS_S3_PREFIX:         str = "surveyflow"
+    AWS_REGION:            str = "us-east-1"
+    AWS_ACCESS_KEY_ID:     Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=str(_APP_DIR / ".env"),
         env_file_encoding="utf-8",
     )
-
-    @property
-    def QME_MCP_URL(self) -> str:
-        return f"https://retail.qand.me/api/mcp?key={self.QME_API_KEY}"
 
 
 settings = Settings()

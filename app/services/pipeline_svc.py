@@ -1,17 +1,20 @@
 """Thin wrapper around the surveyflow Pipeline — storage-backend-aware."""
 from __future__ import annotations
 
+import io
 import logging
 import tempfile
 from pathlib import Path
 
+import pandas as pd
 from surveyflow.core.config import PipelineConfig
 from surveyflow.pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
 
 
-def ingest(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
+def ingest(survey_id: int, definition: dict, rows_pages: list[dict],
+           profile_status: list[str] | None = None) -> dict:
     """Run ingestion step → writes rawdata.csv + metadata.json to storage."""
     from services.storage import get_storage
     storage = get_storage()
@@ -28,6 +31,7 @@ def ingest(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
             data_dir=str(data_dir),
             skip_ingestion=False,
             datatable_config=None,
+            **({"profile_status": profile_status} if profile_status is not None else {}),
         )
         ctx = Pipeline(cfg).run()
 
@@ -41,7 +45,8 @@ def ingest(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
         }
 
 
-def run_table(survey_id: int, version: str | None = None) -> dict:
+def run_table(survey_id: int, version: str | None = None,
+              profile_status: list[str] | None = None) -> dict:
     """Run table step only (skip ingestion) → writes datatable.xlsx to storage."""
     from services.storage import get_storage
     storage = get_storage()
@@ -56,8 +61,11 @@ def run_table(survey_id: int, version: str | None = None) -> dict:
         data_dir.mkdir(parents=True, exist_ok=True)
         dt_dir.mkdir(parents=True, exist_ok=True)
 
-        # Stage files locally for the pipeline
-        (data_dir / "rawdata.csv").write_bytes(storage.read_bytes(f"{survey_id}/data/rawdata.csv"))
+        # Stage rawdata — optionally filtered by profile_status
+        raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
+        (data_dir / "rawdata.csv").write_bytes(
+            _filter_rawdata(raw_bytes, profile_status or ["approved"])
+        )
         (data_dir / "metadata.json").write_bytes(storage.read_bytes(f"{survey_id}/data/metadata.json"))
         dt_path = dt_dir / "datatable.json"
         dt_path.write_bytes(storage.read_bytes(f"{survey_id}/datatable/datatable.json"))
@@ -78,7 +86,7 @@ def run_table(survey_id: int, version: str | None = None) -> dict:
         return {"version": version, "xlsx_key": xlsx_key}
 
 
-def generate_xlsx(survey_id: int) -> bytes:
+def generate_xlsx(survey_id: int, profile_status: list[str] | None = None) -> bytes:
     """Run table step in a temp dir and return xlsx bytes — nothing is saved to storage."""
     from services.storage import get_storage
     storage = get_storage()
@@ -90,7 +98,10 @@ def generate_xlsx(survey_id: int) -> bytes:
         data_dir.mkdir(parents=True, exist_ok=True)
         dt_dir.mkdir(parents=True, exist_ok=True)
 
-        (data_dir / "rawdata.csv").write_bytes(storage.read_bytes(f"{survey_id}/data/rawdata.csv"))
+        raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
+        (data_dir / "rawdata.csv").write_bytes(
+            _filter_rawdata(raw_bytes, profile_status or ["approved"])
+        )
         (data_dir / "metadata.json").write_bytes(storage.read_bytes(f"{survey_id}/data/metadata.json"))
         dt_path = dt_dir / "datatable.json"
         dt_path.write_bytes(storage.read_bytes(f"{survey_id}/datatable/datatable.json"))
@@ -108,7 +119,11 @@ def generate_xlsx(survey_id: int) -> bytes:
 
 
 def refresh(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
-    """Fetch + ingest in one call — writes mcp files then rawdata/metadata to storage."""
+    """Fetch + ingest in one call — writes mcp files then rawdata/metadata to storage.
+
+    Always ingests ALL profile statuses so rawdata.csv can be filtered later
+    (by run_table / generate_xlsx) without re-fetching from QMe.
+    """
     from services.storage import get_storage
     storage = get_storage()
 
@@ -116,5 +131,24 @@ def refresh(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
     storage.write_json(f"{survey_id}/mcp/definition.json", definition)
     storage.write_json(f"{survey_id}/mcp/rows_pages.json", rows_pages)
 
-    # Run ingestion
-    return ingest(survey_id, definition, rows_pages)
+    # Ingest all statuses — profile_status filter is applied at table/preview time
+    return ingest(survey_id, definition, rows_pages, profile_status=["approved", "pending"])
+
+
+# ── helpers ────────────────────────────────────────────────────────────────────
+
+def _filter_rawdata(raw_bytes: bytes, profile_status: list[str]) -> bytes:
+    """Return CSV bytes filtered to rows whose profile_status column is in the list.
+
+    If the column doesn't exist or the list is empty the original bytes are returned.
+    """
+    try:
+        df = pd.read_csv(io.BytesIO(raw_bytes), low_memory=False)
+        if "profile_status" not in df.columns or not profile_status:
+            return raw_bytes
+        allowed = {s.lower() for s in profile_status}
+        df = df[df["profile_status"].str.lower().isin(allowed)]
+        return df.to_csv(index=False).encode("utf-8")
+    except Exception as exc:
+        logger.warning("profile_status filter failed — using unfiltered data: %s", exc)
+        return raw_bytes

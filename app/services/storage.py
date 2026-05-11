@@ -1,4 +1,4 @@
-"""Storage backend abstraction — local filesystem or Supabase Storage."""
+"""Storage backend abstraction — local filesystem or AWS S3."""
 from __future__ import annotations
 
 import json
@@ -20,6 +20,9 @@ class StorageBackend(ABC):
 
     @abstractmethod
     def list_prefix(self, prefix: str) -> list[str]: ...
+
+    @abstractmethod
+    def list_survey_ids(self) -> list[int]: ...
 
     # ── convenience helpers ───────────────────────────────────────────────────
 
@@ -85,62 +88,65 @@ class LocalStorage(StorageBackend):
         ])
 
 
-# ── Supabase Storage ──────────────────────────────────────────────────────────
+# ── AWS S3 ────────────────────────────────────────────────────────────────────
 
-class SupabaseStorage(StorageBackend):
-    def __init__(self, url: str, key: str, bucket: str):
-        from supabase import create_client
-        self._sb = create_client(url, key)
+class S3Storage(StorageBackend):
+    def __init__(
+        self,
+        bucket: str,
+        prefix: str = "",
+        region: str = "us-east-1",
+        aws_access_key_id: str | None = None,
+        aws_secret_access_key: str | None = None,
+    ):
+        import boto3
+        kwargs: dict = {"region_name": region}
+        if aws_access_key_id and aws_secret_access_key:
+            kwargs["aws_access_key_id"] = aws_access_key_id
+            kwargs["aws_secret_access_key"] = aws_secret_access_key
+        self._s3 = boto3.client("s3", **kwargs)
         self.bucket = bucket
+        self.prefix = prefix.rstrip("/")  # e.g. "surveyflow"
 
-    def _store(self):
-        return self._sb.storage.from_(self.bucket)
+    def _key(self, key: str) -> str:
+        return f"{self.prefix}/{key}" if self.prefix else key
 
     def read_bytes(self, key: str) -> bytes:
-        return self._store().download(key)
+        resp = self._s3.get_object(Bucket=self.bucket, Key=self._key(key))
+        return resp["Body"].read()
 
     def write_bytes(self, key: str, data: bytes) -> None:
-        self._store().upload(key, data, {"upsert": "true"})
+        self._s3.put_object(Bucket=self.bucket, Key=self._key(key), Body=data)
 
     def exists(self, key: str) -> bool:
-        parts = key.rsplit("/", 1)
-        folder = parts[0] if len(parts) == 2 else ""
-        name = parts[-1]
         try:
-            files = self._store().list(folder) or []
-            return any(f.get("name") == name for f in files)
+            self._s3.head_object(Bucket=self.bucket, Key=self._key(key))
+            return True
         except Exception:
             return False
 
     def list_prefix(self, prefix: str) -> list[str]:
+        full_prefix = self._key(prefix)
         results: list[str] = []
-        self._list_recursive(prefix.rstrip("/"), results)
+        paginator = self._s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=full_prefix):
+            for obj in page.get("Contents", []):
+                k = obj["Key"]
+                # Strip the storage prefix to get relative key
+                rel = k[len(self.prefix) + 1:] if self.prefix else k
+                results.append(rel)
         return results
 
-    def _list_recursive(self, folder: str, results: list[str]) -> None:
-        try:
-            items = self._store().list(folder) or []
-        except Exception:
-            return
-        for item in items:
-            name = item.get("name", "")
-            if not name:
-                continue
-            full = f"{folder}/{name}" if folder else name
-            if item.get("metadata") is not None:  # file
-                results.append(full)
-            else:  # subfolder
-                self._list_recursive(full, results)
-
     def list_survey_ids(self) -> list[int]:
-        try:
-            items = self._store().list("") or []
-        except Exception:
-            return []
+        # List top-level "folders" (common prefixes with delimiter)
+        full_prefix = self.prefix + "/" if self.prefix else ""
+        resp = self._s3.list_objects_v2(
+            Bucket=self.bucket, Prefix=full_prefix, Delimiter="/"
+        )
         ids = []
-        for item in items:
-            name = item.get("name", "")
-            if name and name.isdigit() and item.get("metadata") is None:
+        for cp in resp.get("CommonPrefixes", []):
+            name = cp["Prefix"].rstrip("/").split("/")[-1]
+            if name.isdigit():
                 ids.append(int(name))
         return sorted(ids)
 
@@ -150,10 +156,16 @@ class SupabaseStorage(StorageBackend):
 @lru_cache(maxsize=1)
 def _build_storage() -> StorageBackend:
     from config import settings  # imported here to avoid circular import
-    if settings.STORAGE_BACKEND == "supabase":
-        if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-            raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set when STORAGE_BACKEND=supabase")
-        return SupabaseStorage(settings.SUPABASE_URL, settings.SUPABASE_KEY, settings.SUPABASE_BUCKET)
+    if settings.STORAGE_BACKEND == "s3":
+        if not settings.AWS_S3_BUCKET:
+            raise RuntimeError("AWS_S3_BUCKET must be set when STORAGE_BACKEND=s3")
+        return S3Storage(
+            bucket=settings.AWS_S3_BUCKET,
+            prefix=settings.AWS_S3_PREFIX,
+            region=settings.AWS_REGION,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        )
     base = Path(settings.DATA_DIR)
     if not base.is_absolute():
         from config import _APP_DIR

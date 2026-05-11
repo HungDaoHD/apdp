@@ -4,16 +4,11 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
-from config import settings
 from services import pipeline_svc
-from services.mcp_client import MCPClient, MCPError
+from services.mcp_client import get_mcp_client, MCPError
 from services.storage import get_storage
 
 router = APIRouter(prefix="/api/surveys", tags=["pipeline"])
-
-
-def _mcp() -> MCPClient:
-    return MCPClient(settings.QME_MCP_URL)
 
 
 # ── refresh (fetch + ingest combined) ────────────────────────────────────────
@@ -21,7 +16,7 @@ def _mcp() -> MCPClient:
 @router.post("/{survey_id}/refresh")
 async def refresh_survey(survey_id: int):
     """Fetch fresh data from QMe then run ingestion — replaces separate fetch+ingest."""
-    mcp = _mcp()
+    mcp = get_mcp_client()
     try:
         definition = await mcp.get_survey_definition(survey_id)
         rows_pages = await mcp.get_all_rows(survey_id)
@@ -38,16 +33,20 @@ async def refresh_survey(survey_id: int):
 # ── generate xlsx (no storage write) ─────────────────────────────────────────
 
 @router.post("/{survey_id}/generate")
-async def generate_xlsx(survey_id: int):
-    """Run table step and return xlsx bytes directly — nothing written to storage."""
+async def generate_xlsx(survey_id: int, profile_status: str = "approved"):
+    """Run table step and return xlsx bytes directly — nothing written to storage.
+
+    profile_status: comma-separated list, e.g. "approved" or "approved,pending"
+    """
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
     if not storage.exists(f"{survey_id}/datatable/datatable.json"):
         raise HTTPException(400, "No datatable.json found")
 
+    statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
     try:
-        xlsx_bytes = pipeline_svc.generate_xlsx(survey_id)
+        xlsx_bytes = pipeline_svc.generate_xlsx(survey_id, profile_status=statuses)
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
@@ -119,15 +118,21 @@ async def save_datatable(survey_id: int, request: Request):
 # ── run pipeline (table step) ─────────────────────────────────────────────────
 
 @router.post("/{survey_id}/run")
-async def run_pipeline(survey_id: int, version: str | None = None):
+async def run_pipeline(survey_id: int, version: str | None = None,
+                       profile_status: str = "approved"):
+    """Run table step and save versioned datatable.xlsx.
+
+    profile_status: comma-separated list, e.g. "approved" or "approved,pending"
+    """
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run /ingest first — rawdata.csv not found")
     if not storage.exists(f"{survey_id}/datatable/datatable.json"):
         raise HTTPException(400, "No datatable.json found")
 
+    statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
     try:
-        return pipeline_svc.run_table(survey_id, version)
+        return pipeline_svc.run_table(survey_id, version, profile_status=statuses)
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:

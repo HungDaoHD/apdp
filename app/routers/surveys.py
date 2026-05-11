@@ -5,15 +5,10 @@ import re
 
 from fastapi import APIRouter, HTTPException
 
-from config import settings
-from services.mcp_client import MCPClient, MCPError
+from services.mcp_client import get_mcp_client, MCPError
 from services.storage import get_storage
 
 router = APIRouter(prefix="/api/surveys", tags=["surveys"])
-
-
-def _mcp() -> MCPClient:
-    return MCPClient(settings.QME_MCP_URL)
 
 
 # ── projects (stored surveys) ─────────────────────────────────────────────────
@@ -70,7 +65,7 @@ async def list_projects():
 @router.get("/search")
 async def search_surveys(q: str = "", limit: int = 50):
     try:
-        return await _mcp().search_surveys(query=q, limit=limit)
+        return await get_mcp_client().search_surveys(query=q, limit=limit)
     except MCPError as exc:
         raise HTTPException(502, str(exc))
 
@@ -80,7 +75,7 @@ async def search_surveys(q: str = "", limit: int = 50):
 @router.post("/{survey_id}/fetch")
 async def fetch_survey(survey_id: int):
     """Download definition + all rows pages from QMe MCP and save to storage."""
-    mcp = _mcp()
+    mcp = get_mcp_client()
     try:
         definition = await mcp.get_survey_definition(survey_id)
         rows_pages = await mcp.get_all_rows(survey_id)

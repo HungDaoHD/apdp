@@ -9,6 +9,7 @@ dist/
 build/
 .eggs/
 
+
 # Virtual environment
 .venv/
 venv/
@@ -33,3 +34,6 @@ Thumbs.db
 
 # Claude worktrees
 .claude/worktrees/
+
+*.xlsx
+

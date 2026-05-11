@@ -2,20 +2,29 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from routers import surveys, pipeline
+from routers import surveys, pipeline, qme_auth
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
-app = FastAPI(title="SurveyFlow Web App", version="1.0.0")
+app = FastAPI(title="Q&Me SurveyFlow", version="1.0.0")
 
-app.include_router(surveys.router)
-app.include_router(pipeline.router)
+
+def require_qme():
+    """Dependency: reject request if QMe MCP is not connected."""
+    from services.mcp_client import get_storage
+    if not get_storage().is_connected():
+        raise HTTPException(status_code=401, detail="Not connected to QMe MCP")
 
 _STATIC = Path(__file__).parent / "static"
+
+app.include_router(surveys.router,  dependencies=[Depends(require_qme)])
+app.include_router(pipeline.router, dependencies=[Depends(require_qme)])
+app.include_router(qme_auth.router)   # auth routes are always public
+
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 
@@ -31,6 +40,4 @@ async def editor():
 
 if __name__ == "__main__":
     import uvicorn
-    # uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
     uvicorn.run("main:app", port=8000, reload=True)
-
