@@ -1,11 +1,14 @@
 """Survey discovery and data-fetching endpoints."""
 from __future__ import annotations
 
+import logging
 import re
 
 from fastapi import APIRouter, HTTPException
 
 from services.mcp_client import get_mcp_client, MCPError
+
+log = logging.getLogger(__name__)
 from services.storage import get_storage
 
 router = APIRouter(prefix="/api/surveys", tags=["surveys"])
@@ -67,7 +70,8 @@ async def search_surveys(q: str = "", limit: int = 50):
     try:
         return await get_mcp_client().search_surveys(query=q, limit=limit)
     except MCPError as exc:
-        raise HTTPException(502, str(exc))
+        log.warning("search_surveys failed: %s", exc)
+        raise HTTPException(502, "Search unavailable — check server logs")
 
 
 # ── fetch from QMe ────────────────────────────────────────────────────────────

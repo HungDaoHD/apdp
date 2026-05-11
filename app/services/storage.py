@@ -55,7 +55,10 @@ class LocalStorage(StorageBackend):
         self.base = Path(base_dir)
 
     def _p(self, key: str) -> Path:
-        return self.base / key
+        p = (self.base / key).resolve()
+        if not p.is_relative_to(self.base.resolve()):
+            raise ValueError(f"Forbidden path: {key!r}")
+        return p
 
     def read_bytes(self, key: str) -> bytes:
         return self._p(key).read_bytes()

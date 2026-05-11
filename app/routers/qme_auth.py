@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import secrets
+import time
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
@@ -21,8 +22,16 @@ router = APIRouter(prefix="/api/qme", tags=["qme-auth"])
 _QME = "https://retail.qand.me"
 _TOKEN_URL = f"{settings.QME_MCP_BASE_URL}/oauth/token"
 
-# { email: { cookies, state, code_verifier } }
+# { email: { cookies, state, code_verifier, created_at } }
 _sessions: dict[str, dict] = {}
+_SESSION_TTL = 600  # 10 minutes
+
+
+def _cleanup_sessions() -> None:
+    now = time.time()
+    expired = [k for k, v in _sessions.items() if now - v.get("created_at", 0) > _SESSION_TTL]
+    for k in expired:
+        _sessions.pop(k, None)
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -44,6 +53,7 @@ _REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback"
 
 @router.post("/login")
 async def qme_login(body: LoginBody):
+    _cleanup_sessions()
     state = secrets.token_urlsafe(32)
     code_verifier, code_challenge = _pkce()
 
@@ -131,6 +141,7 @@ async def qme_login(body: LoginBody):
         "code_verifier": code_verifier,
         "redirect_uri":  _REDIRECT_URI,
         "csrf_verify":   csrf_verify,
+        "created_at":    time.time(),
     }
 
     return {"ok": True, "ref": ref}
@@ -148,6 +159,8 @@ async def qme_verify(body: VerifyBody):
     session = _sessions.pop(body.email, None)
     if not session:
         raise HTTPException(400, "No pending login session — please login again")
+    if time.time() - session.get("created_at", 0) > _SESSION_TTL:
+        raise HTTPException(400, "Login session expired — please login again")
 
     cookies = session["cookies"]  # dict from login step (already visited loginverify)
     verify_url = f"{_QME}/loginverify?ref={body.ref}"
