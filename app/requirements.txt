@@ -4,9 +4,8 @@ gunicorn>=21.2.0
 httpx>=0.27.0
 pydantic-settings>=2.2.0
 python-dotenv>=1.0.0
-surveyflow>=0.1.0
+surveyflow @ git+https://github.com/HungDaoHD/surveyflow.git
 openpyxl>=3.1.0
 pandas>=2.0.0
-boto3>=1.34.0
 python-multipart>=0.0.9
 aiosmtplib>=3.0.0
