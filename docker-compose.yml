@@ -8,5 +8,5 @@ services:
     ports:
       - "9000:8000"
     volumes:
-      - ./app/data:/app/data
+      - ./app:/app
     restart: unless-stopped
