@@ -1,0 +1,12 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    env_file: app/.env
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

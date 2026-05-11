@@ -1,0 +1,14 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+app/data/
+.env
+.env.*
+.git/
+.gitignore
+*.xlsx
+.vscode/
+.idea/
