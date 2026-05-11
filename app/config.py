@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     QME_CLIENT_SECRET: str = ""
     QME_REDIRECT_URI:  str = "http://localhost:8000/api/qme/callback"
 
+    # Server
+    PORT: int = 8000
+
     # Storage
     DATA_DIR:         str = "data"
     STORAGE_BACKEND:  str = "local"

@@ -7,6 +7,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from routers import surveys, pipeline, qme_auth
+from config import Settings
+
+settings = Settings()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
@@ -40,4 +43,4 @@ async def editor():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", port=8000, reload=True)
+    uvicorn.run("main:app", port=settings.PORT, reload=True)
