@@ -2062,11 +2062,15 @@ function buildBannerTree(banner) {
         node.children = buildLevelChildren(allRows, levels[0], levels.slice(1));
       lv1Children.push(node);
     } else {
-      // show_total → Total FIRST (left side) before groups
+      // show_total → Total FIRST: rows where the banner question itself is not null
       if (item.show_total) {
-        const node = { label: 'Total', rows: allRows, children: [], isSubTotal: true };
+        const totalRows = allRows.filter(row => {
+          const v = row[col];
+          return v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== 'nan';
+        });
+        const node = { label: 'Total', rows: totalRows, children: [], isSubTotal: true };
         if (levels.length)
-          node.children = buildLevelChildren(allRows, levels[0], levels.slice(1));
+          node.children = buildLevelChildren(totalRows, levels[0], levels.slice(1));
         lv1Children.push(node);
       }
       for (const g of groups) {
@@ -2114,21 +2118,17 @@ function getLeafs(nodes) {
 // ── Build multi-row header HTML ───────────────────────
 // Returns { headerHtml, nDataRows } where nDataRows = total header rows (label + n=)
 function buildBannerHeader(roots) {
-  const maxDepth = getMaxDepth(roots);       // 0 = all roots are leaves
-  const nLabelRows = maxDepth + 1;           // label rows (depth 0 … maxDepth)
-  const nTotalRows = nLabelRows + 1;         // +1 for n= row
+  const maxDepth   = getMaxDepth(roots);
+  const nLabelRows = maxDepth + 1;
 
-  // Accumulate HTML per label-row depth
   const rowHtml = Array.from({ length: nLabelRows }, () => '');
 
   function traverse(node, depth) {
     if (!node.children || !node.children.length) {
-      // Leaf: span down through all remaining label rows
       const rowspan = maxDepth - depth + 1;
       const rsAttr  = rowspan > 1 ? ` rowspan="${rowspan}"` : '';
       rowHtml[depth] += `<th class="dt-bh dt-bh2"${rsAttr}>${h(node.label)}</th>`;
     } else {
-      // Internal group: colspan = number of leaf descendants
       const cs = countLeafs(node);
       const csAttr = cs > 1 ? ` colspan="${cs}"` : '';
       rowHtml[depth] += `<th class="dt-bh dt-bh1"${csAttr}>${h(node.label)}</th>`;
@@ -2137,19 +2137,14 @@ function buildBannerHeader(roots) {
   }
   roots.forEach(r => traverse(r, 0));
 
-  // n= row (always the last header row)
   const leafs = getLeafs(roots);
-  const nRow  = leafs.map(lf => `<th class="dt-bh dt-bh3">n=${lf.rows.length}</th>`).join('');
-
-  // Assemble: first label-row carries the stub-header cell (rowspan = nTotalRows)
   let html = '';
   for (let i = 0; i < nLabelRows; i++) {
-    if (i === 0) html += `<tr><th class="dt-stub-hdr" rowspan="${nTotalRows}"></th>${rowHtml[i]}</tr>`;
+    if (i === 0) html += `<tr><th class="dt-stub-hdr" rowspan="${nLabelRows}"></th>${rowHtml[i]}</tr>`;
     else         html += `<tr>${rowHtml[i]}</tr>`;
   }
-  html += `<tr>${nRow}</tr>`;
 
-  return { headerHtml: html, nTotalRows, nLeafs: leafs.length };
+  return { headerHtml: html, nTotalRows: nLabelRows, nLeafs: leafs.length };
 }
 
 // ── Stats helpers ────────────────────────────────────
@@ -2526,10 +2521,7 @@ function buildXlsxHeader(roots) {
 
   const leafs = getLeafs(roots);
 
-  // Build AOA rows
   const aoa = [];
-  // Track column offsets per row (for merged-cell fill)
-  // For xlsx AOA, we expand merged cells with '' as placeholder
   for (let d = 0; d < nLabelRows; d++) {
     const row = [''];  // stub column
     for (const e of rowEntries[d]) {
@@ -2538,8 +2530,6 @@ function buildXlsxHeader(roots) {
     }
     aoa.push(row);
   }
-  // n= row
-  aoa.push(['', ...leafs.map(lf => `n=${lf.rows.length}`)]);
 
   return { aoa, leafs };
 }
