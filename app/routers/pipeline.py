@@ -1,14 +1,28 @@
 """Ingestion, datatable CRUD, run, and download endpoints."""
 from __future__ import annotations
 
+import logging
+import re
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from services import pipeline_svc
 from services.mcp_client import get_mcp_client, MCPError
+from services.mcp_client import get_storage as get_token_storage
 from services.storage import get_storage
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/surveys", tags=["pipeline"])
+
+_VERSION_RE = re.compile(r"^v\d+$|^tmp$")
+
+
+def _validate_version(version: str) -> str:
+    if not _VERSION_RE.match(version):
+        raise HTTPException(400, "Invalid version format")
+    return version
 
 
 # ── refresh (fetch + ingest combined) ────────────────────────────────────────
@@ -25,9 +39,29 @@ async def refresh_survey(survey_id: int):
 
     try:
         result = pipeline_svc.refresh(survey_id, definition, rows_pages)
+        _upsert_info(survey_id)
         return {"status": "ok", **result}
     except Exception as exc:
-        raise HTTPException(500, str(exc))
+        log.exception("refresh failed for survey %s", survey_id)
+        raise HTTPException(500, "Pipeline error — check server logs")
+
+
+def _upsert_info(survey_id: int) -> None:
+    """Write/update {survey_id}/info.json with creator and last-refresh metadata."""
+    storage = get_storage()
+    email = get_token_storage().email or "unknown"
+    now = datetime.now(timezone.utc).isoformat()
+    key = f"{survey_id}/info.json"
+    try:
+        info = storage.read_json(key)
+    except Exception:
+        info = {}
+    if not info.get("created_by"):
+        info["created_by"] = email
+        info["created_at"] = now
+    info["refreshed_by"] = email
+    info["refreshed_at"] = now
+    storage.write_json(key, info)
 
 
 # ── generate xlsx (no storage write) ─────────────────────────────────────────
@@ -50,7 +84,8 @@ async def generate_xlsx(survey_id: int, profile_status: str = "approved"):
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(500, str(exc))
+        log.exception("generate_xlsx failed for survey %s", survey_id)
+        raise HTTPException(500, "Pipeline error — check server logs")
 
     return Response(
         content=xlsx_bytes,
@@ -74,7 +109,8 @@ async def ingest_survey(survey_id: int):
     try:
         return pipeline_svc.ingest(survey_id, definition, rows_pages)
     except Exception as exc:
-        raise HTTPException(500, str(exc))
+        log.exception("ingest failed for survey %s", survey_id)
+        raise HTTPException(500, "Pipeline error — check server logs")
 
 
 # ── metadata + rawdata ────────────────────────────────────────────────────────
@@ -130,19 +166,23 @@ async def run_pipeline(survey_id: int, version: str | None = None,
     if not storage.exists(f"{survey_id}/datatable/datatable.json"):
         raise HTTPException(400, "No datatable.json found")
 
+    if version is not None:
+        version = _validate_version(version)
     statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
     try:
         return pipeline_svc.run_table(survey_id, version, profile_status=statuses)
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
-        raise HTTPException(500, str(exc))
+        log.exception("run_table failed for survey %s", survey_id)
+        raise HTTPException(500, "Pipeline error — check server logs")
 
 
 # ── download xlsx ─────────────────────────────────────────────────────────────
 
 @router.get("/{survey_id}/download/{version}")
-async def download_xlsx(survey_id: int, version: str):
+async def download_xlsx(survey_id: int, version: str = "v1"):
+    version = _validate_version(version)
     storage = get_storage()
     key = f"{survey_id}/{version}/datatable.xlsx"
     if not storage.exists(key):
