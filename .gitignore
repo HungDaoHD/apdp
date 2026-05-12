@@ -37,3 +37,5 @@ Thumbs.db
 
 *.xlsx
 
+# Runtime data (token, survey files)
+data/
