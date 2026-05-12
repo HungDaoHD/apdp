@@ -1,11 +1,15 @@
 """QMe MCP client using the official MCP Python SDK."""
 from __future__ import annotations
 
+import json
 import logging
+import os
 import time
+from pathlib import Path
 from typing import Any
 
 _TOKEN_MAX_AGE = 86400  # 24 hours
+_TOKEN_FILE    = Path(os.getenv("DATA_DIR", "data")) / ".qme_token.json"
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -51,7 +55,8 @@ class MemoryTokenStorage:
         self._refresh_token = tokens.refresh_token
         self._scope         = tokens.scope
         self._expires_at    = time.time() + _TOKEN_MAX_AGE
-        log.info("QMe token stored in memory (expires in 24 h)")
+        self._save_to_disk()
+        log.info("QMe token stored (expires in 24 h)")
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         if not self._client_id:
@@ -81,13 +86,46 @@ class MemoryTokenStorage:
     @email.setter
     def email(self, value: str | None) -> None:
         self._email = value
+        self._save_to_disk()
 
     def clear(self) -> None:
         self._access_token  = None
         self._refresh_token = None
         self._expires_at    = 0.0
         self._email         = None
+        try:
+            _TOKEN_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
         log.info("QMe token cleared")
+
+    def _save_to_disk(self) -> None:
+        try:
+            _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _TOKEN_FILE.write_text(json.dumps({
+                "access_token":  self._access_token,
+                "token_type":    self._token_type,
+                "refresh_token": self._refresh_token,
+                "scope":         self._scope,
+                "expires_at":    self._expires_at,
+                "email":         self._email,
+            }))
+        except Exception as e:
+            log.warning("Could not save token to disk: %s", e)
+
+    def _load_from_disk(self) -> None:
+        try:
+            data = json.loads(_TOKEN_FILE.read_text())
+            if data.get("access_token") and time.time() < data.get("expires_at", 0) - 60:
+                self._access_token  = data["access_token"]
+                self._token_type    = data.get("token_type", "Bearer")
+                self._refresh_token = data.get("refresh_token")
+                self._scope         = data.get("scope")
+                self._expires_at    = data["expires_at"]
+                self._email         = data.get("email")
+                log.info("QMe token loaded from disk (email=%s)", self._email)
+        except Exception:
+            pass
 
 
 # ── Singleton storage ─────────────────────────────────────────────────────────
@@ -104,6 +142,7 @@ def get_storage() -> MemoryTokenStorage:
             client_secret=settings.QME_CLIENT_SECRET,
             redirect_uri=settings.QME_REDIRECT_URI,
         )
+        _storage._load_from_disk()
     return _storage
 
 
@@ -111,6 +150,7 @@ def get_storage() -> MemoryTokenStorage:
 
 async def call_tool(name: str, arguments: dict) -> Any:
     """Call a QMe MCP tool using the SDK. Raises MCPError if not connected."""
+    import httpx
     from config import settings
 
     storage = get_storage()
@@ -120,10 +160,21 @@ async def call_tool(name: str, arguments: dict) -> Any:
 
     headers = {"Authorization": f"Bearer {tokens.access_token}"}
 
-    async with streamablehttp_client(settings.QME_MCP_BASE_URL, headers=headers) as (r, w, _):
-        async with ClientSession(r, w) as session:
-            await session.initialize()
-            result = await session.call_tool(name, arguments)
+    try:
+        async with streamablehttp_client(settings.QME_MCP_BASE_URL, headers=headers) as (r, w, _):
+            async with ClientSession(r, w) as session:
+                await session.initialize()
+                result = await session.call_tool(name, arguments)
+    except* httpx.HTTPStatusError as eg:
+        # ExceptionGroup from anyio TaskGroup — unwrap the first HTTP error
+        exc = eg.exceptions[0]
+        status = exc.response.status_code
+        if status in (401, 403):
+            raise MCPError("QMe token expired or unauthorised — please reconnect.") from exc
+        raise MCPError(f"QMe MCP server returned {status} — check token or survey ID.") from exc
+    except* Exception as eg:
+        exc = eg.exceptions[0]
+        raise MCPError(f"MCP call failed: {exc}") from exc
 
     if result.content and hasattr(result.content[0], "text"):
         import json as _json
@@ -147,12 +198,15 @@ class _MCPShim:
         return await call_tool("get_survey_definition", {"survey_id": survey_id})
 
     async def get_all_rows(self, survey_id: int, page_limit: int = 200) -> list[dict]:
-        import logging
+        from datetime import date
         pages: list[dict] = []
         offset = 0
+        date_to = date.today().isoformat()
         while True:
             page = await call_tool("get_survey_rows", {
                 "survey_id": survey_id,
+                "date_from": "2000-01-01",
+                "date_to": date_to,
                 "format": "code",
                 "limit": page_limit,
                 "offset": offset,

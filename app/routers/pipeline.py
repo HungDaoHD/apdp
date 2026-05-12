@@ -35,6 +35,7 @@ async def refresh_survey(survey_id: int):
         definition = await mcp.get_survey_definition(survey_id)
         rows_pages = await mcp.get_all_rows(survey_id)
     except MCPError as exc:
+        log.warning("refresh MCP failed for survey %s: %s", survey_id, exc)
         raise HTTPException(502, str(exc))
 
     try:

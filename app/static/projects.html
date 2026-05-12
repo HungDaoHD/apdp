@@ -48,6 +48,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .stag{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;display:inline-flex;align-items:center;gap:3px}
 .stag-ok{background:#e6f4ea;color:#1e8449;border:1px solid #b7dfbf}
 .stag-no{background:#f5f5f5;color:#aaa;border:1px solid #e0e0e0}
+.stag-designing{background:#fff8e1;color:#f57f17;border:1px solid #ffe082}
+.stag-inprogress{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
+.stag-closed{background:#f3e5f5;color:#6a1b9a;border:1px solid #ce93d8}
+.pcard-meta{font-size:10px;color:#999;display:flex;flex-direction:column;gap:2px}
+.pcard-meta span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pcard-open{margin-top:auto;padding-top:4px;display:flex;justify-content:flex-end}
 .pcard-open .btn{padding:5px 14px;font-size:11px}
 
@@ -91,17 +96,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#d0d4dc;border-radius:3px}
+
+/* ── Pagination ── */
+.pagination{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:22px;flex-wrap:wrap}
+.pg-btn{min-width:32px;height:32px;padding:0 8px;border:1px solid #dde1e7;border-radius:6px;background:white;color:#444;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;justify-content:center}
+.pg-btn:hover:not(:disabled){border-color:#f36a17;color:#f36a17;background:#fff4ee}
+.pg-btn.active{background:#f36a17;color:white;border-color:#f36a17}
+.pg-btn:disabled{opacity:.35;cursor:not-allowed}
+.pg-info{font-size:11px;color:#999;padding:0 8px}
+.pg-size{font-size:11px;padding:4px 8px;border:1px solid #dde1e7;border-radius:6px;background:white;color:#444;cursor:pointer;outline:none}
+.pg-size:focus{border-color:#f36a17;outline:none}
 </style>
 </head>
 <body>
 
-<!-- QMe banner — shown when not connected, non-blocking -->
-<div id="qmeGate" style="display:none;background:#1a1a2e;border-bottom:1px solid #f36a17;
-     padding:8px 24px;align-items:center;gap:12px;z-index:100;position:relative">
-  <span style="color:#fbbf24;font-size:12px">⚠ Chưa kết nối QMe — một số tính năng bị giới hạn</span>
-  <button class="btn btn-pri" style="font-size:11px;padding:4px 14px"
+<!-- QMe gate — shown when not connected, covers entire page -->
+<div id="qmeGate" style="display:none;position:fixed;inset:0;background:#0d1117;z-index:9999;
+     flex-direction:column;align-items:center;justify-content:center;gap:20px">
+  <img src="/static/logo.png" alt="Q&Me" style="height:52px;filter:brightness(0) invert(1)">
+  <div style="color:#8899aa;font-size:13px">Kết nối QMe MCP để tiếp tục</div>
+  <button class="btn btn-pri" style="padding:10px 28px;font-size:13px;margin-top:8px"
           onclick="connectQme()">🔗 Connect QMe</button>
-  <div id="qmeGateErr" style="color:#f87171;font-size:11px;display:none"></div>
+  <div id="qmeGateErr" style="color:#f87171;font-size:12px;display:none"></div>
 </div>
 
 <div class="hdr">
@@ -174,13 +190,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
   </div>
 
   <div class="filter-bar">
-    <input class="filter-inp" id="filterInp" type="text" placeholder="Filter projects…" oninput="renderCards()">
+    <input class="filter-inp" id="filterInp" type="text" placeholder="Filter projects…" oninput="renderCards(true)">
     <span class="filter-label" id="filterLabel"></span>
   </div>
 
   <div id="projArea">
     <div class="loading"><div class="spin"></div> Loading projects…</div>
   </div>
+  <div id="paginationBar"></div>
 </div>
 
 <!-- New Survey dialog -->
@@ -225,6 +242,8 @@ function hideLoading() {
 // ════════════════════════════════════════════════════
 let allProjects = [];
 let dlgSelected = null;
+let currentPage = 1;
+let pageSize    = 9;
 
 // ════════════════════════════════════════════════════
 // PROJECTS LIST
@@ -252,7 +271,9 @@ async function loadProjects() {
   }
 }
 
-function renderCards() {
+function renderCards(resetPage = false) {
+  if (resetPage) currentPage = 1;
+
   const q = (document.getElementById('filterInp').value || '').toLowerCase();
   const filtered = q
     ? allProjects.filter(p => {
@@ -269,11 +290,84 @@ function renderCards() {
     document.getElementById('projArea').innerHTML = q
       ? `<div class="empty"><div class="empty-ico">🔍</div><h3>No matching projects</h3><p>No projects match "<strong>${esc(q)}</strong>"</p></div>`
       : `<div class="empty"><div class="empty-ico">📋</div><h3>No projects yet</h3><p>Click <strong>New Survey</strong> to fetch a survey from QMe and start working on it.</p></div>`;
+    document.getElementById('paginationBar').innerHTML = '';
     return;
   }
 
+  const totalPages = Math.ceil(filtered.length / pageSize);
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * pageSize;
+  const paged = filtered.slice(start, start + pageSize);
+
   document.getElementById('projArea').innerHTML =
-    `<div class="proj-grid">${filtered.map(renderCard).join('')}</div>`;
+    `<div class="proj-grid">${paged.map(renderCard).join('')}</div>`;
+
+  renderPagination(filtered.length, totalPages);
+}
+
+function renderPagination(total, totalPages) {
+  const bar = document.getElementById('paginationBar');
+  if (totalPages <= 1) { bar.innerHTML = ''; return; }
+
+  const maxBtns = 7;
+  let pages = [];
+  if (totalPages <= maxBtns) {
+    pages = Array.from({length: totalPages}, (_, i) => i + 1);
+  } else {
+    pages = [1];
+    let lo = Math.max(2, currentPage - 2);
+    let hi = Math.min(totalPages - 1, currentPage + 2);
+    if (lo > 2)            pages.push('…');
+    for (let i = lo; i <= hi; i++) pages.push(i);
+    if (hi < totalPages - 1) pages.push('…');
+    pages.push(totalPages);
+  }
+
+  const start = (currentPage - 1) * pageSize + 1;
+  const end   = Math.min(currentPage * pageSize, total);
+
+  bar.innerHTML = `
+    <div class="pagination">
+      <button class="pg-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>
+      ${pages.map(p => p === '…'
+        ? `<span class="pg-info">…</span>`
+        : `<button class="pg-btn${p===currentPage?' active':''}" onclick="goPage(${p})">${p}</button>`
+      ).join('')}
+      <button class="pg-btn" onclick="goPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''}>›</button>
+      <span class="pg-info">${start}–${end} of ${total}</span>
+      <select class="pg-size" onchange="changePageSize(this.value)">
+        ${[9,18,36].map(n => `<option value="${n}"${n===pageSize?' selected':''}>${n} / page</option>`).join('')}
+      </select>
+    </div>`;
+}
+
+function goPage(p) {
+  currentPage = p;
+  renderCards();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function changePageSize(val) {
+  pageSize = parseInt(val);
+  currentPage = 1;
+  renderCards();
+}
+
+function fmtDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return d.toLocaleDateString('vi-VN', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+function surveyStatusBadge(status) {
+  const map = {
+    '1': ['Designing',   'stag-designing'],
+    '2': ['In Progress', 'stag-inprogress'],
+    '3': ['Closed',      'stag-closed'],
+  };
+  const [label, cls] = map[String(status)] || [null, null];
+  return label ? `<span class="stag ${cls}">${label}</span>` : '';
 }
 
 function renderCard(p) {
@@ -286,14 +380,21 @@ function renderCard(p) {
   const tagDT      = p.has_datatable
     ? `<span class="stag stag-ok">✓ Datatable</span>`
     : `<span class="stag stag-no">— Datatable</span>`;
+  const tagStatus  = surveyStatusBadge(p.status);
   const url        = openUrl(p);
+
+  const metaLines = [];
+  if (p.created_by)   metaLines.push(`<span>Created by ${esc(p.created_by)}${p.created_at  ? ' · ' + fmtDate(p.created_at)  : ''}</span>`);
+  if (p.refreshed_by) metaLines.push(`<span>Refreshed by ${esc(p.refreshed_by)}${p.refreshed_at ? ' · ' + fmtDate(p.refreshed_at) : ''}</span>`);
+  const metaHtml = metaLines.length ? `<div class="pcard-meta">${metaLines.join('')}</div>` : '';
 
   return `<div class="pcard" onclick="window.location='${url}'">
     <div class="pcard-top">
-      ${idBadge}${codeBadge}
+      ${idBadge}${codeBadge}${tagStatus ? ' '+tagStatus : ''}
       <div class="pcard-title">${title}</div>
     </div>
     <div class="pcard-status">${tagData}${tagDT}</div>
+    ${metaHtml}
     <div class="pcard-open">
       <button class="btn btn-pri" onclick="event.stopPropagation();window.location='${url}'">Open →</button>
     </div>
@@ -342,7 +443,9 @@ async function doSearch() {
       const id    = s.survey_id || s.id;
       const title = s.display_title || s.title || s.name || `Survey ${id}`;
       const code  = s.code || s.survey_code || '';
-      const sub   = [code, s.status, s.question_count ? `${s.question_count} questions` : ''].filter(Boolean).join(' · ');
+      const statusMap = {'1':'Designing','2':'In Progress','3':'Closed'};
+      const statusLabel = statusMap[String(s.status)] || (s.status ? `Status ${s.status}` : '');
+      const sub   = [code, statusLabel, s.question_count ? `${s.question_count} questions` : ''].filter(Boolean).join(' · ');
       return `<div class="res-item" data-id="${id}" data-title="${esc(title)}" data-code="${esc(code)}" onclick="selectResult(this)">
         <div class="res-item-title">[${id}]${code?' '+code+' —':''} ${esc(title)}</div>
         ${sub ? `<div class="res-item-sub">${esc(sub)}</div>` : ''}

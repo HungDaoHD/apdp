@@ -42,25 +42,74 @@ async def list_projects():
                 )
             except Exception:
                 pass
-        # Code field (not in metadata.json — try definition.json survey object)
+        # Code + status field (not in metadata.json — try definition.json survey object)
+        status = None
         try:
+            defn = storage.read_json(f"{sid}/mcp/definition.json")
+            sv = defn.get("survey") or {}
             if not code:
-                defn = storage.read_json(f"{sid}/mcp/definition.json")
-                sv = defn.get("survey") or {}
                 code = (
                     sv.get("code") or sv.get("survey_code") or sv.get("project_code")
                     or sv.get("external_id") or sv.get("reference_code") or sv.get("project_no")
                 )
+            status = sv.get("status")
+        except Exception:
+            pass
+        info = {}
+        try:
+            info = storage.read_json(f"{sid}/info.json")
         except Exception:
             pass
         projects.append({
             "survey_id":     sid,
             "code":          code,
             "title":         title or f"Survey {sid}",
+            "status":        status,
             "has_data":      storage.exists(f"{sid}/data/rawdata.csv"),
             "has_datatable": storage.exists(f"{sid}/datatable/datatable.json"),
+            "created_by":    info.get("created_by"),
+            "created_at":    info.get("created_at"),
+            "refreshed_by":  info.get("refreshed_by"),
+            "refreshed_at":  info.get("refreshed_at"),
         })
     return projects
+
+
+# ── debug: list MCP tools ─────────────────────────────────────────────────────
+
+@router.get("/debug/tools")
+async def list_mcp_tools():
+    """List all tools available on the QMe MCP server with their schemas."""
+    import httpx
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+    from services.mcp_client import get_storage, MCPError
+    from config import settings
+
+    storage = get_storage()
+    tokens = await storage.get_tokens()
+    if not tokens or not tokens.access_token:
+        raise HTTPException(401, "Not connected to QMe")
+
+    headers = {"Authorization": f"Bearer {tokens.access_token}"}
+    try:
+        async with streamablehttp_client(settings.QME_MCP_BASE_URL, headers=headers) as (r, w, _):
+            async with ClientSession(r, w) as session:
+                await session.initialize()
+                tools_result = await session.list_tools()
+    except* httpx.HTTPStatusError as eg:
+        raise HTTPException(502, f"MCP error: {eg.exceptions[0].response.status_code}")
+    except* Exception as eg:
+        raise HTTPException(502, str(eg.exceptions[0]))
+
+    return [
+        {
+            "name": t.name,
+            "description": t.description,
+            "inputSchema": t.inputSchema,
+        }
+        for t in tools_result.tools
+    ]
 
 
 # ── search ────────────────────────────────────────────────────────────────────

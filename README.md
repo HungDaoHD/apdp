@@ -120,7 +120,7 @@ WorkingDirectory=/opt/surveyflow/app
 EnvironmentFile=/opt/surveyflow/app/.env
 ExecStart=/opt/surveyflow/app/.venv/bin/gunicorn \
     -k uvicorn.workers.UvicornWorker \
-    -w 2 \
+    -w 1 \
     --bind 127.0.0.1:8000 \
     --timeout 120 \
     main:app
