@@ -4,12 +4,13 @@ from __future__ import annotations
 import logging
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from services.mcp_client import get_mcp_client, MCPError
+from dependencies import require_qme
+from services.mcp_client import get_mcp_client, get_storage as get_token_storage, MCPError
+from services.storage import get_storage
 
 log = logging.getLogger(__name__)
-from services.storage import get_storage
 
 router = APIRouter(prefix="/api/surveys", tags=["surveys"])
 
@@ -78,15 +79,14 @@ async def list_projects():
 # ── debug: list MCP tools ─────────────────────────────────────────────────────
 
 @router.get("/debug/tools")
-async def list_mcp_tools():
+async def list_mcp_tools(session_id: str = Depends(require_qme)):
     """List all tools available on the QMe MCP server with their schemas."""
     import httpx
     from mcp import ClientSession
     from mcp.client.streamable_http import streamablehttp_client
-    from services.mcp_client import get_storage, MCPError
     from config import settings
 
-    storage = get_storage()
+    storage = get_token_storage(session_id)
     tokens = await storage.get_tokens()
     if not tokens or not tokens.access_token:
         raise HTTPException(401, "Not connected to QMe")
@@ -115,9 +115,9 @@ async def list_mcp_tools():
 # ── search ────────────────────────────────────────────────────────────────────
 
 @router.get("/search")
-async def search_surveys(q: str = "", limit: int = 50):
+async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends(require_qme)):
     try:
-        return await get_mcp_client().search_surveys(query=q, limit=limit)
+        return await get_mcp_client(session_id).search_surveys(query=q, limit=limit)
     except MCPError as exc:
         log.warning("search_surveys failed: %s", exc)
         raise HTTPException(502, "Search unavailable — check server logs")
@@ -126,9 +126,9 @@ async def search_surveys(q: str = "", limit: int = 50):
 # ── fetch from QMe ────────────────────────────────────────────────────────────
 
 @router.post("/{survey_id}/fetch")
-async def fetch_survey(survey_id: int):
+async def fetch_survey(survey_id: int, session_id: str = Depends(require_qme)):
     """Download definition + all rows pages from QMe MCP and save to storage."""
-    mcp = get_mcp_client()
+    mcp = get_mcp_client(session_id)
     try:
         definition = await mcp.get_survey_definition(survey_id)
         rows_pages = await mcp.get_all_rows(survey_id)

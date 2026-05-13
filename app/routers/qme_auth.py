@@ -10,11 +10,12 @@ import time
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import settings
-from services.mcp_client import get_storage
+from services.mcp_client import get_storage, cleanup_expired_sessions, invalidate_sessions_for_email
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/qme", tags=["qme-auth"])
@@ -25,6 +26,9 @@ _TOKEN_URL = f"{settings.QME_MCP_BASE_URL}/oauth/token"
 # { email: { cookies, state, code_verifier, created_at } }
 _sessions: dict[str, dict] = {}
 _SESSION_TTL = 600  # 10 minutes
+
+_COOKIE_NAME = "sf_session"
+_COOKIE_MAX_AGE = 8 * 3600  # 8 hours
 
 
 def _cleanup_sessions() -> None:
@@ -37,8 +41,11 @@ def _cleanup_sessions() -> None:
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @router.get("/status")
-async def qme_status():
-    storage = get_storage()
+async def qme_status(request: Request):
+    session_id = request.cookies.get(_COOKIE_NAME, "")
+    if not session_id:
+        return {"connected": False, "email": None}
+    storage = get_storage(session_id)
     return {"connected": storage.is_connected(), "email": storage.email}
 
 
@@ -53,6 +60,7 @@ _REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback"
 
 @router.post("/login")
 async def qme_login(body: LoginBody):
+    cleanup_expired_sessions()
     _cleanup_sessions()
     state = secrets.token_urlsafe(32)
     code_verifier, code_challenge = _pkce()
@@ -222,18 +230,37 @@ async def qme_verify(body: VerifyBody):
             f"Last redirect seen: {next_url!r}"
         )
 
+    # Invalidate any existing sessions for this email before issuing a new one
+    invalidate_sessions_for_email(body.email)
+
+    # Create a new session ID, exchange code for token, set cookie
+    session_id = secrets.token_urlsafe(32)
     token_data = await _exchange_code(code, session["code_verifier"], redirect_uri)
-    await _save_token(token_data)
-    get_storage().email = body.email
-    return {"ok": True}
+    await _save_token(token_data, session_id)
+    get_storage(session_id).email = body.email
+
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        _COOKIE_NAME,
+        session_id,
+        httponly=True,
+        samesite="strict",
+        max_age=_COOKIE_MAX_AGE,
+        secure=settings.SECURE_COOKIES,
+    )
+    return resp
 
 
 # ── Disconnect ────────────────────────────────────────────────────────────────
 
 @router.delete("/disconnect")
-async def qme_disconnect():
-    get_storage().clear()
-    return {"status": "disconnected"}
+async def qme_disconnect(request: Request):
+    session_id = request.cookies.get(_COOKIE_NAME, "")
+    if session_id:
+        get_storage(session_id).clear()
+    resp = JSONResponse({"status": "disconnected"})
+    resp.delete_cookie(_COOKIE_NAME)
+    return resp
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -274,16 +301,16 @@ async def _exchange_code(code: str, code_verifier: str, redirect_uri: str) -> di
     return r.json()
 
 
-async def _save_token(token_data: dict) -> None:
+async def _save_token(token_data: dict, session_id: str) -> None:
     from mcp.shared.auth import OAuthToken
-    await get_storage().set_tokens(OAuthToken(
+    await get_storage(session_id).set_tokens(OAuthToken(
         access_token=token_data["access_token"],
         token_type=token_data.get("token_type", "Bearer"),
         expires_in=token_data.get("expires_in"),
         refresh_token=token_data.get("refresh_token"),
         scope=token_data.get("scope"),
     ))
-    log.info("QMe token saved")
+    log.info("QMe token saved for session %s…", session_id[:8])
 
 
 def _pkce() -> tuple[str, str]:

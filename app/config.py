@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     # Server
     PORT: int = 8000
+    SECURE_COOKIES: bool = True  # Set False for local dev (HTTP)
 
     # Storage
     DATA_DIR:         str = "data"

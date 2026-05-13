@@ -2,12 +2,13 @@
 import logging
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from routers import surveys, pipeline, qme_auth
 from config import Settings
+from dependencies import require_qme
 
 settings = Settings()
 
@@ -16,11 +17,12 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(messa
 app = FastAPI(title="Q&Me SurveyFlow", version="1.0.0")
 
 
-def require_qme():
-    """Dependency: reject request if QMe MCP is not connected."""
-    from services.mcp_client import get_storage
-    if not get_storage().is_connected():
-        raise HTTPException(status_code=401, detail="Not connected to QMe MCP")
+@app.on_event("startup")
+async def on_startup() -> None:
+    """Restore persisted sessions from disk so users don't need to re-login after restart."""
+    from services.mcp_client import init_sessions
+    init_sessions()
+
 
 _STATIC = Path(__file__).parent / "static"
 

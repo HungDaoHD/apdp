@@ -6,12 +6,12 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
+from dependencies import require_qme
 from services import pipeline_svc
-from services.mcp_client import get_mcp_client, MCPError
-from services.mcp_client import get_storage as get_token_storage
+from services.mcp_client import get_mcp_client, get_storage as get_token_storage, MCPError
 from services.storage import get_storage
 
 log = logging.getLogger(__name__)
@@ -32,7 +32,8 @@ def _validate_version(version: str) -> str:
 # ── refresh (fetch + ingest as background job) ────────────────────────────────
 
 @router.post("/{survey_id}/refresh")
-async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks):
+async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks,
+                         session_id: str = Depends(require_qme)):
     """Start refresh as a background job — returns immediately to avoid proxy timeout."""
     # Guard: reject if a job is already running for this survey
     if _refresh_jobs.get(survey_id, {}).get("status") == "running":
@@ -41,7 +42,7 @@ async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks):
         "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
-    background_tasks.add_task(_do_refresh, survey_id)
+    background_tasks.add_task(_do_refresh, survey_id, session_id)
     return {"status": "started"}
 
 
@@ -51,8 +52,8 @@ async def refresh_status(survey_id: int):
     return _refresh_jobs.get(survey_id, {"status": "idle"})
 
 
-async def _do_refresh(survey_id: int) -> None:
-    mcp = get_mcp_client()
+async def _do_refresh(survey_id: int, session_id: str) -> None:
+    mcp = get_mcp_client(session_id)
     try:
         definition = await mcp.get_survey_definition(survey_id)
         rows_pages = await mcp.get_all_rows(survey_id)
@@ -66,7 +67,7 @@ async def _do_refresh(survey_id: int) -> None:
         result = await loop.run_in_executor(
             None, lambda: pipeline_svc.refresh(survey_id, definition, rows_pages)
         )
-        _upsert_info(survey_id)
+        _upsert_info(survey_id, session_id)
         _refresh_jobs[survey_id] = {"status": "done", **result}
         log.info("refresh done for survey %s — %s rows", survey_id, result.get("n_rows"))
     except Exception as exc:
@@ -74,10 +75,10 @@ async def _do_refresh(survey_id: int) -> None:
         _refresh_jobs[survey_id] = {"status": "error", "detail": "Pipeline error — check server logs"}
 
 
-def _upsert_info(survey_id: int) -> None:
+def _upsert_info(survey_id: int, session_id: str) -> None:
     """Write/update {survey_id}/info.json with creator and last-refresh metadata."""
     storage = get_storage()
-    email = get_token_storage().email or "unknown"
+    email = get_token_storage(session_id).email or "unknown"
     now = datetime.now(timezone.utc).isoformat()
     key = f"{survey_id}/info.json"
     try:
@@ -161,14 +162,15 @@ async def get_metadata(survey_id: int):
 
 
 @router.get("/{survey_id}/rawdata")
-async def get_rawdata(survey_id: int, request: Request):
+async def get_rawdata(survey_id: int, request: Request,
+                      session_id: str = Depends(require_qme)):
     storage = get_storage()
     key = f"{survey_id}/data/rawdata.csv"
     if not storage.exists(key):
         raise HTTPException(404, "Run /ingest first")
 
     # Audit log — who accessed raw data and from where
-    email = get_token_storage().email or "unknown"
+    email = get_token_storage(session_id).email or "unknown"
     ip    = request.client.host if request.client else "unknown"
     log.warning("AUDIT rawdata access: survey=%s user=%s ip=%s", survey_id, email, ip)
 
