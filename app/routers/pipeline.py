@@ -143,13 +143,21 @@ async def ingest_survey(survey_id: int):
 
 # ── metadata + rawdata ────────────────────────────────────────────────────────
 
+_NO_CACHE = {"Cache-Control": "no-store"}
+
+
 @router.get("/{survey_id}/metadata")
 async def get_metadata(survey_id: int):
     storage = get_storage()
     key = f"{survey_id}/data/metadata.json"
     if not storage.exists(key):
         raise HTTPException(404, "Run /ingest first")
-    return storage.read_json(key)
+    import json as _json
+    return Response(
+        content=_json.dumps(storage.read_json(key), ensure_ascii=False),
+        media_type="application/json",
+        headers=_NO_CACHE,
+    )
 
 
 @router.get("/{survey_id}/rawdata")
@@ -158,7 +166,7 @@ async def get_rawdata(survey_id: int):
     key = f"{survey_id}/data/rawdata.csv"
     if not storage.exists(key):
         raise HTTPException(404, "Run /ingest first")
-    return PlainTextResponse(storage.read_text(key), media_type="text/csv")
+    return PlainTextResponse(storage.read_text(key), media_type="text/csv", headers=_NO_CACHE)
 
 
 # ── datatable CRUD ────────────────────────────────────────────────────────────
