@@ -246,15 +246,21 @@ async def qme_verify(body: VerifyBody, response: Response):
     await _save_token(token_data)
     get_storage().email = body.email
 
-    # Issue a browser session cookie — other browsers won't have this
+    # Revoke ALL existing browser sessions — forces every device to re-authenticate
+    _APP_SESSIONS.clear()
+
+    # Issue a fresh session cookie for this browser only
     app_token = secrets.token_urlsafe(32)
     _APP_SESSIONS[app_token] = time.time() + _APP_SESSION_TTL
+    secure = settings.HTTPS_ONLY
     response.set_cookie(
         _APP_SESSION_COOKIE, app_token,
         httponly=True, samesite="strict", path="/",
         max_age=_APP_SESSION_TTL,
+        secure=secure,
     )
-    log.info("Browser session issued for %s (expires in %dh)", body.email, _APP_SESSION_TTL // 3600)
+    log.info("Browser session issued for %s (secure=%s, expires in %dh)",
+             body.email, secure, _APP_SESSION_TTL // 3600)
     return {"ok": True}
 
 
