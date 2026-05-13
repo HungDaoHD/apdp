@@ -2712,8 +2712,9 @@ async function doRefresh() {
   setStatus('Fetching from QMe…', '');
   try {
     const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST'});
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || 'refresh failed');
+    let d = {};
+    try { d = await r.json(); } catch { /* proxy returned non-JSON (HTML error page) */ }
+    if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
     _setLoading('Re-loading questions & data…', currentSurveyName);
     setStatus(`✓ Fetched ${d.n_rows} rows — reloading…`, 'saved');
     await apiLoadMeta(currentSurveyId);

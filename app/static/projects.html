@@ -492,8 +492,9 @@ async function doAddSurvey() {
   showLoading(`Fetching survey ${dlgSelected.id} from QMe…`);
   try {
     const r = await fetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || 'refresh failed');
+    let d = {};
+    try { d = await r.json(); } catch { /* proxy returned non-JSON (HTML error page) */ }
+    if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
     setDlgStatus(`✓ Done — ${d.n_rows} rows`, 'ok');
     showLoading('Opening project…');
 
