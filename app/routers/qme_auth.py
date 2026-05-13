@@ -164,10 +164,11 @@ class VerifyBody(BaseModel):
 
 @router.post("/verify")
 async def qme_verify(body: VerifyBody):
-    session = _sessions.pop(body.email, None)
+    session = _sessions.get(body.email)
     if not session:
         raise HTTPException(400, "No pending login session — please login again")
     if time.time() - session.get("created_at", 0) > _SESSION_TTL:
+        _sessions.pop(body.email, None)
         raise HTTPException(400, "Login session expired — please login again")
 
     cookies = session["cookies"]  # dict from login step (already visited loginverify)
@@ -229,6 +230,9 @@ async def qme_verify(body: VerifyBody):
             "OTP verified but no OAuth code received. "
             f"Last redirect seen: {next_url!r}"
         )
+
+    # OTP correct — consume the login session so it can't be reused
+    _sessions.pop(body.email, None)
 
     # Invalidate any existing sessions for this email before issuing a new one
     invalidate_sessions_for_email(body.email)
