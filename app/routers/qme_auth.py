@@ -10,7 +10,7 @@ import time
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from config import settings
@@ -24,7 +24,23 @@ _TOKEN_URL = f"{settings.QME_MCP_BASE_URL}/oauth/token"
 
 # { email: { cookies, state, code_verifier, created_at } }
 _sessions: dict[str, dict] = {}
-_SESSION_TTL = 600  # 10 minutes
+_SESSION_TTL = 600  # 10 minutes (login flow window)
+
+# Browser session tokens: { token: expires_at }
+_APP_SESSIONS: dict[str, float] = {}
+_APP_SESSION_TTL = 8 * 3600  # 8 hours
+_APP_SESSION_COOKIE = "app_session"
+
+
+def validate_app_session(token: str) -> bool:
+    """Return True if the browser session token is valid and not expired."""
+    if not token:
+        return False
+    exp = _APP_SESSIONS.get(token, 0)
+    if time.time() >= exp:
+        _APP_SESSIONS.pop(token, None)
+        return False
+    return True
 
 
 def _cleanup_sessions() -> None:
@@ -32,6 +48,10 @@ def _cleanup_sessions() -> None:
     expired = [k for k, v in _sessions.items() if now - v.get("created_at", 0) > _SESSION_TTL]
     for k in expired:
         _sessions.pop(k, None)
+    # Also prune expired app sessions
+    expired_app = [k for k, exp in _APP_SESSIONS.items() if now >= exp]
+    for k in expired_app:
+        _APP_SESSIONS.pop(k, None)
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -155,7 +175,7 @@ class VerifyBody(BaseModel):
     otp: str
 
 @router.post("/verify")
-async def qme_verify(body: VerifyBody):
+async def qme_verify(body: VerifyBody, response: Response):
     session = _sessions.pop(body.email, None)
     if not session:
         raise HTTPException(400, "No pending login session — please login again")
@@ -225,14 +245,28 @@ async def qme_verify(body: VerifyBody):
     token_data = await _exchange_code(code, session["code_verifier"], redirect_uri)
     await _save_token(token_data)
     get_storage().email = body.email
+
+    # Issue a browser session cookie — other browsers won't have this
+    app_token = secrets.token_urlsafe(32)
+    _APP_SESSIONS[app_token] = time.time() + _APP_SESSION_TTL
+    response.set_cookie(
+        _APP_SESSION_COOKIE, app_token,
+        httponly=True, samesite="strict", path="/",
+        max_age=_APP_SESSION_TTL,
+    )
+    log.info("Browser session issued for %s (expires in %dh)", body.email, _APP_SESSION_TTL // 3600)
     return {"ok": True}
 
 
 # ── Disconnect ────────────────────────────────────────────────────────────────
 
 @router.delete("/disconnect")
-async def qme_disconnect():
+async def qme_disconnect(request: Request, response: Response):
     get_storage().clear()
+    # Revoke this browser's session token
+    token = request.cookies.get(_APP_SESSION_COOKIE, "")
+    _APP_SESSIONS.pop(token, None)
+    response.delete_cookie(_APP_SESSION_COOKIE, path="/")
     return {"status": "disconnected"}
 
 
