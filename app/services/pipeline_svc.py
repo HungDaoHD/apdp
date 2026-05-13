@@ -137,6 +137,36 @@ def refresh(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+_PII_TYPES = frozenset({"user-name", "user-phone"})
+
+
+def strip_pii_columns(csv_text: str, metadata: list) -> str:
+    """Remove user-name and user-phone columns from rawdata before serving to browser.
+
+    Identifies PII columns by matching question labels against known PII answer types.
+    Original rawdata on disk is never modified.
+    """
+    try:
+        pii_labels = {
+            q.get("label")
+            for q in metadata
+            if (q.get("answer_type") or q.get("question_type") or q.get("type", ""))
+            in _PII_TYPES
+            and q.get("label")
+        }
+        if not pii_labels:
+            return csv_text
+        df = pd.read_csv(io.StringIO(csv_text), low_memory=False)
+        cols_to_drop = [c for c in df.columns if c in pii_labels]
+        if not cols_to_drop:
+            return csv_text
+        logger.info("strip_pii: dropping columns %s", cols_to_drop)
+        return df.drop(columns=cols_to_drop).to_csv(index=False)
+    except Exception as exc:
+        logger.warning("strip_pii failed — serving unmodified rawdata: %s", exc)
+        return csv_text
+
+
 def _filter_rawdata(raw_bytes: bytes, profile_status: list[str]) -> bytes:
     """Return CSV bytes filtered to rows whose profile_status column is in the list.
 

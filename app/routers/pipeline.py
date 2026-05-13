@@ -161,12 +161,27 @@ async def get_metadata(survey_id: int):
 
 
 @router.get("/{survey_id}/rawdata")
-async def get_rawdata(survey_id: int):
+async def get_rawdata(survey_id: int, request: Request):
     storage = get_storage()
     key = f"{survey_id}/data/rawdata.csv"
     if not storage.exists(key):
         raise HTTPException(404, "Run /ingest first")
-    return PlainTextResponse(storage.read_text(key), media_type="text/csv", headers=_NO_CACHE)
+
+    # Audit log — who accessed raw data and from where
+    email = get_token_storage().email or "unknown"
+    ip    = request.client.host if request.client else "unknown"
+    log.warning("AUDIT rawdata access: survey=%s user=%s ip=%s", survey_id, email, ip)
+
+    # Strip PII columns (user-name, user-phone) before sending to browser
+    csv_text = storage.read_text(key)
+    try:
+        meta = storage.read_json(f"{survey_id}/data/metadata.json")
+        if isinstance(meta, list):
+            csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
+    except Exception:
+        pass  # metadata unavailable — serve without stripping (still no-cache)
+
+    return PlainTextResponse(csv_text, media_type="text/csv", headers=_NO_CACHE)
 
 
 # ── datatable CRUD ────────────────────────────────────────────────────────────
