@@ -31,14 +31,22 @@ app.include_router(qme_auth.router)   # auth routes are always public
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 
+_NO_CACHE = {"Cache-Control": "no-store"}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    return (_STATIC / "projects.html").read_text(encoding="utf-8")
+    return HTMLResponse((_STATIC / "projects.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
+
+
+@app.get("/projects", response_class=HTMLResponse)
+async def projects():
+    return HTMLResponse((_STATIC / "projects.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
 
 
 @app.get("/editor", response_class=HTMLResponse)
 async def editor():
-    return (_STATIC / "editor.html").read_text(encoding="utf-8")
+    return HTMLResponse((_STATIC / "editor.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
 
 
 if __name__ == "__main__":

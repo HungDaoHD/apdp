@@ -267,6 +267,9 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 
 /* ── Preview panel ──────────────────────────────── */
 #previewPanel{position:fixed;inset:0;z-index:500;background:#f0f2f5;display:none;flex-direction:column}
+.pv-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:#666;font-size:14px}
+.pv-spinner{width:36px;height:36px;border:3px solid #ddd;border-top-color:#f36a17;border-radius:50%;animation:pv-spin .7s linear infinite}
+@keyframes pv-spin{to{transform:rotate(360deg)}}
 .pvhdr{background:#16213e;color:white;padding:0 14px;height:44px;display:flex;align-items:center;gap:8px;flex-shrink:0}
 .pvhdr-title{font-weight:700;font-size:13px;white-space:nowrap}
 .pvtabs{display:flex;gap:2px;flex:1;overflow-x:auto}
@@ -413,6 +416,30 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 <!-- Hidden file inputs (local fallback for datatable/csv) -->
 <input type="file" id="dtIn"   accept=".json" style="display:none" onchange="onDTIn(event)">
 <input type="file" id="rdIn"   accept=".csv"  style="display:none" onchange="onRdIn(event)">
+
+<!-- Auth error popup -->
+<div class="mov" id="authErrMov" style="display:none;z-index:9000">
+  <div class="mdlg" style="width:400px;max-width:90vw">
+    <div class="mhd" style="background:#fff3cd;border-radius:10px 10px 0 0">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px">⚠️</span>
+        <div>
+          <div style="font-weight:700;font-size:14px;color:#856404">QMe Session Expired</div>
+          <div style="font-size:12px;color:#856404;margin-top:2px">Token expired or unauthorised</div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:18px 20px">
+      <p style="margin:0 0 16px;font-size:13px;color:#333;line-height:1.5">
+        Your QMe session has expired. Please go back to the <strong>Projects page</strong> and reconnect to QMe before refreshing.
+      </p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-sec btn-sm" onclick="document.getElementById('authErrMov').style.display='none'">Dismiss</button>
+        <button class="btn btn-sm" style="background:#f36a17;color:white" onclick="window.location='/projects'">Go to Projects</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Preview panel -->
 <div id="previewPanel">
@@ -1670,7 +1697,10 @@ function renderLayout(c) {
   <div class="ls">
     <div class="lsh">
       <span class="lst">📋 Rows — Stub Questions (${stub.length})</span>
-      <button class="btn btn-sec btn-xs" onclick="addStubItem()">+ Add Row</button>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-sec btn-xs" onclick="addAllToStub()" title="Add all codeable questions (SA/MA/Matrix/Ranking) not yet in stub">+ Add All</button>
+        <button class="btn btn-sec btn-xs" onclick="addStubItem()">+ Add Row</button>
+      </div>
     </div>
     <div class="sarea" id="stubArea"
       ondragover="onSAreaDragOver(event)"
@@ -1738,41 +1768,35 @@ function renderSettings(c) {
       <div style="font-size:11px;color:#888">${bm.groups?`${bm.groups.length} groups (edit in Raw JSON)`:'Auto-load all rows from metadata'}</div>
     </div>`:`<div class="cardb" style="color:#bbb;font-size:12px">No banner_matrix</div>`}
   </div>
+  ${(()=>{
+    const countSheet = tables.find(t=>t.cell_content==='count') || {sheet:'Count',cell_content:'count',show_sig:false,enabled:true};
+    const pctSheet   = tables.find(t=>t.cell_content==='percentage') || {sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true,decimal:0};
+    const cOn  = countSheet.enabled !== false;
+    const pOn  = pctSheet.enabled   !== false;
+    const dec  = pctSheet.decimal ?? 0;
+    const nOn  = [cOn,pOn].filter(Boolean).length;
+    return `
   <div class="card">
     <div class="cardh">
-      <div class="chl">📑 Output Sheets (${tables.length})</div>
-      <button class="btn btn-sec btn-xs" onclick="addSheet()">+ Sheet</button>
+      <div class="chl">📑 Output Sheets (${nOn} enabled)</div>
     </div>
     <div class="cardb">
-      ${!tables.length?'<div style="color:#bbb;font-size:12px;padding:8px 0">No sheets</div>':''}
-      ${tables.map((t,i)=>`
-        <div class="shrow ${t.enabled===false?'dis':''}">
-          <div><label class="fl">Enable</label>
-            <label class="tgl"><input type="checkbox" ${t.enabled!==false?'checked':''} onchange="setSheet(${i},'enabled',this.checked)"><span class="tgls"></span></label></div>
-          <div class="fg" style="flex:.9"><label class="fl">Sheet</label>
-            <input type="text" value="${a(t.sheet||'')}" oninput="setSheet(${i},'sheet',this.value)"></div>
-          <div class="fg"><label class="fl">Cell content</label>
-            <select onchange="setSheet(${i},'cell_content',this.value)">
-              <option value="count" ${t.cell_content==='count'?'selected':''}>count</option>
-              <option value="percentage" ${t.cell_content==='percentage'?'selected':''}>percentage</option>
-            </select></div>
-          <div class="fg" style="flex:.7"><label class="fl">Show sig</label>
-            <select onchange="setSheet(${i},'show_sig',this.value==='true')">
-              <option value="false" ${!t.show_sig?'selected':''}>No</option>
-              <option value="true" ${t.show_sig?'selected':''}>Yes</option>
-            </select></div>
-          <div><label class="fl">&nbsp;</label>
-            <button class="btn btn-dan btn-xs" onclick="removeSheet(${i})">✕</button></div>
-        </div>`).join('')}
-      <div class="divider"></div>
-      <div class="slabel">Quick add</div>
-      <div class="qkbtns">
-        <button class="btn btn-sec btn-sm" onclick="quickSheet('Count','count',false)">+ Count</button>
-        <button class="btn btn-sec btn-sm" onclick="quickSheet('Pct','percentage',false)">+ Pct</button>
-        <button class="btn btn-sec btn-sm" onclick="quickSheet('Sig','percentage',true)">+ Sig</button>
+      <div class="shrow ${cOn?'':'dis'}">
+        <div><label class="fl">Enable</label>
+          <label class="tgl"><input type="checkbox" ${cOn?'checked':''} onchange="setSheetByContent('count','enabled',this.checked)"><span class="tgls"></span></label></div>
+        <div class="fg"><label class="fl">Sheet</label>
+          <span style="font-size:12px;font-weight:600;color:#444;padding:2px 0;display:block">Count</span></div>
+      </div>
+      <div class="shrow ${pOn?'':'dis'}">
+        <div><label class="fl">Enable</label>
+          <label class="tgl"><input type="checkbox" ${pOn?'checked':''} onchange="setSheetByContent('percentage','enabled',this.checked)"><span class="tgls"></span></label></div>
+        <div class="fg"><label class="fl">Sheet</label>
+          <span style="font-size:12px;font-weight:600;color:#444;padding:2px 0;display:block">Pct</span></div>
+        <div class="fg" style="flex:.7"><label class="fl">Decimal</label>
+          <input type="number" min="0" max="4" step="1" value="${dec}" style="width:60px" oninput="setSheetByContent('percentage','decimal',+this.value)"></div>
       </div>
     </div>
-  </div>`;
+  </div>`; })()}`;
 }
 
 // ════════════════════════════════════════════════════
@@ -1825,6 +1849,23 @@ function setBannerLevelTotal(ci, lvIdx, on) {
   markDirty(); renderMain();
 }
 
+function addAllToStub() {
+  if (!data.length || !metadata.length) return;
+  if (!cfg().stub) cfg().stub = [];
+  const existing = new Set(cfg().stub.flatMap(item =>
+    item.row_group ? (item.items||[]).map(it => it.question) : [item.question]
+  ));
+  const toAdd = metadata
+    .filter(q => !q.parent && CODEABLE.has(qType(q)) && !existing.has(q.label||''))
+    .sort((a,b) => (a.position||0) - (b.position||0));
+  if (!toAdd.length) { setStatus('All codeable questions already in stub.', ''); return; }
+  toAdd.forEach(q => {
+    cfg().stub.push({ question: q.label||'?', label: qTitle(q)||q.label||'?', stats: defaultStats(qType(q)) });
+  });
+  markDirty(); activeTab='layout'; renderMain();
+  setStatus(`Added ${toAdd.length} question(s) to stub.`, 'saved');
+}
+
 function addStubItem() {
   if(!cfg().stub) cfg().stub=[];
   cfg().stub.push({question:'Q?',label:'New Question',stats:['base','percent']});
@@ -1832,25 +1873,29 @@ function addStubItem() {
 }
 function removeStub(i) { cfg().stub.splice(i,1); markDirty(); renderMain(); }
 
-function addSheet() {
-  if(!cfg().tables) cfg().tables=[];
-  cfg().tables.push({sheet:'New',cell_content:'percentage',show_sig:false,enabled:true});
-  markDirty(); renderMain();
+function ensureSheets() {
+  const c = cfg();
+  if (!c.tables) c.tables = [];
+  if (!c.tables.find(t => t.cell_content === 'count'))
+    c.tables.unshift({sheet:'Count', cell_content:'count', show_sig:false, enabled:true});
+  if (!c.tables.find(t => t.cell_content === 'percentage'))
+    c.tables.push({sheet:'Pct', cell_content:'percentage', show_sig:false, enabled:true, decimal:0});
 }
-function removeSheet(i) { cfg().tables.splice(i,1); markDirty(); renderMain(); }
+function setSheetByContent(content, k, v) {
+  ensureSheets();
+  const t = cfg().tables.find(t => t.cell_content === content);
+  if (t) { t[k] = v; markDirty(); if(k==='enabled') renderMain(); }
+}
 function setSheet(i,k,v) { cfg().tables[i][k]=v; markDirty(); if(k==='enabled') renderMain(); }
-function quickSheet(sh,ct,sig) {
-  if(!cfg().tables) cfg().tables=[];
-  const ex=cfg().tables.find(t=>t.sheet===sh);
-  if(ex) ex.enabled=true; else cfg().tables.push({sheet:sh,cell_content:ct,show_sig:sig,enabled:true});
-  markDirty(); renderMain();
-}
 function addCfg() {
   const autoTitle = metaSurveyTitle ? `${metaSurveyTitle} - Data Table` : 'Survey - Data Table';
   data.push({title: autoTitle, sub_title: 'Table ' + (data.length + 1),
     significance_test:{enabled:false,levels:[90,95],method:'independent'},
     banner:[{label:'Total',filter:null}],stub:[],
-    tables:[{sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true}]});
+    tables:[
+      {sheet:'Count', cell_content:'count',      show_sig:false, enabled:true},
+      {sheet:'Pct',   cell_content:'percentage',  show_sig:false, enabled:true, decimal:0}
+    ]});
   activeCfg=data.length-1; activeTab='layout';
   document.getElementById('saveBtn').disabled=false;
   markDirty(); render(); checkRunBtn();
@@ -1905,14 +1950,33 @@ function onRdIn(e) {
   r.onload = ev => loadRd(ev.target.result, f.name);
   r.readAsText(f, 'utf-8'); e.target.value = '';
 }
+function dataStatusText() {
+  if (!rawCsv || !rawCsv.length) return 'data: ✓';
+  if (!rawHeaders.includes('profile_status')) return `✓ ${rawCsv.length} rows`;
+  const counts = {};
+  rawCsv.forEach(r => {
+    const s = (r['profile_status'] || 'unknown').toLowerCase();
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  const parts = [];
+  if (counts['approved']) parts.push(`${counts['approved']} approved`);
+  if (counts['pending'])  parts.push(`${counts['pending']} pending`);
+  Object.entries(counts).forEach(([k, v]) => {
+    if (k !== 'approved' && k !== 'pending') parts.push(`${v} ${k}`);
+  });
+  return parts.join(' · ');
+}
+
 function loadRd(text, name) {
   if (typeof Papa === 'undefined') { setStatus('⚠ PapaParse not loaded — check internet',''); return; }
   const res = Papa.parse(text, { header:true, skipEmptyLines:true, dynamicTyping:false });
   rawCsv    = res.data;
   rawHeaders = res.meta.fields || [];
   const b = document.getElementById('rdBadge');
-  b.textContent = `csv: ${rawCsv.length}r`;
-  b.className = 'fbadge ok';
+  if (b) { b.textContent = `csv: ${rawCsv.length}r`; b.className = 'fbadge ok'; }
+  // Update data badge with approved/pending breakdown
+  const rfBadge = document.getElementById('refreshBadge');
+  if (rfBadge) { rfBadge.textContent = dataStatusText(); rfBadge.className = 'fbadge ok'; }
   setStatus(`CSV loaded: ${rawCsv.length} rows · ${rawHeaders.length} cols`, 'saved');
   checkRunBtn();
 }
@@ -2225,11 +2289,11 @@ function computeSig(colStats, levels) {
 }
 
 // ── Format helpers ───────────────────────────────────
-function fmtPct(v) { return (isNaN(v)||v===null) ? '-' : v.toFixed(1)+'%'; }
+function fmtPct(v, dec=0) { return (isNaN(v)||v===null) ? '-' : v.toFixed(dec)+'%'; }
 function fmtNum(v) { return (isNaN(v)||v===null) ? '-' : v.toFixed(2); }
 
 // ── Build row array for one flat question block ───────
-function buildRows(stats, choices, colData, cellContent, showSig, sigLevels, isMA = false) {
+function buildRows(stats, choices, colData, cellContent, showSig, sigLevels, isMA = false, pctDec = 0) {
   const rows = [];
   if (stats.includes('base')) {
     rows.push({ label:'Base', type:'base', cells: colData.map(cd => ({ display:String(cd.base), raw:cd.base })) });
@@ -2241,7 +2305,7 @@ function buildRows(stats, choices, colData, cellContent, showSig, sigLevels, isM
       const cnt = found?.count || 0;
       const pct = cd.base > 0 ? cnt/cd.base*100 : 0;
       const val = cellContent==='count' ? cnt : pct;
-      return { display: cellContent==='count' ? String(cnt) : fmtPct(pct), raw:val, count:cnt, base:cd.base };
+      return { display: cellContent==='count' ? String(cnt) : fmtPct(pct, pctDec), raw:val, count:cnt, base:cd.base };
     });
     let sigs = null;
     if (showSig) sigs = computeSig(cells.map(c=>({count:c.count,base:c.base})), sigLevels);
@@ -2249,11 +2313,11 @@ function buildRows(stats, choices, colData, cellContent, showSig, sigLevels, isM
   });
   if (stats.includes('t2b')) rows.push({ label:'T2B', type:'summary', cells: colData.map(cd=>{
     const v = cellContent==='count'?cd.t2b:(cd.base>0?cd.t2b/cd.base*100:0);
-    return { display:cellContent==='count'?String(cd.t2b):fmtPct(v), raw:v };
+    return { display:cellContent==='count'?String(cd.t2b):fmtPct(v, pctDec), raw:v };
   })});
   if (stats.includes('b2b')) rows.push({ label:'B2B', type:'summary', cells: colData.map(cd=>{
     const v = cellContent==='count'?cd.b2b:(cd.base>0?cd.b2b/cd.base*100:0);
-    return { display:cellContent==='count'?String(cd.b2b):fmtPct(v), raw:v };
+    return { display:cellContent==='count'?String(cd.b2b):fmtPct(v, pctDec), raw:v };
   })});
   if (stats.includes('mean')) rows.push({ label:'Mean', type:'summary', cells: colData.map(cd=>{ const v=isMA?cd.ma_mean:cd.mean; return { display:fmtNum(v), raw:v }; }) });
   if (stats.includes('std'))  rows.push({ label:'Std',  type:'summary', cells: colData.map(cd=>{ const v=isMA?cd.ma_std:cd.std;   return { display:fmtNum(v), raw:v }; }) });
@@ -2274,20 +2338,19 @@ function buildNumericRows(stats, colData) {
 }
 
 // ── Block computation ────────────────────────────────
-function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
+function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pctDec=0) {
   const qLabel = stubItem.question;
   const stats  = stubItem.stats || ['base','percent'];
-  // Convert "percent" → use in buildRows logic (it checks 'base'/'percent' but cellContent drives format)
   const mq = findMetaQ(qLabel);
 
   if (mq) {
     const t = qType(mq);
     if (t.startsWith('Matrix') && mq.sub_questions) {
-      return computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels);
+      return computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels, pctDec);
     }
     const col  = qToCol(mq.label);
     if (t === 'ranking') {
-      return computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels);
+      return computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels, pctDec);
     }
     if (t === 'NUM' || t === 'multiplenumber') {
       const colData = bannerCols.map(bc => computeNumericStats(bc.rows, col));
@@ -2299,7 +2362,7 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
     const filtCh = selCodes ? ch.filter(c=>selCodes.includes(String(c.code))) : ch;
     const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, filtCh.map(c=>c.code)));
     return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qLabel, answerType:t,
-      rows: buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels, t==='SA'||t==='MA') };
+      rows: buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels, t==='SA'||t==='MA', pctDec) };
   }
   // Sub-question reference (e.g. "Q17_r1")
   const sq = metaSubMap[qLabel];
@@ -2308,7 +2371,7 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
     const ch     = qChoices(sq);
     const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, ch.map(c=>c.code)));
     return { type:'flat', qCode: qLabel, qLabel: stubItem.label||qLabel, answerType: sq.answer_type||'',
-      rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels) };
+      rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false, pctDec) };
   }
   return null;
 }
@@ -2316,7 +2379,7 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels) {
 // ── Ranking block (two modes) ────────────────────────
 // Ranking rawdata format: single column, semicolon-separated codes in rank order.
 // e.g. "2;1;3;5;4" → choice 2 ranked 1st, choice 1 ranked 2nd, choice 3 ranked 3rd …
-function computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels) {
+function computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels, pctDec=0) {
   const stats  = stubItem.stats || ['base','percent'];
   const mode   = stubItem.ranking_mode || 'rank_dist';
   const topN   = stubItem.ranking_top_n || 0;  // 0 = all positions
@@ -2354,7 +2417,7 @@ function computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sig
       return { base, counts, t2b:0, b2b:0, mean:0, std:0, ma_mean:0, ma_std:0, ma_min:0, ma_max:0 };
     });
     return { type:'flat', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType:'ranking (any)',
-      rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false) };
+      rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false, pctDec) };
   }
 
   // ── rank_dist: each rank position N → which choice did respondents place there? ──
@@ -2375,12 +2438,12 @@ function computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sig
       });
       return { base, counts, t2b:0, b2b:0, mean:0, std:0, ma_mean:0, ma_std:0, ma_min:0, ma_max:0 };
     });
-    subBlocks.push({ rowLabel: `Rank ${n}`, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false) });
+    subBlocks.push({ rowLabel: `Rank ${n}`, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false, pctDec) });
   }
   return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType:'ranking', subBlocks };
 }
 
-function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels) {
+function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels, pctDec=0) {
   const stats      = stubItem.stats || ['base','percent'];
   const parentType = qType(mq);
   const isMA       = parentType === 'Matrix_MA' || parentType === 'Matrix_SA';
@@ -2391,7 +2454,7 @@ function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigL
     const col    = qToCol(sq.label);
     const ch     = qChoices(sq);
     const colData = bannerCols.map(bc => computeChoiceStats(bc.rows, col, ch.map(c=>c.code)));
-    return { rowLabel: sq.row_label||sq.label, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, isMA) };
+    return { rowLabel: sq.row_label||sq.label, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, isMA, pctDec) };
   }).filter(Boolean);
   return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType: qType(mq), subBlocks };
 }
@@ -2403,13 +2466,14 @@ function computeTable(cfgItem, tableConfig) {
   const showSig    = tableConfig.show_sig && cfgItem.significance_test?.enabled;
   const sigLevels  = cfgItem.significance_test?.levels || [90,95];
   const cc         = tableConfig.cell_content; // 'count' | 'percentage'
+  const pctDec     = tableConfig.decimal ?? 0;
   const blocks = (cfgItem.stub||[]).map(si => {
     if (si.row_group) {
       // row_group: multiple matrix questions sharing rows
-      const subBlocks = (si.items||[]).map(item => computeBlock(item, bannerCols, cc, showSig, sigLevels)).filter(Boolean);
+      const subBlocks = (si.items||[]).map(item => computeBlock(item, bannerCols, cc, showSig, sigLevels, pctDec)).filter(Boolean);
       return { type:'rowgroup', qLabel: '', subBlocks };
     }
-    return computeBlock(si, bannerCols, cc, showSig, sigLevels);
+    return computeBlock(si, bannerCols, cc, showSig, sigLevels, pctDec);
   }).filter(Boolean);
   return { roots, bannerCols, blocks, tableConfig };
 }
@@ -2471,8 +2535,9 @@ function showPreview() {
     document.getElementById('pvTabs').innerHTML = tables.map((t,i) =>
       `<button class="pvtab ${i===0?'on':''}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
     ).join('');
+    document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Loading…</span></div>';
     document.getElementById('previewPanel').style.display = 'flex';
-    renderPvContent();
+    requestAnimationFrame(() => requestAnimationFrame(renderPvContent));
   } catch(err) {
     setStatus('⚠ Preview error: '+err.message, '');
     console.error(err);
@@ -2652,15 +2717,15 @@ async function doRefresh() {
     _setLoading('Re-loading questions & data…', currentSurveyName);
     setStatus(`✓ Fetched ${d.n_rows} rows — reloading…`, 'saved');
     await apiLoadMeta(currentSurveyId);
-    await apiLoadRd(currentSurveyId);
-    // Update badge
-    const rfBadge = document.getElementById('refreshBadge');
-    rfBadge.textContent = 'data: ✓';
-    rfBadge.className = 'fbadge ok';
+    await apiLoadRd(currentSurveyId); // badge updated inside loadRd
     document.getElementById('downloadBtn').disabled = false;
-    setStatus(`✓ Refresh complete — ${d.n_rows} rows`, 'saved');
+    setStatus(`✓ Refresh complete — ${dataStatusText()}`, 'saved');
   } catch(e) {
-    setStatus('⚠ Refresh error: ' + e.message, '');
+    if (/reconnect|token expired|unauthori[sz]ed/i.test(e.message)) {
+      document.getElementById('authErrMov').style.display = 'flex';
+    } else {
+      setStatus('⚠ Refresh error: ' + e.message, '');
+    }
   } finally {
     btn.disabled = false;
     _setLoading(null);
@@ -2681,10 +2746,7 @@ async function apiLoadRd(id) {
   try {
     const res = await fetch(`/api/surveys/${id}/rawdata`);
     if (!res.ok) return;
-    loadRd(await res.text(), `${id}_rawdata.csv`);
-    const rfBadge = document.getElementById('refreshBadge');
-    rfBadge.textContent = 'data: ✓';
-    rfBadge.className = 'fbadge ok';
+    loadRd(await res.text(), `${id}_rawdata.csv`); // badge updated inside loadRd
   } catch(e) { setStatus('⚠ Rawdata error: ' + e.message, ''); }
 }
 
