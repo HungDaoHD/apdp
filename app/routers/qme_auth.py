@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import logging
 import os
 import secrets
 import time
+from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
@@ -23,19 +25,63 @@ router = APIRouter(prefix="/api/qme", tags=["qme-auth"])
 _QME = "https://retail.qand.me"
 _TOKEN_URL = f"{settings.QME_MCP_BASE_URL}/oauth/token"
 
-# { email: { cookies, state, code_verifier, created_at } }
-_sessions: dict[str, dict] = {}
 _SESSION_TTL = 600  # 10 minutes
 
 _COOKIE_NAME = "sf_session"
 _COOKIE_MAX_AGE = 8 * 3600  # 8 hours
 
 
+# ── Disk-based login sessions (shared across all Gunicorn workers) ─────────────
+
+def _login_dir() -> Path:
+    return Path(os.getenv("DATA_DIR", "data"))
+
+
+def _login_file(email: str) -> Path:
+    h = hashlib.sha256(email.encode()).hexdigest()[:32]
+    return _login_dir() / f".login_{h}.json"
+
+
+def _save_login_session(email: str, data: dict) -> None:
+    f = _login_file(email)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(data))
+    try:
+        f.chmod(0o600)
+    except Exception:
+        pass
+
+
+def _get_login_session(email: str) -> dict | None:
+    try:
+        return json.loads(_login_file(email).read_text())
+    except Exception:
+        return None
+
+
+def _delete_login_session(email: str) -> None:
+    try:
+        _login_file(email).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
 def _cleanup_sessions() -> None:
+    """Delete expired login session files."""
+    data_dir = _login_dir()
+    if not data_dir.exists():
+        return
     now = time.time()
-    expired = [k for k, v in _sessions.items() if now - v.get("created_at", 0) > _SESSION_TTL]
-    for k in expired:
-        _sessions.pop(k, None)
+    for f in data_dir.glob(".login_*.json"):
+        try:
+            data = json.loads(f.read_text())
+            if now - data.get("created_at", 0) > _SESSION_TTL:
+                f.unlink(missing_ok=True)
+        except Exception:
+            try:
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -143,14 +189,14 @@ async def qme_login(body: LoginBody):
         all_cookies = {c.name: c.value for c in client.cookies.jar}
         log.info("cookies after loginverify: %s", list(all_cookies.keys()))
 
-    _sessions[body.email] = {
+    _save_login_session(body.email, {
         "cookies":       all_cookies,
         "state":         state,
         "code_verifier": code_verifier,
         "redirect_uri":  _REDIRECT_URI,
         "csrf_verify":   csrf_verify,
         "created_at":    time.time(),
-    }
+    })
 
     return {"ok": True, "ref": ref}
 
@@ -164,11 +210,11 @@ class VerifyBody(BaseModel):
 
 @router.post("/verify")
 async def qme_verify(body: VerifyBody):
-    session = _sessions.get(body.email)
+    session = _get_login_session(body.email)
     if not session:
         raise HTTPException(400, "No pending login session — please login again")
     if time.time() - session.get("created_at", 0) > _SESSION_TTL:
-        _sessions.pop(body.email, None)
+        _delete_login_session(body.email)
         raise HTTPException(400, "Login session expired — please login again")
 
     cookies = session["cookies"]  # dict from login step (already visited loginverify)
@@ -232,7 +278,7 @@ async def qme_verify(body: VerifyBody):
         )
 
     # OTP correct — consume the login session so it can't be reused
-    _sessions.pop(body.email, None)
+    _delete_login_session(body.email)
 
     # Invalidate any existing sessions for this email before issuing a new one
     invalidate_sessions_for_email(body.email)
