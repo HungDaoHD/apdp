@@ -338,8 +338,7 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <button class="btn btn-gho" onclick="toggleQP()" id="qpToggle">◀ Questions</button>
   <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save Data Table</button>
   <button class="btn btn-pri btn-sm" onclick="downloadXlsxDirect()" id="downloadBtn" disabled><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table</button>
-  <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn">{} Raw</button>
-  <a href="/logout" class="btn btn-gho" style="text-decoration:none;font-size:11px" title="Logout">⏏</a>
+  <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn" style="display:none">{} Raw</button>
 </div>
 
 <div class="body">
@@ -1203,7 +1202,10 @@ function renderBannerModalBody(item, mq) {
   return `${infoHtml}
   <div class="fr" style="margin-bottom:12px">
     <div class="fg"><label class="fl">Question label</label>
-      <input id="mb_q" type="text" value="${a(item.question||'')}" placeholder="Q10"></div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <input id="mb_q" type="text" value="${a(item.question||'')}" placeholder="Q10" style="flex:1;background:#f8f9fb;cursor:default" readonly>
+        <button class="btn btn-sec btn-xs" onclick="mPickBannerQ()" title="Browse questions">🔍</button>
+      </div></div>
     <div class="fg"><label class="fl">Column label</label>
       <input id="mb_l" type="text" value="${a(item.label||'')}" placeholder="Gender"></div>
   </div>
@@ -1293,7 +1295,10 @@ function renderStubModalBody(item, mq) {
   return `${infoHtml}
   <div class="fr" style="margin-bottom:14px">
     <div class="fg" style="flex:.7"><label class="fl">Question</label>
-      <input id="ms_q" type="text" value="${a(item.question||'')}" placeholder="Q10"></div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <input id="ms_q" type="text" value="${a(item.question||'')}" placeholder="Q10" style="flex:1;background:#f8f9fb;cursor:default" readonly>
+        <button class="btn btn-sec btn-xs" onclick="mPickStubQ()" title="Browse questions">🔍</button>
+      </div></div>
     <div class="fg" style="flex:1.5"><label class="fl">Label</label>
       <input id="ms_l" type="text" value="${a(item.label||'')}" placeholder="Gender"></div>
   </div>
@@ -1434,6 +1439,73 @@ function mChoiceSelectAll(on) {
   document.querySelectorAll('.choices-list input[type=checkbox]').forEach((cb,i) => { cb.checked = on; });
   document.getElementById('ch_all')&&(document.getElementById('ch_all').checked = on);
 }
+// ── In-modal question pickers ──────────────────────────
+function mPickBannerQ() {
+  if (!modalSt) return;
+  const st = modalSt;
+  const isBannerLevel = st.type === 'banner-level';
+  showQPicker('🔍 Change Question', 'Select a new banner question', q => {
+    const item = st.item;
+    const oldQ = item.question;
+    item.question = q.label || '';
+    // Update column label only if it was blank or matched old question code
+    if (!item.label || item.label === oldQ) {
+      item.label = qTitle(q) || q.label || '';
+    }
+    // Rebuild groups from new question choices
+    const ch = qChoices(q);
+    if (ch.length) {
+      item.groups = ch.map(c => ({ label: c.label, value: typeof c.code==='number' ? c.code : (parseInt(c.code)||c.code) }));
+    }
+    modalSt = { ...st, item, mq: q };
+    if (isBannerLevel) {
+      const col = cfg().banner[st.colIdx];
+      showModal(
+        `📊 Level ${st.lvIdx+2} — ${h(col.label||col.question||'?')}`,
+        `nested under Lv ${st.lvIdx+1}`,
+        renderBannerModalBody(modalSt.item, q),
+        `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+         <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
+        {noBackdrop:true}
+      );
+    } else {
+      showModal(
+        '📊 Banner Column',
+        item.label || item.question || '',
+        renderBannerModalBody(modalSt.item, q),
+        `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+         <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
+        {noBackdrop:true}
+      );
+    }
+  });
+}
+
+function mPickStubQ() {
+  if (!modalSt) return;
+  const st = modalSt;
+  showQPicker('🔍 Change Question', 'Select a new stub question', q => {
+    const item = st.item;
+    const oldQ = item.question;
+    item.question = q.label || '';
+    if (!item.label || item.label === oldQ) {
+      item.label = qTitle(q) || q.label || '';
+    }
+    // Update stats to recommended for the new type
+    const t = qType(q);
+    item.stats = defaultStats(t);
+    delete item.choice_codes; // reset choice filter for new question
+    modalSt = { ...st, item, mq: q };
+    showModal(
+      '📋 Stub Row',
+      item.question || '',
+      renderStubModalBody(modalSt.item, q),
+      `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+       <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`
+    );
+  });
+}
+
 function saveModal() {
   if (!modalSt) return;
   if (modalSt.type==='banner') {
@@ -2845,7 +2917,15 @@ async function downloadXlsxDirect() {
 
 // ── Init: load survey from URL params ─────────────
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  // Show Raw button only for admin email
+  try {
+    const st = await fetch('/api/qme/status').then(r => r.json());
+    if (st.email === 'hung.dao@asia-plus.net') {
+      document.getElementById('rawBtn').style.display = '';
+    }
+  } catch(e) {}
+
   const params = new URLSearchParams(window.location.search);
   const sid    = params.get('survey_id');
   const title  = params.get('title');
