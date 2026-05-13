@@ -19,8 +19,28 @@ router = APIRouter(prefix="/api/surveys", tags=["pipeline"])
 
 _VERSION_RE = re.compile(r"^v\d+$|^tmp$")
 
-# In-memory job tracker — fine for single-worker deployment
-_refresh_jobs: dict[int, dict] = {}
+
+# ── Disk-based refresh job status (shared across all Gunicorn workers) ─────────
+
+def _refresh_status_file(survey_id: int):
+    import os
+    from pathlib import Path
+    return Path(os.getenv("DATA_DIR", "data")) / f".refresh_{survey_id}.json"
+
+
+def _write_refresh_status(survey_id: int, data: dict) -> None:
+    import json as _json
+    f = _refresh_status_file(survey_id)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(_json.dumps(data))
+
+
+def _read_refresh_status(survey_id: int) -> dict:
+    import json as _json
+    try:
+        return _json.loads(_refresh_status_file(survey_id).read_text())
+    except Exception:
+        return {"status": "idle"}
 
 
 def _validate_version(version: str) -> str:
@@ -36,12 +56,12 @@ async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks,
                          session_id: str = Depends(require_qme)):
     """Start refresh as a background job — returns immediately to avoid proxy timeout."""
     # Guard: reject if a job is already running for this survey
-    if _refresh_jobs.get(survey_id, {}).get("status") == "running":
+    if _read_refresh_status(survey_id).get("status") == "running":
         return {"status": "running", "detail": "Refresh already in progress"}
-    _refresh_jobs[survey_id] = {
+    _write_refresh_status(survey_id, {
         "status": "running",
         "started_at": datetime.now(timezone.utc).isoformat(),
-    }
+    })
     background_tasks.add_task(_do_refresh, survey_id, session_id)
     return {"status": "started"}
 
@@ -49,7 +69,7 @@ async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks,
 @router.get("/{survey_id}/refresh/status")
 async def refresh_status(survey_id: int):
     """Poll this endpoint after POST /refresh to check job progress."""
-    return _refresh_jobs.get(survey_id, {"status": "idle"})
+    return _read_refresh_status(survey_id)
 
 
 async def _do_refresh(survey_id: int, session_id: str) -> None:
@@ -59,7 +79,7 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
         rows_pages = await mcp.get_all_rows(survey_id)
     except MCPError as exc:
         log.warning("refresh MCP failed for survey %s: %s", survey_id, exc)
-        _refresh_jobs[survey_id] = {"status": "error", "detail": str(exc)}
+        _write_refresh_status(survey_id, {"status": "error", "detail": str(exc)})
         return
 
     try:
@@ -68,11 +88,11 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
             None, lambda: pipeline_svc.refresh(survey_id, definition, rows_pages)
         )
         _upsert_info(survey_id, session_id)
-        _refresh_jobs[survey_id] = {"status": "done", **result}
+        _write_refresh_status(survey_id, {"status": "done", **result})
         log.info("refresh done for survey %s — %s rows", survey_id, result.get("n_rows"))
     except Exception as exc:
         log.exception("refresh pipeline failed for survey %s", survey_id)
-        _refresh_jobs[survey_id] = {"status": "error", "detail": "Pipeline error — check server logs"}
+        _write_refresh_status(survey_id, {"status": "error", "detail": "Pipeline error — check server logs"})
 
 
 def _upsert_info(survey_id: int, session_id: str) -> None:

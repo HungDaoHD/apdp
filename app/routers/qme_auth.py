@@ -30,6 +30,21 @@ _SESSION_TTL = 600  # 10 minutes
 _COOKIE_NAME = "sf_session"
 _COOKIE_MAX_AGE = 8 * 3600  # 8 hours
 
+# Rate limiting — per IP, best-effort (each worker tracks independently)
+_RATE_LIMIT_MAX    = 5   # max login attempts
+_RATE_LIMIT_WINDOW = 60  # per 60 seconds
+_login_attempts: dict[str, list[float]] = {}
+
+
+def _check_rate_limit(ip: str) -> None:
+    now = time.time()
+    attempts = _login_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < _RATE_LIMIT_WINDOW]
+    if len(attempts) >= _RATE_LIMIT_MAX:
+        raise HTTPException(429, "Too many login attempts — please wait a minute")
+    attempts.append(now)
+    _login_attempts[ip] = attempts
+
 
 # ── Disk-based login sessions (shared across all Gunicorn workers) ─────────────
 
@@ -37,13 +52,12 @@ def _login_dir() -> Path:
     return Path(os.getenv("DATA_DIR", "data"))
 
 
-def _login_file(email: str) -> Path:
-    h = hashlib.sha256(email.encode()).hexdigest()[:32]
-    return _login_dir() / f".login_{h}.json"
+def _login_file(login_key: str) -> Path:
+    return _login_dir() / f".login_{login_key}.json"
 
 
-def _save_login_session(email: str, data: dict) -> None:
-    f = _login_file(email)
+def _save_login_session(login_key: str, data: dict) -> None:
+    f = _login_file(login_key)
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(data))
     try:
@@ -52,16 +66,16 @@ def _save_login_session(email: str, data: dict) -> None:
         pass
 
 
-def _get_login_session(email: str) -> dict | None:
+def _get_login_session(login_key: str) -> dict | None:
     try:
-        return json.loads(_login_file(email).read_text())
+        return json.loads(_login_file(login_key).read_text())
     except Exception:
         return None
 
 
-def _delete_login_session(email: str) -> None:
+def _delete_login_session(login_key: str) -> None:
     try:
-        _login_file(email).unlink(missing_ok=True)
+        _login_file(login_key).unlink(missing_ok=True)
     except Exception:
         pass
 
@@ -105,7 +119,9 @@ _REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback"
 
 
 @router.post("/login")
-async def qme_login(body: LoginBody):
+async def qme_login(body: LoginBody, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip)
     cleanup_expired_sessions()
     _cleanup_sessions()
     state = secrets.token_urlsafe(32)
@@ -189,7 +205,9 @@ async def qme_login(body: LoginBody):
         all_cookies = {c.name: c.value for c in client.cookies.jar}
         log.info("cookies after loginverify: %s", list(all_cookies.keys()))
 
-    _save_login_session(body.email, {
+    login_key = secrets.token_urlsafe(24)
+    _save_login_session(login_key, {
+        "email":         body.email,
         "cookies":       all_cookies,
         "state":         state,
         "code_verifier": code_verifier,
@@ -198,7 +216,7 @@ async def qme_login(body: LoginBody):
         "created_at":    time.time(),
     })
 
-    return {"ok": True, "ref": ref}
+    return {"ok": True, "ref": ref, "login_key": login_key}
 
 
 # ── Step 2 — OTP ──────────────────────────────────────────────────────────────
@@ -207,14 +225,15 @@ class VerifyBody(BaseModel):
     email: str
     ref: str
     otp: str
+    login_key: str
 
 @router.post("/verify")
 async def qme_verify(body: VerifyBody):
-    session = _get_login_session(body.email)
+    session = _get_login_session(body.login_key)
     if not session:
         raise HTTPException(400, "No pending login session — please login again")
     if time.time() - session.get("created_at", 0) > _SESSION_TTL:
-        _delete_login_session(body.email)
+        _delete_login_session(body.login_key)
         raise HTTPException(400, "Login session expired — please login again")
 
     cookies = session["cookies"]  # dict from login step (already visited loginverify)
@@ -278,16 +297,17 @@ async def qme_verify(body: VerifyBody):
         )
 
     # OTP correct — consume the login session so it can't be reused
-    _delete_login_session(body.email)
+    _delete_login_session(body.login_key)
 
     # Invalidate any existing sessions for this email before issuing a new one
-    invalidate_sessions_for_email(body.email)
+    email = session.get("email") or body.email
+    invalidate_sessions_for_email(email)
 
     # Create a new session ID, exchange code for token, set cookie
     session_id = secrets.token_urlsafe(32)
     token_data = await _exchange_code(code, session["code_verifier"], redirect_uri)
     await _save_token(token_data, session_id)
-    get_storage(session_id).email = body.email
+    get_storage(session_id).email = email
 
     resp = JSONResponse({"ok": True})
     resp.set_cookie(
