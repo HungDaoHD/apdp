@@ -491,10 +491,25 @@ async function doAddSurvey() {
   setDlgStatus(`Fetching survey ${dlgSelected.id} from QMe…`, '');
   showLoading(`Fetching survey ${dlgSelected.id} from QMe…`);
   try {
+    // Start background job — returns immediately (no proxy timeout)
     const r = await fetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
     let d = {};
-    try { d = await r.json(); } catch { /* proxy returned non-JSON (HTML error page) */ }
+    try { d = await r.json(); } catch { /* proxy returned non-JSON */ }
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
+
+    // Poll until done
+    const t0 = Date.now();
+    while (true) {
+      await new Promise(res => setTimeout(res, 2000));
+      const elapsed = Math.round((Date.now() - t0) / 1000);
+      setDlgStatus(`Fetching from QMe… (${elapsed}s)`, '');
+      showLoading(`Fetching from QMe… (${elapsed}s)`);
+      let job = {};
+      try { job = await fetch(`/api/surveys/${dlgSelected.id}/refresh/status`).then(r => r.json()); } catch {}
+      if (job.status === 'done') { d = job; break; }
+      if (job.status === 'error') throw new Error(job.detail || 'refresh failed');
+    }
+
     setDlgStatus(`✓ Done — ${d.n_rows} rows`, 'ok');
     showLoading('Opening project…');
 

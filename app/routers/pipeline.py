@@ -1,11 +1,12 @@
 """Ingestion, datatable CRUD, run, and download endpoints."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from services import pipeline_svc
@@ -18,6 +19,9 @@ router = APIRouter(prefix="/api/surveys", tags=["pipeline"])
 
 _VERSION_RE = re.compile(r"^v\d+$|^tmp$")
 
+# In-memory job tracker — fine for single-worker deployment
+_refresh_jobs: dict[int, dict] = {}
+
 
 def _validate_version(version: str) -> str:
     if not _VERSION_RE.match(version):
@@ -25,26 +29,49 @@ def _validate_version(version: str) -> str:
     return version
 
 
-# ── refresh (fetch + ingest combined) ────────────────────────────────────────
+# ── refresh (fetch + ingest as background job) ────────────────────────────────
 
 @router.post("/{survey_id}/refresh")
-async def refresh_survey(survey_id: int):
-    """Fetch fresh data from QMe then run ingestion — replaces separate fetch+ingest."""
+async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks):
+    """Start refresh as a background job — returns immediately to avoid proxy timeout."""
+    # Guard: reject if a job is already running for this survey
+    if _refresh_jobs.get(survey_id, {}).get("status") == "running":
+        return {"status": "running", "detail": "Refresh already in progress"}
+    _refresh_jobs[survey_id] = {
+        "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    background_tasks.add_task(_do_refresh, survey_id)
+    return {"status": "started"}
+
+
+@router.get("/{survey_id}/refresh/status")
+async def refresh_status(survey_id: int):
+    """Poll this endpoint after POST /refresh to check job progress."""
+    return _refresh_jobs.get(survey_id, {"status": "idle"})
+
+
+async def _do_refresh(survey_id: int) -> None:
     mcp = get_mcp_client()
     try:
         definition = await mcp.get_survey_definition(survey_id)
         rows_pages = await mcp.get_all_rows(survey_id)
     except MCPError as exc:
         log.warning("refresh MCP failed for survey %s: %s", survey_id, exc)
-        raise HTTPException(502, str(exc))
+        _refresh_jobs[survey_id] = {"status": "error", "detail": str(exc)}
+        return
 
     try:
-        result = pipeline_svc.refresh(survey_id, definition, rows_pages)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: pipeline_svc.refresh(survey_id, definition, rows_pages)
+        )
         _upsert_info(survey_id)
-        return {"status": "ok", **result}
+        _refresh_jobs[survey_id] = {"status": "done", **result}
+        log.info("refresh done for survey %s — %s rows", survey_id, result.get("n_rows"))
     except Exception as exc:
-        log.exception("refresh failed for survey %s", survey_id)
-        raise HTTPException(500, "Pipeline error — check server logs")
+        log.exception("refresh pipeline failed for survey %s", survey_id)
+        _refresh_jobs[survey_id] = {"status": "error", "detail": "Pipeline error — check server logs"}
 
 
 def _upsert_info(survey_id: int) -> None:
