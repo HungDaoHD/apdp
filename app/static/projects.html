@@ -524,7 +524,7 @@ async function doAddSurvey() {
       window.location = `/editor?survey_id=${dlgSelected.id}&title=${encodeURIComponent(displayTitle)}`;
     }, 500);
   } catch(e) {
-    if (/reconnect|token expired|unauthori[sz]ed|not connected|session expired/i.test(e.message)) {
+    if (/reconnect|token expired|unauthori[sz]ed/i.test(e.message)) {
       setDlgStatus('✗ QMe session expired — please reconnect.', 'err');
       hideLoading();
       setTimeout(() => connectQme(), 400);

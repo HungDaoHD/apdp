@@ -17,7 +17,6 @@ class Settings(BaseSettings):
 
     # Server
     PORT: int = 8000
-    HTTPS_ONLY: bool = False  # set True in production to enforce secure cookie flag
 
     # Storage
     DATA_DIR:         str = "data"

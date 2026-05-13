@@ -2,7 +2,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -16,15 +16,11 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(messa
 app = FastAPI(title="Q&Me SurveyFlow", version="1.0.0")
 
 
-def require_qme(request: Request):
-    """Dependency: reject if QMe token missing OR browser session cookie invalid."""
+def require_qme():
+    """Dependency: reject request if QMe MCP is not connected."""
     from services.mcp_client import get_storage
     if not get_storage().is_connected():
         raise HTTPException(status_code=401, detail="Not connected to QMe MCP")
-    from routers.qme_auth import validate_app_session, _APP_SESSION_COOKIE
-    token = request.cookies.get(_APP_SESSION_COOKIE, "")
-    if not validate_app_session(token):
-        raise HTTPException(status_code=401, detail="Browser session expired — please log in again")
 
 _STATIC = Path(__file__).parent / "static"
 
