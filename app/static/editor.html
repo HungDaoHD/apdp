@@ -2737,8 +2737,8 @@ async function doRefresh() {
     document.getElementById('downloadBtn').disabled = false;
     setStatus(`✓ Refresh complete — ${dataStatusText()}`, 'saved');
   } catch(e) {
-    if (/reconnect|token expired|unauthori[sz]ed/i.test(e.message)) {
-      document.getElementById('authErrMov').style.display = 'flex';
+    if (_isAuthError({ status: 0 }, e.message)) {
+      _showAuthPopup();
     } else {
       setStatus('⚠ Refresh error: ' + e.message, '');
     }
@@ -2750,10 +2750,22 @@ async function doRefresh() {
 
 // ── API loaders ───────────────────────────────────
 
+function _isAuthError(res, detail) {
+  if (res.status === 401 || res.status === 403) return true;
+  return /reconnect|token expired|unauthori[sz]ed|not connected|session expired/i.test(detail || '');
+}
+function _showAuthPopup() {
+  document.getElementById('authErrMov').style.display = 'flex';
+}
+
 async function apiLoadMeta(id) {
   try {
     const res = await fetch(`/api/surveys/${id}/metadata`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      let detail = ''; try { detail = (await res.json()).detail; } catch {}
+      if (_isAuthError(res, detail)) _showAuthPopup();
+      return;
+    }
     parseMeta(JSON.stringify(await res.json()), `${id}_metadata.json`);
   } catch(e) { setStatus('⚠ Metadata error: ' + e.message, ''); }
 }
@@ -2761,7 +2773,11 @@ async function apiLoadMeta(id) {
 async function apiLoadRd(id) {
   try {
     const res = await fetch(`/api/surveys/${id}/rawdata`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      let detail = ''; try { detail = (await res.json()).detail; } catch {}
+      if (_isAuthError(res, detail)) _showAuthPopup();
+      return;
+    }
     loadRd(await res.text(), `${id}_rawdata.csv`); // badge updated inside loadRd
   } catch(e) { setStatus('⚠ Rawdata error: ' + e.message, ''); }
 }
