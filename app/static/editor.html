@@ -2022,21 +2022,27 @@ function onRdIn(e) {
   r.onload = ev => loadRd(ev.target.result, f.name);
   r.readAsText(f, 'utf-8'); e.target.value = '';
 }
+// Server-side counts (set after activateSurvey or doRefresh)
+let _dataCounts = { n_rows: 0, n_approved: 0, n_pending: 0 };
+
 function dataStatusText() {
-  if (!rawCsv || !rawCsv.length) return 'data: ✓';
-  if (!rawHeaders.includes('profile_status')) return `✓ ${rawCsv.length} rows`;
-  const counts = {};
-  rawCsv.forEach(r => {
-    const s = (r['profile_status'] || 'unknown').toLowerCase();
-    counts[s] = (counts[s] || 0) + 1;
-  });
+  const { n_rows, n_approved, n_pending } = _dataCounts;
+  if (!n_rows) return 'data: ✓';
   const parts = [];
-  if (counts['approved']) parts.push(`${counts['approved']} approved`);
-  if (counts['pending'])  parts.push(`${counts['pending']} pending`);
-  Object.entries(counts).forEach(([k, v]) => {
-    if (k !== 'approved' && k !== 'pending') parts.push(`${v} ${k}`);
-  });
-  return parts.join(' · ');
+  if (n_approved) parts.push(`${n_approved} approved`);
+  if (n_pending)  parts.push(`${n_pending} pending`);
+  const other = n_rows - n_approved - n_pending;
+  if (other > 0)  parts.push(`${other} other`);
+  return parts.length ? parts.join(' · ') : `${n_rows} rows`;
+}
+
+function _setDataCounts(counts) {
+  _dataCounts = { n_rows: counts.n_rows||0, n_approved: counts.n_approved||0, n_pending: counts.n_pending||0 };
+  const rfBadge = document.getElementById('refreshBadge');
+  if (rfBadge && _dataCounts.n_rows) {
+    rfBadge.textContent = dataStatusText();
+    rfBadge.className   = 'fbadge ok';
+  }
 }
 
 function loadRd(text, name) {
@@ -2044,16 +2050,9 @@ function loadRd(text, name) {
   const res = Papa.parse(text, { header:true, skipEmptyLines:true, dynamicTyping:false });
   rawCsv    = res.data;
   rawHeaders = res.meta.fields || [];
-  const b = document.getElementById('rdBadge');
-  if (b) { b.textContent = `csv: ${rawCsv.length}r`; b.className = 'fbadge ok'; }
-  // Update data badge with approved/pending breakdown
-  const rfBadge = document.getElementById('refreshBadge');
-  if (rfBadge) { rfBadge.textContent = dataStatusText(); rfBadge.className = 'fbadge ok'; }
-  setStatus(`CSV loaded: ${rawCsv.length} rows · ${rawHeaders.length} cols`, 'saved');
-  checkRunBtn();
 }
 function checkRunBtn() {
-  const ok  = !!(rawCsv && metadata.length && data.length);
+  const ok  = !!(metadata.length && data.length && _dataCounts.n_rows);
   const btn = document.getElementById('runBtn');
   if (!btn) return;
   btn.disabled       = !ok;
@@ -2594,25 +2593,39 @@ function renderRow(row, nCols) {
 // ── Preview panel ────────────────────────────────────
 let _pvActiveTab = 0;
 
-function showPreview() {
-  if (!rawCsv || !data.length) return;
+async function showPreview() {
+  if (!data.length || !currentSurveyId) return;
   const cfg    = data[activeCfg];
   const tables = (cfg.tables||[]).filter(t => t.enabled !== false);
   if (!tables.length) { setStatus('⚠ No enabled tables', ''); return; }
 
+  // Show panel immediately with loading spinner
+  document.getElementById('pvTabs').innerHTML = '';
+  document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Loading data…</span></div>';
+  document.getElementById('previewPanel').style.display = 'flex';
+
+  // Fetch rawdata from server on-demand if not already in memory
+  if (!rawCsv) {
+    try {
+      await apiLoadRd(currentSurveyId);
+    } catch(e) {
+      document.getElementById('pvContent').innerHTML = `<div class="pv-loading"><span>⚠ Failed to load data: ${h(e.message)}</span></div>`;
+      return;
+    }
+  }
+
   try {
     _pvResults  = tables.map(t => computeTable(cfg, t));
     _pvActiveTab = 0;
-
     document.getElementById('pvTabs').innerHTML = tables.map((t,i) =>
       `<button class="pvtab ${i===0?'on':''}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
     ).join('');
     document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Loading…</span></div>';
-    document.getElementById('previewPanel').style.display = 'flex';
     requestAnimationFrame(() => requestAnimationFrame(renderPvContent));
   } catch(err) {
     setStatus('⚠ Preview error: '+err.message, '');
     console.error(err);
+    closePreview();
   }
 }
 function closePreview() { document.getElementById('previewPanel').style.display='none'; }
@@ -2738,6 +2751,8 @@ function _setLoading(msg, sub = '') {
 async function activateSurvey(id, title) {
   currentSurveyId   = id;
   currentSurveyName = title;
+  rawCsv = null; rawHeaders = []; // clear rawdata from previous survey
+  _dataCounts = { n_rows: 0, n_approved: 0, n_pending: 0 };
 
   _setLoading('Loading survey…', title);
 
@@ -2751,8 +2766,7 @@ async function activateSurvey(id, title) {
 
   const rfBadge = document.getElementById('refreshBadge');
   if (st.has_data) {
-    rfBadge.textContent = 'data: ✓';
-    rfBadge.className = 'fbadge ok';
+    _setDataCounts(st);
   } else {
     rfBadge.textContent = 'data: —';
     rfBadge.className = 'fbadge none';
@@ -2760,17 +2774,16 @@ async function activateSurvey(id, title) {
   document.getElementById('refreshBtn').disabled = false;
 
   if (st.has_data) {
-    _setLoading('Loading questions & data…', title);
+    _setLoading('Loading questions…', title);
     await apiLoadMeta(id);
-    await apiLoadRd(id);
   }
   if (st.has_datatable) {
     _setLoading('Loading datatable config…', title);
     await apiLoadDT(id);
-  } else {
   }
   document.getElementById('downloadBtn').disabled = !st.has_data;
   _setLoading(null);
+  checkRunBtn();
   setStatus(`Survey loaded · ${st.has_data ? 'data ✓' : 'no data — click 🔄 Refresh'}`, st.has_data ? 'saved' : '');
 }
 
@@ -2802,11 +2815,13 @@ async function doRefresh() {
       if (job.status === 'error') throw new Error(job.detail || 'refresh failed');
     }
 
-    _setLoading('Re-loading questions & data…', currentSurveyName);
+    _setLoading('Re-loading questions…', currentSurveyName);
     setStatus(`✓ Fetched ${d.n_rows} rows — reloading…`, 'saved');
     await apiLoadMeta(currentSurveyId);
-    await apiLoadRd(currentSurveyId);
+    _setDataCounts(d);
+    rawCsv = null; rawHeaders = []; // clear stale rawdata if any
     document.getElementById('downloadBtn').disabled = false;
+    checkRunBtn();
     setStatus(`✓ Refresh complete — ${dataStatusText()}`, 'saved');
   } catch(e) {
     if (/reconnect|token expired|unauthori[sz]ed/i.test(e.message)) {
@@ -2831,11 +2846,9 @@ async function apiLoadMeta(id) {
 }
 
 async function apiLoadRd(id) {
-  try {
-    const res = await fetch(`/api/surveys/${id}/rawdata`);
-    if (!res.ok) return;
-    loadRd(await res.text(), `${id}_rawdata.csv`); // badge updated inside loadRd
-  } catch(e) { setStatus('⚠ Rawdata error: ' + e.message, ''); }
+  const res = await fetch(`/api/surveys/${id}/rawdata`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  loadRd(await res.text(), `${id}_rawdata.csv`);
 }
 
 async function apiLoadDT(id) {

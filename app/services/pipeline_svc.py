@@ -38,10 +38,22 @@ def ingest(survey_id: int, definition: dict, rows_pages: list[dict],
         storage.write_bytes(f"{survey_id}/data/rawdata.csv",   Path(ctx["rawdata_path"]).read_bytes())
         storage.write_bytes(f"{survey_id}/data/metadata.json", Path(ctx["metadata_path"]).read_bytes())
 
+        rawdata = ctx["rawdata"]
+        n_rows  = len(rawdata)
+        if "profile_status" in rawdata.columns:
+            vc = rawdata["profile_status"].str.lower().value_counts()
+            n_approved = int(vc.get("approved", 0))
+            n_pending  = int(vc.get("pending",  0))
+        else:
+            n_approved, n_pending = n_rows, 0
+
+        stats = {"n_rows": n_rows, "n_approved": n_approved, "n_pending": n_pending}
+        storage.write_json(f"{survey_id}/data/stats.json", stats)
+
         return {
             "rawdata_key":   f"{survey_id}/data/rawdata.csv",
             "metadata_key":  f"{survey_id}/data/metadata.json",
-            "n_rows": len(ctx["rawdata"]),
+            **stats,
         }
 
 

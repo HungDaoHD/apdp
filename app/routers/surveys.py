@@ -154,9 +154,19 @@ async def survey_status(survey_id: int):
         for k in keys
         if (m := re.search(r"/(v\d+)/", k))
     })
+    has_data = storage.exists(f"{survey_id}/data/rawdata.csv")
+    stats: dict = {}
+    if has_data:
+        try:
+            stats = storage.read_json(f"{survey_id}/data/stats.json")
+        except Exception:
+            pass
     return {
         "has_mcp":       storage.exists(f"{survey_id}/mcp/definition.json"),
-        "has_data":      storage.exists(f"{survey_id}/data/rawdata.csv"),
+        "has_data":      has_data,
         "has_datatable": storage.exists(f"{survey_id}/datatable/datatable.json"),
         "versions":      versions,
+        "n_rows":        stats.get("n_rows", 0),
+        "n_approved":    stats.get("n_approved", 0),
+        "n_pending":     stats.get("n_pending", 0),
     }
