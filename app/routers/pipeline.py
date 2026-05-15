@@ -67,43 +67,27 @@ async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks,
 
 
 @router.post("/{survey_id}/refresh/csv")
-async def refresh_survey_csv(survey_id: int, background_tasks: BackgroundTasks,
-                              session_id: str = Depends(require_qme)):
-    """Fetch export CSV via MCP prepare_survey_data_file and run ingestion.
-
-    Shares the same status polling endpoint as /refresh.
-    """
-    if _read_refresh_status(survey_id).get("status") == "running":
-        return {"status": "running", "detail": "Refresh already in progress"}
-    _write_refresh_status(survey_id, {
-        "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-    })
-    background_tasks.add_task(_do_refresh_csv, survey_id, session_id)
-    return {"status": "started"}
-
-
-async def _do_refresh_csv(survey_id: int, session_id: str) -> None:
+async def refresh_survey_csv(survey_id: int, session_id: str = Depends(require_qme)):
+    """Fetch export CSV via MCP and run ingestion — waits synchronously, no polling needed."""
     mcp = get_mcp_client(session_id)
     try:
         definition = await mcp.get_survey_definition(survey_id)
-        csv_text   = await mcp.get_export_csv(survey_id)
+        csv_bytes  = await mcp.get_export_csv(survey_id)
     except MCPError as exc:
         log.warning("refresh/csv MCP failed for survey %s: %s", survey_id, exc)
-        _write_refresh_status(survey_id, {"status": "error", "detail": str(exc)})
-        return
+        raise HTTPException(400, str(exc))
 
     try:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            None, lambda: pipeline_svc.refresh_csv(survey_id, definition, csv_text.encode("utf-8"))
+            None, lambda: pipeline_svc.refresh_csv(survey_id, definition, csv_bytes)
         )
         _upsert_info(survey_id, session_id)
-        _write_refresh_status(survey_id, {"status": "done", **result})
         log.info("refresh_csv done for survey %s — %s rows", survey_id, result.get("n_rows"))
+        return {"status": "done", **result}
     except Exception as exc:
         log.exception("refresh_csv pipeline failed for survey %s", survey_id)
-        _write_refresh_status(survey_id, {"status": "error", "detail": "Pipeline error — check server logs"})
+        raise HTTPException(500, "Pipeline error — check server logs")
 
 
 @router.get("/{survey_id}/refresh/status")

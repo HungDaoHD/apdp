@@ -248,12 +248,95 @@ class _MCPShim:
     async def get_survey_definition(self, survey_id: int) -> dict:
         return await call_tool("get_survey_definition", {"survey_id": survey_id}, self._session_id)
 
-    async def get_export_csv(self, survey_id: int) -> str:
-        """Call prepare_survey_data_file → return raw CSV text."""
-        result = await call_tool("prepare_survey_data_file", {"survey_id": survey_id}, self._session_id)
-        if isinstance(result, str):
-            return result
-        raise MCPError(f"prepare_survey_data_file returned unexpected type: {type(result).__name__}")
+    async def prepare_survey_data_file(self, survey_id: int, format: str = "code",
+                                        force_refresh: bool = False) -> dict:
+        return await call_tool("prepare_survey_data_file", {
+            "survey_id":     survey_id,
+            "format":        format,
+            "force_refresh": force_refresh,
+        }, self._session_id)
+
+    async def get_survey_data_file_status(self, job_id: int) -> dict:
+        return await call_tool("get_survey_data_file_status", {"job_id": job_id}, self._session_id)
+
+    async def read_survey_data_file(self, job_id: int, file: str = "data",
+                                     offset: int = 0, limit: int = 500) -> dict:
+        return await call_tool("read_survey_data_file", {
+            "job_id": job_id,
+            "file":   file,
+            "offset": offset,
+            "limit":  limit,
+        }, self._session_id)
+
+    async def get_export_csv(self, survey_id: int) -> bytes:
+        """prepare → poll until ready → read all chunks → return assembled CSV bytes."""
+        import asyncio
+        import csv as _csv
+        import io
+
+        MAX_WAIT = 300  # seconds
+
+        meta = await self.prepare_survey_data_file(survey_id, format="code", force_refresh=False)
+        if not isinstance(meta, dict):
+            raise MCPError(f"prepare_survey_data_file unexpected type: {type(meta).__name__}")
+
+        job_id  = meta.get("job_id")
+        elapsed = 0
+
+        while meta.get("status") != "ready":
+            retry_after = int(meta.get("retry_after_seconds") or 5)
+            if elapsed >= MAX_WAIT:
+                raise MCPError(f"export timed out after {MAX_WAIT}s (status={meta.get('status')})")
+            log.info("export status=%s, retry in %ds… (job_id=%s)", meta.get("status"), retry_after, job_id)
+            await asyncio.sleep(retry_after)
+            elapsed += retry_after
+            meta = await self.get_survey_data_file_status(job_id)
+
+        log.info("export ready, reading chunks (job_id=%s)…", job_id)
+        parts: list[str] = []
+        offset    = 0
+        limit     = 500
+        chunk_num = 0
+
+        while True:
+            chunk_num += 1
+            chunk = await self.read_survey_data_file(job_id, file="data", offset=offset, limit=limit)
+
+            if isinstance(chunk, str):
+                parts.append(chunk)
+            elif isinstance(chunk, dict):
+                csv_text = chunk.get("csv") or chunk.get("content") or ""
+                rows_val = chunk.get("rows", [])
+                if csv_text:
+                    parts.append(csv_text if csv_text.endswith("\n") else csv_text + "\n")
+                elif rows_val:
+                    if isinstance(rows_val[0], str):
+                        parts.append("\n".join(rows_val) + "\n")
+                    elif isinstance(rows_val[0], (list, dict)):
+                        buf = io.StringIO()
+                        if isinstance(rows_val[0], dict):
+                            writer = _csv.DictWriter(buf, fieldnames=list(rows_val[0].keys()))
+                            if offset == 0:
+                                writer.writeheader()
+                            writer.writerows(rows_val)
+                        else:
+                            _csv.writer(buf).writerows(rows_val)
+                        parts.append(buf.getvalue())
+
+                pagination     = chunk.get("pagination", {})
+                rows_remaining = pagination.get("rows_remaining", 0)
+                has_more       = pagination.get("has_more", False)
+                next_offset    = pagination.get("next_offset", offset + limit)
+                log.info("export chunk %d: offset=%d remaining=%d", chunk_num, offset, rows_remaining)
+                if not has_more or rows_remaining == 0:
+                    break
+                offset = next_offset
+            else:
+                log.warning("read_survey_data_file unexpected type: %s", type(chunk))
+                break
+
+        csv_text = "".join(parts)
+        return csv_text.encode("utf-8-sig")
 
     async def get_all_rows(self, survey_id: int, page_limit: int = 200) -> list[dict]:
         from datetime import date

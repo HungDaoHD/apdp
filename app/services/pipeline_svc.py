@@ -136,8 +136,63 @@ def generate_xlsx(survey_id: int, profile_status: list[str] | None = None) -> by
         return (Path(ctx["output_dir"]) / "datatable.xlsx").read_bytes()
 
 
+def _normalize_export_csv(csv_bytes: bytes) -> bytes:
+    """Pad blank lines so the header row lands at HEADER_IDX=6 and data at FIRST_DATA_IDX=12.
+
+    read_survey_data_file returns a trimmed format (header at idx ~3) while
+    parse_export_csv expects the full QMe export layout (header at idx 6).
+    """
+    import csv as _csv
+    import io as _io
+
+    HEADER_IDX     = 6
+    FIRST_DATA_IDX = 12
+
+    lines = csv_bytes.decode("utf-8-sig").splitlines()
+
+    # Locate the header row: first row whose first few cells include "Approve" and "Reject"
+    header_idx = None
+    for i, line in enumerate(lines[:20]):
+        try:
+            parts = next(_csv.reader(_io.StringIO(line)))
+        except Exception:
+            continue
+        if "Approve" in parts and "Reject" in parts:
+            header_idx = i
+            break
+
+    if header_idx is None or header_idx == HEADER_IDX:
+        return csv_bytes  # already in expected format, or can't auto-fix
+
+    # Sub-headers: rows after the header that don't look like data
+    # A data row has 'x', 'X', or '' in the Approve column (col 0)
+    sub_end = header_idx + 1
+    for i in range(header_idx + 1, min(header_idx + 10, len(lines))):
+        try:
+            parts = next(_csv.reader(_io.StringIO(lines[i])))
+        except Exception:
+            continue
+        if parts and parts[0].strip().lower() in ("x", ""):
+            sub_end = i
+            break
+        sub_end = i + 1
+
+    preamble    = lines[:header_idx]
+    header_line = lines[header_idx]
+    sub_headers = lines[header_idx + 1: sub_end]
+    data_lines  = lines[sub_end:]
+
+    # Pad to hit the expected indices
+    pre_padding = max(0, HEADER_IDX - len(preamble))
+    sub_padding = max(0, FIRST_DATA_IDX - HEADER_IDX - 1 - len(sub_headers))
+
+    normalized = preamble + [""] * pre_padding + [header_line] + sub_headers + [""] * sub_padding + data_lines
+    logger.info("_normalize_export_csv: header moved from idx %d → %d", header_idx, HEADER_IDX)
+    return "\n".join(normalized).encode("utf-8-sig")
+
+
 def refresh_csv(survey_id: int, definition: dict, export_csv_bytes: bytes) -> dict:
-    """Ingest from an export CSV file — saves definition + CSV to storage then ingests.
+    """Ingest from export CSV bytes — saves files to storage then ingests.
 
     Always ingests ALL profile statuses so rawdata.csv can be filtered later.
     """
@@ -148,10 +203,10 @@ def refresh_csv(survey_id: int, definition: dict, export_csv_bytes: bytes) -> di
     storage.write_json(f"{survey_id}/mcp/definition.json", definition)
     storage.write_bytes(f"{survey_id}/mcp/data_export.csv", export_csv_bytes)
 
-    # parse_export_csv requires a real file path (uses open()), not BytesIO
+    normalized = _normalize_export_csv(export_csv_bytes)
     with tempfile.TemporaryDirectory() as tmp:
         csv_path = Path(tmp) / "data_export.csv"
-        csv_path.write_bytes(export_csv_bytes)
+        csv_path.write_bytes(normalized)
         export_df = parse_export_csv(csv_path)
 
     return ingest(survey_id, definition, export_df=export_df, profile_status=["approved", "pending"])
