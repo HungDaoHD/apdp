@@ -13,9 +13,14 @@ from surveyflow.pipeline import Pipeline
 logger = logging.getLogger(__name__)
 
 
-def ingest(survey_id: int, definition: dict, rows_pages: list[dict],
+def ingest(survey_id: int, definition: dict,
+           rows_pages: list[dict] | None = None,
+           export_df: "pd.DataFrame | None" = None,
            profile_status: list[str] | None = None) -> dict:
-    """Run ingestion step → writes rawdata.csv + metadata.json to storage."""
+    """Run ingestion step → writes rawdata.csv + metadata.json to storage.
+
+    Pass either rows_pages (QMe MCP mode) or export_df (CSV export mode).
+    """
     from services.storage import get_storage
     storage = get_storage()
 
@@ -24,9 +29,10 @@ def ingest(survey_id: int, definition: dict, rows_pages: list[dict],
         data_dir = survey_dir / "data"
         data_dir.mkdir(parents=True, exist_ok=True)
 
+        row_source = {"export_df": export_df} if export_df is not None else {"rows_pages": rows_pages}
         cfg = PipelineConfig(
             definition=definition,
-            rows_pages=rows_pages,
+            **row_source,
             output_dir=str(survey_dir),
             data_dir=str(data_dir),
             skip_ingestion=False,
@@ -128,6 +134,27 @@ def generate_xlsx(survey_id: int, profile_status: list[str] | None = None) -> by
         ctx = Pipeline(cfg).run()
 
         return (Path(ctx["output_dir"]) / "datatable.xlsx").read_bytes()
+
+
+def refresh_csv(survey_id: int, definition: dict, export_csv_bytes: bytes) -> dict:
+    """Ingest from an export CSV file — saves definition + CSV to storage then ingests.
+
+    Always ingests ALL profile statuses so rawdata.csv can be filtered later.
+    """
+    from services.storage import get_storage
+    from surveyflow.steps.ingestion.export_parser import parse_export_csv
+
+    storage = get_storage()
+    storage.write_json(f"{survey_id}/mcp/definition.json", definition)
+    storage.write_bytes(f"{survey_id}/mcp/data_export.csv", export_csv_bytes)
+
+    # parse_export_csv requires a real file path (uses open()), not BytesIO
+    with tempfile.TemporaryDirectory() as tmp:
+        csv_path = Path(tmp) / "data_export.csv"
+        csv_path.write_bytes(export_csv_bytes)
+        export_df = parse_export_csv(csv_path)
+
+    return ingest(survey_id, definition, export_df=export_df, profile_status=["approved", "pending"])
 
 
 def refresh(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:

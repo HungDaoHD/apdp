@@ -248,6 +248,13 @@ class _MCPShim:
     async def get_survey_definition(self, survey_id: int) -> dict:
         return await call_tool("get_survey_definition", {"survey_id": survey_id}, self._session_id)
 
+    async def get_export_csv(self, survey_id: int) -> str:
+        """Call prepare_survey_data_file → return raw CSV text."""
+        result = await call_tool("prepare_survey_data_file", {"survey_id": survey_id}, self._session_id)
+        if isinstance(result, str):
+            return result
+        raise MCPError(f"prepare_survey_data_file returned unexpected type: {type(result).__name__}")
+
     async def get_all_rows(self, survey_id: int, page_limit: int = 200) -> list[dict]:
         from datetime import date
         pages: list[dict] = []

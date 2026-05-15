@@ -319,6 +319,11 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <span class="fbadge none" id="surveyBadge" style="max-width:260px">Loading…</span>
   <div class="sep"></div>
   <span class="fbadge none" id="refreshBadge">data: —</span>
+  <select id="ingestModeSelect"
+    style="font-size:11px;padding:2px 5px;border:1px solid #d0d5dd;border-radius:5px;background:white;color:#333;cursor:pointer;height:24px;margin-left:4px">
+    <option value="qme">Rows</option>
+    <option value="csv">Export CSV</option>
+  </select>
   <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled>🔄 Refresh</button>
   <div id="langSelectorWrap" style="display:none;align-items:center;gap:5px;margin-left:6px">
     <span style="font-size:10px;color:#999;white-space:nowrap">🌐 Lang</span>
@@ -2791,13 +2796,17 @@ async function activateSurvey(id, title) {
 
 async function doRefresh() {
   if (!currentSurveyId) return;
+  const mode = document.getElementById('ingestModeSelect').value;
+  const endpoint = mode === 'csv'
+    ? `/api/surveys/${currentSurveyId}/refresh/csv`
+    : `/api/surveys/${currentSurveyId}/refresh`;
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
   _setLoading('Fetching data from QMe…', currentSurveyName);
   setStatus('Fetching from QMe…', '');
   try {
     // Start background job — returns immediately (no proxy timeout)
-    const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST'});
+    const r = await fetch(endpoint, {method: 'POST'});
     let d = {};
     try { d = await r.json(); } catch { /* proxy returned non-JSON */ }
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
