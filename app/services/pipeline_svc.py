@@ -209,6 +209,16 @@ def refresh_csv(survey_id: int, definition: dict, export_csv_bytes: bytes) -> di
         csv_path.write_bytes(normalized)
         export_df = parse_export_csv(csv_path)
 
+    # Drop sub-header rows that slipped through normalization — they always have empty task_id
+    if "task_id" in export_df.columns:
+        mask = export_df["task_id"].notna()
+        if export_df["task_id"].dtype == object:
+            mask = mask & (export_df["task_id"].astype(str).str.strip() != "")
+        n_dropped = (~mask).sum()
+        if n_dropped:
+            logger.info("refresh_csv: dropped %d sub-header row(s) with empty task_id", n_dropped)
+        export_df = export_df[mask]
+
     return ingest(survey_id, definition, export_df=export_df, profile_status=["approved", "pending"])
 
 
