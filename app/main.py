@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from routers import surveys, pipeline, qme_auth
@@ -34,6 +34,11 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 
 _NO_CACHE = {"Cache-Control": "no-store"}
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    return JSONResponse({"status": "ok"}, headers=_NO_CACHE)
 
 
 @app.get("/", response_class=HTMLResponse)
