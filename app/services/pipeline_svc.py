@@ -20,6 +20,7 @@ def ingest(survey_id: int, definition: dict,
     """Run ingestion step → writes rawdata.csv + metadata.json to storage.
 
     Pass either rows_pages (QMe MCP mode) or export_df (CSV export mode).
+    profile_status defaults to ["approved"] matching surveyflow's default.
     """
     from services.storage import get_storage
     storage = get_storage()
@@ -194,7 +195,7 @@ def _normalize_export_csv(csv_bytes: bytes) -> bytes:
 def refresh_csv(survey_id: int, definition: dict, export_csv_bytes: bytes) -> dict:
     """Ingest from export CSV bytes — saves files to storage then ingests.
 
-    Always ingests ALL profile statuses so rawdata.csv can be filtered later.
+    Uses surveyflow default profile_status=["approved"].
     """
     from services.storage import get_storage
     from surveyflow.steps.ingestion.export_parser import parse_export_csv
@@ -219,14 +220,13 @@ def refresh_csv(survey_id: int, definition: dict, export_csv_bytes: bytes) -> di
             logger.info("refresh_csv: dropped %d sub-header row(s) with empty task_id", n_dropped)
         export_df = export_df[mask]
 
-    return ingest(survey_id, definition, export_df=export_df, profile_status=["approved", "pending"])
+    return ingest(survey_id, definition, export_df=export_df)
 
 
 def refresh(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
     """Fetch + ingest in one call — writes mcp files then rawdata/metadata to storage.
 
-    Always ingests ALL profile statuses so rawdata.csv can be filtered later
-    (by run_table / generate_xlsx) without re-fetching from QMe.
+    Uses surveyflow default profile_status=["approved"].
     """
     from services.storage import get_storage
     storage = get_storage()
@@ -235,8 +235,7 @@ def refresh(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
     storage.write_json(f"{survey_id}/mcp/definition.json", definition)
     storage.write_json(f"{survey_id}/mcp/rows_pages.json", rows_pages)
 
-    # Ingest all statuses — profile_status filter is applied at table/preview time
-    return ingest(survey_id, definition, rows_pages, profile_status=["approved", "pending"])
+    return ingest(survey_id, definition, rows_pages)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
