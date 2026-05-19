@@ -126,22 +126,28 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
     from surveyflow import QMeClient
     from config import settings
 
+    log.info("[refresh:%s] background task started", survey_id)
+
     access_token = get_access_token(session_id)
     if not access_token:
+        log.warning("[refresh:%s] no access token — aborting", survey_id)
         _write_refresh_status(survey_id, {"status": "error", "detail": "Not connected to QMe"})
         return
 
+    log.info("[refresh:%s] token OK — creating QMeClient (url=%s)", survey_id, settings.QME_MCP_BASE_URL)
     client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
     try:
+        log.info("[refresh:%s] submitting pipeline_svc.refresh to executor", survey_id)
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None, lambda: pipeline_svc.refresh(survey_id, client)
         )
+        log.info("[refresh:%s] executor finished — n_rows=%s", survey_id, result.get("n_rows"))
         _upsert_info(survey_id, session_id)
         _write_refresh_status(survey_id, {"status": "done", **result})
-        log.info("refresh done for survey %s — %s rows", survey_id, result.get("n_rows"))
+        log.info("[refresh:%s] status=done written", survey_id)
     except Exception as exc:
-        log.exception("refresh pipeline failed for survey %s", survey_id)
+        log.exception("[refresh:%s] pipeline failed: %s", survey_id, exc)
         _write_refresh_status(survey_id, {"status": "error", "detail": str(exc)})
 
 

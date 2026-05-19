@@ -253,22 +253,29 @@ def refresh(survey_id: int, client) -> dict:
         mcp_dir = Path(tmp) / "mcp"
         mcp_dir.mkdir(parents=True, exist_ok=True)
 
+        logger.info("[refresh:%s] FetchStep start (mode=export)", survey_id)
         ctx = FetchStep().run({
             "client":    client,
             "survey_id": survey_id,
             "mcp_dir":   str(mcp_dir),
             "mode":      "export",
         })
+        logger.info("[refresh:%s] FetchStep done — parsing export CSV", survey_id)
 
         definition = ctx["definition"]
         csv_path   = Path(ctx["export_csv"])
         export_df  = parse_export_csv(csv_path)
+        logger.info("[refresh:%s] parse_export_csv done — %d rows", survey_id, len(export_df))
 
         # Persist MCP data to storage
         storage.write_json(f"{survey_id}/mcp/definition.json", definition)
         storage.write_bytes(f"{survey_id}/mcp/data_export.csv", csv_path.read_bytes())
+        logger.info("[refresh:%s] MCP data saved to storage", survey_id)
 
-    return ingest(survey_id, definition, export_df=export_df)
+    logger.info("[refresh:%s] starting ingest", survey_id)
+    result = ingest(survey_id, definition, export_df=export_df)
+    logger.info("[refresh:%s] ingest done — %s rows", survey_id, result.get("n_rows"))
+    return result
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
