@@ -124,10 +124,14 @@ async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends
         result = await loop.run_in_executor(
             None, lambda: client._call("search_surveys", {"query": q, "limit": limit})
         )
-        return result
+        # Ensure result is JSON-serializable (raw MCP objects are not)
+        if isinstance(result, (dict, list, str, int, float, bool, type(None))):
+            return result
+        # Fallback: try converting via str
+        return {"raw": str(result)}
     except Exception as exc:
         log.warning("search_surveys failed: %s", exc)
-        raise HTTPException(502, "Search unavailable — check server logs")
+        raise HTTPException(502, f"Search unavailable: {exc}")
 
 
 # ── fetch from QMe ────────────────────────────────────────────────────────────
