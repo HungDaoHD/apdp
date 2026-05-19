@@ -18,6 +18,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .fbadge{font-size:11px;padding:2px 9px;border-radius:4px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fbadge.none{background:#252f3f;color:#555}
 .fbadge.ok{background:#1a3a2a;color:#6fcf97;border:1px solid #2a5a3a}
+.fbadge.warn{background:#3a2e10;color:#f6ad55;border:1px solid #6b4c10}
 .gap{flex:1}
 .btn{padding:5px 11px;border-radius:5px;border:none;cursor:pointer;font-size:11px;font-weight:500;transition:background .12s;white-space:nowrap}
 .btn:disabled{opacity:.4;cursor:not-allowed}
@@ -2044,8 +2045,16 @@ function _setDataCounts(counts) {
   _dataCounts = { n_rows: counts.n_rows||0, n_approved: counts.n_approved||0, n_pending: counts.n_pending||0 };
   const rfBadge = document.getElementById('refreshBadge');
   if (rfBadge && _dataCounts.n_rows) {
-    rfBadge.textContent = dataStatusText();
+    rfBadge.textContent = 'status=ready';
     rfBadge.className   = 'fbadge ok';
+  }
+}
+
+function _setRefreshProcessing() {
+  const rfBadge = document.getElementById('refreshBadge');
+  if (rfBadge) {
+    rfBadge.textContent = 'status=processing';
+    rfBadge.className   = 'fbadge warn';
   }
 }
 
@@ -2931,7 +2940,8 @@ async function doRefresh() {
   if (!currentSurveyId) return;
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
-  _setLoading('Fetching data from QMe…', currentSurveyName);
+  _setRefreshProcessing();
+  _setLoading('status=processing', currentSurveyName);
   setStatus('Fetching from QMe…', '');
   try {
     // Always use export CSV mode — background job with polling
@@ -2942,17 +2952,17 @@ async function doRefresh() {
 
     const t0 = Date.now();
     while (true) {
-      await new Promise(res => setTimeout(res, 2000));
+      await new Promise(res => setTimeout(res, 10000));
       const elapsed = Math.round((Date.now() - t0) / 1000);
       setStatus(`Fetching from QMe… (${elapsed}s)`, '');
-      _setLoading(`Fetching data from QMe… (${elapsed}s)`, currentSurveyName);
+      _setLoading(`status=processing (${elapsed}s)`, currentSurveyName);
       let job = {};
       try { job = await fetch(`/api/surveys/${currentSurveyId}/refresh/status`).then(r => r.json()); } catch {}
       if (job.status === 'done') { d = job; break; }
       if (job.status === 'error') throw new Error(job.detail || 'refresh failed');
     }
 
-    _setLoading('Re-loading questions…', currentSurveyName);
+    _setLoading('status=ready', currentSurveyName);
     setStatus(`✓ Fetched ${d.n_rows} rows — reloading…`, 'saved');
     await apiLoadMeta(currentSurveyId);
     _setDataCounts(d);
