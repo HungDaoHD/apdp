@@ -264,7 +264,7 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 .lov-spin{width:36px;height:36px;border:3.5px solid rgba(255,255,255,.2);border-top-color:#a8c7fa;border-radius:50%;animation:lovspin .75s linear infinite}
 @keyframes lovspin{to{transform:rotate(360deg)}}
 .lov-msg{color:#c5d8f5;font-size:13px;font-weight:500;text-align:center;max-width:300px;line-height:1.5}
-.lov-sub{color:#6e8cb0;font-size:11px}
+.lov-sub{color:#6e8cb0;font-size:11px;text-align:center;white-space:pre-line;max-width:300px;line-height:1.6}
 
 /* ── Preview panel ──────────────────────────────── */
 #previewPanel{position:fixed;inset:0;z-index:500;background:#f0f2f5;display:none;flex-direction:column}
@@ -2979,6 +2979,8 @@ async function doRefresh() {
       try { job = await fetch(`/api/surveys/${currentSurveyId}/refresh/status`).then(r => r.json()); } catch {}
       if (job.status === 'done') { d = job; break; }
       if (job.status === 'error') throw new Error(job.detail || 'refresh failed');
+      const stepMsg = job.step ? `↳ ${job.step}` : '';
+      _setLoading(`status=processing (${elapsed}s)`, `${currentSurveyName}\n${stepMsg}`, true);
     }
 
     _setLoading('status=ready', currentSurveyName);

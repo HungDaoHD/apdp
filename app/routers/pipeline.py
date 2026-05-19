@@ -136,11 +136,23 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
 
     log.info("[refresh:%s] token OK — creating QMeClient (url=%s)", survey_id, settings.QME_MCP_BASE_URL)
     client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
+
+    started_at = datetime.now(timezone.utc).isoformat()
+
+    def _step(msg: str):
+        """Update status file with current step (visible in UI polling)."""
+        log.info("[refresh:%s] %s", survey_id, msg)
+        _write_refresh_status(survey_id, {
+            "status":     "running",
+            "step":       msg,
+            "started_at": started_at,   # keep original start time for stale guard
+        })
+
     try:
-        log.info("[refresh:%s] submitting pipeline_svc.refresh to executor", survey_id)
+        _step("Connecting to QMe…")
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            None, lambda: pipeline_svc.refresh(survey_id, client)
+            None, lambda: pipeline_svc.refresh(survey_id, client, _step)
         )
         log.info("[refresh:%s] executor finished — n_rows=%s", survey_id, result.get("n_rows"))
         _upsert_info(survey_id, session_id)
