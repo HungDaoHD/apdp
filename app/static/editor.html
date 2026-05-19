@@ -2951,9 +2951,12 @@ async function doRefresh() {
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
 
     const t0 = Date.now();
+    const MAX_WAIT_MS = 12 * 60 * 1000;  // 12 minutes client-side timeout
     while (true) {
       await new Promise(res => setTimeout(res, 10000));
       const elapsed = Math.round((Date.now() - t0) / 1000);
+      if (Date.now() - t0 > MAX_WAIT_MS)
+        throw new Error(`Refresh timed out after ${elapsed}s — please try again.`);
       setStatus(`Fetching from QMe… (${elapsed}s)`, '');
       _setLoading(`status=processing (${elapsed}s)`, currentSurveyName);
       let job = {};

@@ -28,19 +28,38 @@ def _refresh_status_file(survey_id: int):
     return Path(os.getenv("DATA_DIR", "data")) / f".refresh_{survey_id}.json"
 
 
+_REFRESH_TIMEOUT_SECS = 600   # 10 minutes — treat stale "running" as error
+
+
 def _write_refresh_status(survey_id: int, data: dict) -> None:
     import json as _json
-    f = _refresh_status_file(survey_id)
-    f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(_json.dumps(data))
+    try:
+        f = _refresh_status_file(survey_id)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(_json.dumps(data))
+    except Exception as exc:
+        log.warning("_write_refresh_status failed for survey %s: %s", survey_id, exc)
 
 
 def _read_refresh_status(survey_id: int) -> dict:
     import json as _json
     try:
-        return _json.loads(_refresh_status_file(survey_id).read_text())
+        data = _json.loads(_refresh_status_file(survey_id).read_text())
     except Exception:
         return {"status": "idle"}
+    # Stale-running guard: if worker was killed, status stays "running" forever.
+    # Treat as error after REFRESH_TIMEOUT_SECS.
+    if data.get("status") == "running":
+        started_at = data.get("started_at")
+        if started_at:
+            try:
+                from datetime import timezone as _tz
+                age = (datetime.now(_tz.utc) - datetime.fromisoformat(started_at)).total_seconds()
+                if age > _REFRESH_TIMEOUT_SECS:
+                    return {"status": "error", "detail": f"Refresh timed out after {int(age)}s — worker may have been recycled. Please try again."}
+            except Exception:
+                pass
+    return data
 
 
 def _validate_version(version: str) -> str:
