@@ -1,13 +1,14 @@
 """Survey discovery and data-fetching endpoints."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from dependencies import require_qme
-from services.mcp_client import get_mcp_client, get_storage as get_token_storage, MCPError
+from services.mcp_client import get_storage as get_token_storage, get_access_token
 from services.storage import get_storage
 
 log = logging.getLogger(__name__)
@@ -81,26 +82,20 @@ async def list_projects():
 @router.get("/debug/tools")
 async def list_mcp_tools(session_id: str = Depends(require_qme)):
     """List all tools available on the QMe MCP server with their schemas."""
-    import httpx
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    from surveyflow import QMeClient
     from config import settings
 
-    storage = get_token_storage(session_id)
-    tokens = await storage.get_tokens()
-    if not tokens or not tokens.access_token:
+    access_token = get_access_token(session_id)
+    if not access_token:
         raise HTTPException(401, "Not connected to QMe")
 
-    headers = {"Authorization": f"Bearer {tokens.access_token}"}
+    client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
     try:
-        async with streamablehttp_client(settings.QME_MCP_BASE_URL, headers=headers) as (r, w, _):
-            async with ClientSession(r, w) as session:
-                await session.initialize()
-                tools_result = await session.list_tools()
-    except* httpx.HTTPStatusError as eg:
-        raise HTTPException(502, f"MCP error: {eg.exceptions[0].response.status_code}")
-    except* Exception as eg:
-        raise HTTPException(502, str(eg.exceptions[0]))
+        loop = asyncio.get_running_loop()
+        tools = await loop.run_in_executor(None, client.list_tools)
+    except Exception as exc:
+        log.warning("list_mcp_tools failed: %s", exc)
+        raise HTTPException(502, f"MCP error: {exc}")
 
     return [
         {
@@ -108,7 +103,7 @@ async def list_mcp_tools(session_id: str = Depends(require_qme)):
             "description": t.description,
             "inputSchema": t.inputSchema,
         }
-        for t in tools_result.tools
+        for t in tools
     ]
 
 
@@ -116,9 +111,21 @@ async def list_mcp_tools(session_id: str = Depends(require_qme)):
 
 @router.get("/search")
 async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends(require_qme)):
+    from surveyflow import QMeClient
+    from config import settings
+
+    access_token = get_access_token(session_id)
+    if not access_token:
+        raise HTTPException(401, "Not connected to QMe")
+
+    client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
     try:
-        return await get_mcp_client(session_id).search_surveys(query=q, limit=limit)
-    except MCPError as exc:
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: client._call("search_surveys", {"query": q, "limit": limit})
+        )
+        return result
+    except Exception as exc:
         log.warning("search_surveys failed: %s", exc)
         raise HTTPException(502, "Search unavailable — check server logs")
 
@@ -128,19 +135,42 @@ async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends
 @router.post("/{survey_id}/fetch")
 async def fetch_survey(survey_id: int, session_id: str = Depends(require_qme)):
     """Download definition + all rows pages from QMe MCP and save to storage."""
-    mcp = get_mcp_client(session_id)
-    try:
-        definition = await mcp.get_survey_definition(survey_id)
-        rows_pages = await mcp.get_all_rows(survey_id)
-    except MCPError as exc:
-        raise HTTPException(502, str(exc))
+    import tempfile
+    from pathlib import Path
+    from surveyflow import QMeClient, FetchStep
+    from config import settings
 
+    access_token = get_access_token(session_id)
+    if not access_token:
+        raise HTTPException(401, "Not connected to QMe")
+
+    client  = QMeClient(settings.QME_MCP_BASE_URL, access_token)
     storage = get_storage()
-    storage.write_json(f"{survey_id}/mcp/definition.json", definition)
-    storage.write_json(f"{survey_id}/mcp/rows_pages.json", rows_pages)
 
-    total_rows = sum(len(p.get("rows", [])) for p in rows_pages if isinstance(p, dict))
-    return {"status": "ok", "pages": len(rows_pages), "total_rows": total_rows}
+    def _fetch():
+        from surveyflow.steps.ingestion.export_parser import parse_export_csv
+        with tempfile.TemporaryDirectory() as tmp:
+            mcp_dir = Path(tmp) / "mcp"
+            mcp_dir.mkdir(parents=True, exist_ok=True)
+            ctx = FetchStep().run({
+                "client":    client,
+                "survey_id": survey_id,
+                "mcp_dir":   str(mcp_dir),
+                "mode":      "export",
+            })
+            definition = ctx["definition"]
+            csv_path   = Path(ctx["export_csv"])
+            export_df  = parse_export_csv(csv_path)
+            storage.write_json(f"{survey_id}/mcp/definition.json", definition)
+            storage.write_bytes(f"{survey_id}/mcp/data_export.csv", csv_path.read_bytes())
+            return {"status": "ok", "total_rows": len(export_df)}
+
+    try:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _fetch)
+    except Exception as exc:
+        log.warning("fetch_survey failed for survey %s: %s", survey_id, exc)
+        raise HTTPException(502, str(exc))
 
 
 # ── status ────────────────────────────────────────────────────────────────────

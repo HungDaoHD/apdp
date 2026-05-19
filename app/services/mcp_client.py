@@ -363,3 +363,11 @@ class _MCPShim:
 
 def get_mcp_client(session_id: str) -> _MCPShim:
     return _MCPShim(session_id)
+
+
+def get_access_token(session_id: str) -> str | None:
+    """Return the current access token for a session, or None if not connected."""
+    storage = get_storage(session_id)
+    if storage.is_connected():
+        return storage._access_token
+    return None

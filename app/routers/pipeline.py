@@ -11,7 +11,7 @@ from fastapi.responses import PlainTextResponse, Response
 
 from dependencies import require_qme
 from services import pipeline_svc
-from services.mcp_client import get_mcp_client, get_storage as get_token_storage, MCPError
+from services.mcp_client import get_storage as get_token_storage, get_access_token
 from services.storage import get_storage
 
 log = logging.getLogger(__name__)
@@ -68,19 +68,19 @@ async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks,
 
 @router.post("/{survey_id}/refresh/csv")
 async def refresh_survey_csv(survey_id: int, session_id: str = Depends(require_qme)):
-    """Fetch export CSV via MCP and run ingestion — waits synchronously, no polling needed."""
-    mcp = get_mcp_client(session_id)
-    try:
-        definition = await mcp.get_survey_definition(survey_id)
-        csv_bytes  = await mcp.get_export_csv(survey_id)
-    except MCPError as exc:
-        log.warning("refresh/csv MCP failed for survey %s: %s", survey_id, exc)
-        raise HTTPException(400, str(exc))
+    """Fetch export CSV via QMeClient/FetchStep and run ingestion — waits synchronously."""
+    from surveyflow import QMeClient
+    from config import settings
 
+    access_token = get_access_token(session_id)
+    if not access_token:
+        raise HTTPException(401, "Not connected to QMe — please reconnect.")
+
+    client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
     try:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            None, lambda: pipeline_svc.refresh_csv(survey_id, definition, csv_bytes)
+            None, lambda: pipeline_svc.refresh_csv(survey_id, client)
         )
         _upsert_info(survey_id, session_id)
         log.info("refresh_csv done for survey %s — %s rows", survey_id, result.get("n_rows"))
@@ -97,26 +97,26 @@ async def refresh_status(survey_id: int):
 
 
 async def _do_refresh(survey_id: int, session_id: str) -> None:
-    mcp = get_mcp_client(session_id)
-    try:
-        definition = await mcp.get_survey_definition(survey_id)
-        rows_pages = await mcp.get_all_rows(survey_id)
-    except MCPError as exc:
-        log.warning("refresh MCP failed for survey %s: %s", survey_id, exc)
-        _write_refresh_status(survey_id, {"status": "error", "detail": str(exc)})
+    from surveyflow import QMeClient
+    from config import settings
+
+    access_token = get_access_token(session_id)
+    if not access_token:
+        _write_refresh_status(survey_id, {"status": "error", "detail": "Not connected to QMe"})
         return
 
+    client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
     try:
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
-            None, lambda: pipeline_svc.refresh(survey_id, definition, rows_pages)
+            None, lambda: pipeline_svc.refresh(survey_id, client)
         )
         _upsert_info(survey_id, session_id)
         _write_refresh_status(survey_id, {"status": "done", **result})
         log.info("refresh done for survey %s — %s rows", survey_id, result.get("n_rows"))
     except Exception as exc:
         log.exception("refresh pipeline failed for survey %s", survey_id)
-        _write_refresh_status(survey_id, {"status": "error", "detail": "Pipeline error — check server logs"})
+        _write_refresh_status(survey_id, {"status": "error", "detail": str(exc)})
 
 
 def _upsert_info(survey_id: int, session_id: str) -> None:
@@ -140,20 +140,36 @@ def _upsert_info(survey_id: int, session_id: str) -> None:
 # ── generate xlsx (no storage write) ─────────────────────────────────────────
 
 @router.post("/{survey_id}/generate")
-async def generate_xlsx(survey_id: int, profile_status: str = "approved"):
-    """Run table step and return xlsx bytes directly — nothing written to storage.
+async def generate_xlsx(survey_id: int, request: Request,
+                        profile_status: str = "approved,pending"):
+    """Render datatable.xlsx — reuses cached compute from /preview when available.
 
-    profile_status: comma-separated list, e.g. "approved" or "approved,pending"
+    Body (optional): { "datatable_config": [...] }
+    profile_status query param: comma-separated, e.g. "approved" or "approved,pending"
     """
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
-    if not storage.exists(f"{survey_id}/datatable/datatable.json"):
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    dt_config = body.get("datatable_config")   # None → use stored / cache
+
+    if dt_config is None and not storage.exists(f"{survey_id}/datatable/datatable.json"):
         raise HTTPException(400, "No datatable.json found")
 
     statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
     try:
-        xlsx_bytes = pipeline_svc.generate_xlsx(survey_id, profile_status=statuses)
+        loop = asyncio.get_running_loop()
+        xlsx_bytes = await loop.run_in_executor(
+            None,
+            lambda: pipeline_svc.generate_xlsx(survey_id, dt_config=dt_config,
+                                                profile_status=statuses),
+        )
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc))
     except Exception as exc:
@@ -165,6 +181,50 @@ async def generate_xlsx(survey_id: int, profile_status: str = "approved"):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="datatable_{survey_id}.xlsx"'},
     )
+
+
+# ── preview (server-side cross-tab, no xlsx) ─────────────────────────────────
+
+@router.post("/{survey_id}/preview")
+async def preview_table(survey_id: int, request: Request,
+                        profile_status: str = "approved,pending"):
+    """Compute cross-tab server-side → returns JSON table_results.
+
+    Body (all optional):
+      datatable_config: list[dict]  — override stored datatable.json
+      table_indices:    list[int]   — compute only these tables (None = all)
+
+    profile_status query param: comma-separated, e.g. "approved" or "approved,pending"
+    """
+    storage = get_storage()
+    if not storage.exists(f"{survey_id}/data/rawdata.csv"):
+        raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
+
+    body: dict = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    dt_config     = body.get("datatable_config")   # None → use stored
+    table_indices = body.get("table_indices")       # None → all
+
+    if dt_config is None and not storage.exists(f"{survey_id}/datatable/datatable.json"):
+        raise HTTPException(400, "No datatable.json — provide datatable_config in body")
+
+    statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
+    try:
+        loop = asyncio.get_running_loop()
+        table_results = await loop.run_in_executor(
+            None,
+            lambda: pipeline_svc.compute_preview(survey_id, dt_config, table_indices, statuses),
+        )
+        return {"table_results": table_results}
+    except FileNotFoundError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        log.exception("preview failed for survey %s", survey_id)
+        raise HTTPException(500, "Pipeline error — check server logs")
 
 
 # ── ingestion ─────────────────────────────────────────────────────────────────

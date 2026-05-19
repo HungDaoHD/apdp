@@ -13,6 +13,7 @@ from surveyflow.pipeline import Pipeline
 logger = logging.getLogger(__name__)
 
 
+
 def ingest(survey_id: int, definition: dict,
            rows_pages: list[dict] | None = None,
            export_df: "pd.DataFrame | None" = None,
@@ -83,7 +84,7 @@ def run_table(survey_id: int, version: str | None = None,
         # Stage rawdata — optionally filtered by profile_status
         raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
         (data_dir / "rawdata.csv").write_bytes(
-            _filter_rawdata(raw_bytes, profile_status or ["approved"])
+            _filter_rawdata(raw_bytes, profile_status or ["approved", "pending"])
         )
         (data_dir / "metadata.json").write_bytes(storage.read_bytes(f"{survey_id}/data/metadata.json"))
         dt_path = dt_dir / "datatable.json"
@@ -105,71 +106,169 @@ def run_table(survey_id: int, version: str | None = None,
         return {"version": version, "xlsx_key": xlsx_key}
 
 
-def generate_xlsx(survey_id: int, profile_status: list[str] | None = None) -> bytes:
-    """Run table step in a temp dir and return xlsx bytes — nothing is saved to storage."""
-    from services.storage import get_storage
-    storage = get_storage()
+def generate_xlsx(survey_id: int,
+                  dt_config: list[dict] | None = None,
+                  profile_status: list[str] | None = None) -> bytes:
+    """Render datatable.xlsx — reads table_results JSON from storage (no re-compute).
 
-    with tempfile.TemporaryDirectory() as tmp:
-        survey_dir = Path(tmp) / str(survey_id)
-        data_dir = survey_dir / "data"
-        dt_dir = survey_dir / "datatable"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        dt_dir.mkdir(parents=True, exist_ok=True)
-
-        raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
-        (data_dir / "rawdata.csv").write_bytes(
-            _filter_rawdata(raw_bytes, profile_status or ["approved"])
-        )
-        (data_dir / "metadata.json").write_bytes(storage.read_bytes(f"{survey_id}/data/metadata.json"))
-        dt_path = dt_dir / "datatable.json"
-        dt_path.write_bytes(storage.read_bytes(f"{survey_id}/datatable/datatable.json"))
-
-        cfg = PipelineConfig(
-            output_dir=str(survey_dir),
-            data_dir=str(data_dir),
-            skip_ingestion=True,
-            datatable_config=str(dt_path),
-            version="tmp",
-        )
-        ctx = Pipeline(cfg).run()
-
-        return (Path(ctx["output_dir"]) / "datatable.xlsx").read_bytes()
-
-
-def refresh_csv(survey_id: int, definition: dict, export_csv_bytes: bytes) -> dict:
-    """Ingest from export CSV bytes — saves files to storage then ingests.
-
-    Uses surveyflow default profile_status=["approved"].
+    Falls back to full compute if preview JSON is not yet available.
+    dt_config: used only on fallback compute path.
+    profile_status: used only on fallback compute path.
     """
     from services.storage import get_storage
+    from surveyflow.steps.table.table_step import TableStep
+
+    storage = get_storage()
+    preview_key = f"{survey_id}/preview/table_results.json"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp) / str(survey_id)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if storage.exists(preview_key):
+            # Fast path: render from stored JSON — no re-compute
+            table_results = storage.read_json(preview_key)
+            logger.info("generate_xlsx: rendering from stored preview JSON (survey %s)", survey_id)
+            ctx = TableStep().render_xlsx({
+                "table_results": table_results,
+                "output_dir":    str(output_dir),
+            })
+        else:
+            # Fallback: full compute + render (preview not yet run)
+            logger.info("generate_xlsx: no preview JSON — full compute (survey %s)", survey_id)
+            statuses = profile_status or ["approved", "pending"]
+            if dt_config is None:
+                dt_config = storage.read_json(f"{survey_id}/datatable/datatable.json")
+            raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
+            df = pd.read_csv(
+                io.BytesIO(_filter_rawdata(raw_bytes, statuses)),
+                low_memory=False,
+            )
+            metadata = storage.read_json(f"{survey_id}/data/metadata.json")
+            ctx = TableStep().compute({
+                "df":               df,
+                "metadata":         metadata,
+                "datatable_config": dt_config,
+            })
+            ctx["output_dir"] = str(output_dir)
+            ctx = TableStep().render_xlsx(ctx)
+
+        return (output_dir / "datatable.xlsx").read_bytes()
+
+
+def compute_preview(survey_id: int,
+                    dt_config: list[dict] | None = None,
+                    table_indices: list[int] | None = None,
+                    profile_status: list[str] | None = None) -> list[dict]:
+    """Compute cross-tab using TableStep.compute() — no xlsx written.
+
+    dt_config:     override datatable config; None → use stored datatable.json.
+    table_indices: compute only these table indices; None → all.
+    profile_status: filter rawdata rows; defaults to ["approved", "pending"].
+
+    Returns table_results (JSON-serialisable list).
+    """
+    from services.storage import get_storage
+    from surveyflow.steps.table.table_step import TableStep
+
+    storage = get_storage()
+
+    # Load + filter rawdata
+    raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
+    df = pd.read_csv(
+        io.BytesIO(_filter_rawdata(raw_bytes, profile_status or ["approved", "pending"])),
+        low_memory=False,
+    )
+
+    # Load metadata
+    metadata = storage.read_json(f"{survey_id}/data/metadata.json")
+
+    # Load datatable config (provided or stored)
+    if dt_config is None:
+        dt_config = storage.read_json(f"{survey_id}/datatable/datatable.json")
+
+    ctx = TableStep().compute({
+        "df":               df,
+        "metadata":         metadata,
+        "datatable_config": dt_config,
+        "table_indices":    table_indices,
+    })
+
+    # Persist table_results so generate_xlsx() can render_xlsx() without
+    # re-computing — works across workers and server restarts.
+    if table_indices is None:
+        storage.write_json(f"{survey_id}/preview/table_results.json",
+                           ctx["table_results"])
+
+    return ctx["table_results"]
+
+
+def refresh_csv(survey_id: int, client) -> dict:
+    """Fetch export CSV via QMeClient/FetchStep + ingest.
+
+    Uses surveyflow default profile_status (["approved", "pending"] as of v0.5+).
+    Saves definition.json + data_export.csv to storage for audit / re-ingestion.
+    """
+    from services.storage import get_storage
+    from surveyflow import FetchStep
     from surveyflow.steps.ingestion.export_parser import parse_export_csv
 
     storage = get_storage()
-    storage.write_json(f"{survey_id}/mcp/definition.json", definition)
-    storage.write_bytes(f"{survey_id}/mcp/data_export.csv", export_csv_bytes)
 
     with tempfile.TemporaryDirectory() as tmp:
-        csv_path = Path(tmp) / "data_export.csv"
-        csv_path.write_bytes(export_csv_bytes)
-        export_df = parse_export_csv(csv_path)
+        mcp_dir = Path(tmp) / "mcp"
+        mcp_dir.mkdir(parents=True, exist_ok=True)
+
+        ctx = FetchStep().run({
+            "client":    client,
+            "survey_id": survey_id,
+            "mcp_dir":   str(mcp_dir),
+            "mode":      "export",
+        })
+
+        definition = ctx["definition"]
+        csv_path   = Path(ctx["export_csv"])   # path written by FetchStep
+        export_df  = parse_export_csv(csv_path)
+
+        # Persist MCP data to storage
+        storage.write_json(f"{survey_id}/mcp/definition.json", definition)
+        storage.write_bytes(f"{survey_id}/mcp/data_export.csv", csv_path.read_bytes())
 
     return ingest(survey_id, definition, export_df=export_df)
 
 
-def refresh(survey_id: int, definition: dict, rows_pages: list[dict]) -> dict:
-    """Fetch + ingest in one call — writes mcp files then rawdata/metadata to storage.
+def refresh(survey_id: int, client) -> dict:
+    """Fetch export CSV via QMeClient/FetchStep + ingest.
 
-    Uses surveyflow default profile_status=["approved"].
+    Uses surveyflow default profile_status (["approved", "pending"] as of v0.5+).
+    Saves definition.json + data_export.csv to storage for audit / re-ingestion.
     """
     from services.storage import get_storage
+    from surveyflow import FetchStep
+    from surveyflow.steps.ingestion.export_parser import parse_export_csv
+
     storage = get_storage()
 
-    # Persist MCP data
-    storage.write_json(f"{survey_id}/mcp/definition.json", definition)
-    storage.write_json(f"{survey_id}/mcp/rows_pages.json", rows_pages)
+    with tempfile.TemporaryDirectory() as tmp:
+        mcp_dir = Path(tmp) / "mcp"
+        mcp_dir.mkdir(parents=True, exist_ok=True)
 
-    return ingest(survey_id, definition, rows_pages)
+        ctx = FetchStep().run({
+            "client":    client,
+            "survey_id": survey_id,
+            "mcp_dir":   str(mcp_dir),
+            "mode":      "export",
+        })
+
+        definition = ctx["definition"]
+        csv_path   = Path(ctx["export_csv"])
+        export_df  = parse_export_csv(csv_path)
+
+        # Persist MCP data to storage
+        storage.write_json(f"{survey_id}/mcp/definition.json", definition)
+        storage.write_bytes(f"{survey_id}/mcp/data_export.csv", csv_path.read_bytes())
+
+    return ingest(survey_id, definition, export_df=export_df)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
