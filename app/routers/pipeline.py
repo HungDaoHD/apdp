@@ -115,6 +115,13 @@ async def refresh_status(survey_id: int):
     return _read_refresh_status(survey_id)
 
 
+@router.post("/{survey_id}/refresh/cancel")
+async def refresh_cancel(survey_id: int):
+    """Force-reset a stuck refresh job (clears the status file)."""
+    _write_refresh_status(survey_id, {"status": "cancelled"})
+    return {"status": "cancelled"}
+
+
 async def _do_refresh(survey_id: int, session_id: str) -> None:
     from surveyflow import QMeClient
     from config import settings

@@ -310,6 +310,10 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <div class="lov-spin"></div>
   <div class="lov-msg" id="loadingMsg">Loading survey…</div>
   <div class="lov-sub" id="loadingSub"></div>
+  <button id="lovCancelBtn" onclick="cancelRefresh()"
+    style="display:none;margin-top:8px;padding:5px 18px;font-size:11px;border:1px solid #4a5a7a;border-radius:5px;background:rgba(255,255,255,.07);color:#a0b4cc;cursor:pointer">
+    ✕ Cancel
+  </button>
 </div>
 
 <div class="hdr">
@@ -2884,15 +2888,27 @@ function downloadXlsx() {
 let currentSurveyId   = null;
 let currentSurveyName = null;
 
-function _setLoading(msg, sub = '') {
+function _setLoading(msg, sub = '', showCancel = false) {
   const ov = document.getElementById('loadingOverlay');
   if (msg) {
     document.getElementById('loadingMsg').textContent = msg;
     document.getElementById('loadingSub').textContent = sub;
+    document.getElementById('lovCancelBtn').style.display = showCancel ? '' : 'none';
     ov.classList.remove('hidden');
   } else {
+    document.getElementById('lovCancelBtn').style.display = 'none';
     ov.classList.add('hidden');
   }
+}
+
+async function cancelRefresh() {
+  if (!currentSurveyId) { _setLoading(null); return; }
+  try {
+    await fetch(`/api/surveys/${currentSurveyId}/refresh/cancel`, { method: 'POST' });
+  } catch {}
+  document.getElementById('refreshBtn').disabled = false;
+  _setLoading(null);
+  setStatus('Refresh cancelled.', '');
 }
 
 async function activateSurvey(id, title) {
@@ -2941,7 +2957,7 @@ async function doRefresh() {
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
   _setRefreshProcessing();
-  _setLoading('status=processing', currentSurveyName);
+  _setLoading('status=processing', currentSurveyName, true);
   setStatus('Fetching from QMe…', '');
   try {
     // Always use export CSV mode — background job with polling
@@ -2958,7 +2974,7 @@ async function doRefresh() {
       if (Date.now() - t0 > MAX_WAIT_MS)
         throw new Error(`Refresh timed out after ${elapsed}s — please try again.`);
       setStatus(`Fetching from QMe… (${elapsed}s)`, '');
-      _setLoading(`status=processing (${elapsed}s)`, currentSurveyName);
+      _setLoading(`status=processing (${elapsed}s)`, currentSurveyName, true);
       let job = {};
       try { job = await fetch(`/api/surveys/${currentSurveyId}/refresh/status`).then(r => r.json()); } catch {}
       if (job.status === 'done') { d = job; break; }
