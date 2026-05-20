@@ -399,6 +399,8 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <span class="fbadge none" id="refreshBadge" style="font-size:10px">data: —</span>
   <span style="color:#e0e4ea">|</span>
   <span style="color:#ccc" id="shortcut">Ctrl+S to save</span>
+  <span style="color:#e0e4ea">|</span>
+  <span style="color:#ccc;font-size:10px" id="sfVersionBadge">surveyflow …</span>
 </div>
 
 <!-- Modal -->
@@ -3211,6 +3213,13 @@ async function authDoVerify() {
 // ── Init: load survey from URL params ─────────────
 
 window.addEventListener('DOMContentLoaded', async () => {
+  // Show surveyflow version in bottom bar
+  try {
+    const v = await fetch('/api/version').then(r => r.json());
+    const el = document.getElementById('sfVersionBadge');
+    if (el) el.textContent = `surveyflow v${v.surveyflow}`;
+  } catch(e) {}
+
   // Show Raw button only for admin email
   try {
     const st = await fetch('/api/qme/status').then(r => r.json());

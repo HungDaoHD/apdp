@@ -33,6 +33,16 @@ app.include_router(qme_auth.router)   # auth routes are always public
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 
+@app.get("/api/version")
+async def get_version():
+    try:
+        import surveyflow
+        sf_version = surveyflow.__version__
+    except Exception:
+        sf_version = "unknown"
+    return {"surveyflow": sf_version}
+
+
 _NO_CACHE = {"Cache-Control": "no-store"}
 
 
