@@ -333,6 +333,11 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
       style="font-size:11px;padding:2px 5px;border:1px solid #d0d5dd;border-radius:5px;background:white;color:#333;cursor:pointer;height:24px"></select>
   </div>
   <div class="sep"></div>
+  <div class="psfilt" title="Filter respondents by profile status">
+    <button class="psbtn on" id="psApproved" onclick="toggleStatus('approved')">Approved</button>
+    <button class="psbtn on on-pend" id="psPending" onclick="toggleStatus('pending')">Pending</button>
+  </div>
+  <div class="sep"></div>
   <button class="btn" id="runBtn" disabled onclick="showPreview()"
     style="background:#7c3aed;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
   <div class="gap"></div>
@@ -2075,6 +2080,10 @@ function _setDataCounts(counts) {
     rfBadge.textContent = dataStatusText();
     rfBadge.className   = 'fbadge ok';
   }
+  const btnA = document.getElementById('psApproved');
+  const btnP = document.getElementById('psPending');
+  if (btnA) btnA.textContent = _dataCounts.n_approved ? `Approved (${_dataCounts.n_approved})` : 'Approved';
+  if (btnP) btnP.textContent = _dataCounts.n_pending  ? `Pending (${_dataCounts.n_pending})`   : 'Pending';
 }
 
 function _setRefreshProcessing() {
@@ -2102,7 +2111,10 @@ function checkRunBtn() {
 // ── Profile-status filter ─────────────────────────────
 // Returns array of active statuses, e.g. ['approved'] or ['approved','pending']
 function getProfileStatuses() {
-  return ['approved', 'pending'];
+  const s = [];
+  if (document.getElementById('psApproved')?.classList.contains('on')) s.push('approved');
+  if (document.getElementById('psPending')?.classList.contains('on'))  s.push('pending');
+  return s.length ? s : ['approved'];
 }
 
 function toggleStatus(key) {
