@@ -157,41 +157,51 @@ class FetchStep(Step):
         )
         logger.info("  → definition.json saved")
 
-        # 2. Trigger export job
-        logger.info("[fetch-export] Triggering data export (format=code) …")
-        prep   = client.prepare_survey_data_file(survey_id, format="code",
-                                                  force_refresh=force_refresh)
-        job_id = prep.get("job_id")
-        if not job_id:
-            logger.debug("[fetch-export] prepare_survey_data_file response: %s", prep)
-            raise RuntimeError(
-                "[fetch-export] prepare_survey_data_file returned no job_id"
+        # 2-4. Trigger export, poll, read all chunks
+        # If the client supports single-session export (QMeClient.export_csv),
+        # run the entire prepare→poll→read flow in one MCP session to avoid
+        # the session.initialize() overhead on every individual call.
+        # Fall back to the legacy per-call path for duck-typed test clients.
+        if hasattr(client, "export_csv"):
+            logger.info("[fetch-export] Running prepare+poll+read in single session …")
+            data_csv = client.export_csv(
+                survey_id,
+                force_refresh=force_refresh,
+                chunk_limit=chunk_limit,
             )
-        logger.info("  job_id=%s  status=%s", job_id, prep.get("status"))
-
-        # 3. Poll until ready
-        logger.info("[fetch-export] Waiting for export job to be ready …")
-        MAX_POLL  = 120          # max polling attempts
-        MAX_SLEEP = 60           # cap sleep to 60 s regardless of API suggestion
-        for _poll in range(MAX_POLL):
-            status_resp = client.get_survey_data_file_status(job_id)
-            status      = status_resp.get("status", "")
-            logger.info("  status=%s", status)
-            if status == "ready":
-                break
-            if status == "error":
-                logger.debug("[fetch-export] job status response: %s", status_resp)
-                raise RuntimeError("[fetch-export] Export job failed")
-            wait = min(int(status_resp.get("retry_after_seconds", 5)), MAX_SLEEP)
-            time.sleep(wait)
         else:
-            raise RuntimeError(
-                f"[fetch-export] Export job did not complete after {MAX_POLL} polls"
-            )
+            logger.info("[fetch-export] Triggering data export (format=code) …")
+            prep   = client.prepare_survey_data_file(survey_id, format="code",
+                                                      force_refresh=force_refresh)
+            job_id = prep.get("job_id")
+            if not job_id:
+                logger.debug("[fetch-export] prepare_survey_data_file response: %s", prep)
+                raise RuntimeError(
+                    "[fetch-export] prepare_survey_data_file returned no job_id"
+                )
+            logger.info("  job_id=%s  status=%s", job_id, prep.get("status"))
 
-        # 4. Read all CSV chunks
-        logger.info("[fetch-export] Reading data CSV …")
-        data_csv = self._read_all_chunks(client, job_id, "data", chunk_limit)
+            logger.info("[fetch-export] Waiting for export job to be ready …")
+            MAX_POLL  = 120
+            MAX_SLEEP = 60
+            for _poll in range(MAX_POLL):
+                status_resp = client.get_survey_data_file_status(job_id)
+                status      = status_resp.get("status", "")
+                logger.info("  status=%s", status)
+                if status == "ready":
+                    break
+                if status == "error":
+                    logger.debug("[fetch-export] job status response: %s", status_resp)
+                    raise RuntimeError("[fetch-export] Export job failed")
+                wait = min(int(status_resp.get("retry_after_seconds", 5)), MAX_SLEEP)
+                time.sleep(wait)
+            else:
+                raise RuntimeError(
+                    f"[fetch-export] Export job did not complete after {MAX_POLL} polls"
+                )
+
+            logger.info("[fetch-export] Reading data CSV …")
+            data_csv = self._read_all_chunks(client, job_id, "data", chunk_limit)
 
         # Write with BOM so Excel/Windows opens as UTF-8 without font errors
         export_path = mcp_dir / "data_export.csv"
