@@ -133,6 +133,23 @@ def _patch_multiplenumber_headers(header: list, sub_labels: list) -> list:
 
 # ── Step 1: parse raw export CSV ─────────────────────────────────────────────
 
+def _find_header_idx(lines: list) -> int:
+    """Return the 0-indexed line number of the column header row.
+
+    The header row is identified as the first line whose first CSV field is
+    ``'Approve'`` — the standard lead column in QMe data_export.csv files.
+    Falls back to index 6 (the known default) if not found.
+    """
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        first_field = next(_csv.reader(_io.StringIO(line)))[0]
+        if first_field.strip() == "Approve":
+            return i
+    logger.warning("_find_header_idx: 'Approve' column not found — falling back to index 6")
+    return 6
+
+
 def parse_export_csv(data_export: pathlib.Path) -> "pd.DataFrame":
     """Parse *data_export.csv* (from ``prepare_survey_data_file``) into a clean DataFrame.
 
@@ -144,20 +161,20 @@ def parse_export_csv(data_export: pathlib.Path) -> "pd.DataFrame":
         Line 4   : blank                     ← skipped
         Line 5   : blank / sub-info          ← skipped
         Line 6   : blank                     ← skipped
-        Line 7   : COLUMN HEADERS            ← used
+        Line 7   : COLUMN HEADERS            ← auto-detected (first line starting with "Approve")
         Line 8   : blank                     ← skipped
-        Line 9   : sub-header annotations    ← used for multiplenumber detection
+        Line 9   : sub-header annotations    ← used for multiplenumber detection (header+2)
         Lines 10–12: further annotations     ← skipped
-        Lines 13+: alternating data / blank  ← data rows (blanks skipped)
+        Lines 13+: alternating data / blank  ← data rows (header+6 onward, blanks skipped)
     """
     import pandas as pd
 
     with open(data_export, encoding="utf-8-sig") as f:
         lines = f.read().splitlines()
 
-    HEADER_IDX     = 6    # line 7 (0-indexed)
-    SUB_LABEL_IDX  = 8    # line 9 — sub-header with Q{n}_1, Q{n}_2 …
-    FIRST_DATA_IDX = 12   # line 13
+    HEADER_IDX     = _find_header_idx(lines)
+    SUB_LABEL_IDX  = HEADER_IDX + 2   # sub-header with Q{n}_1, Q{n}_2 …
+    FIRST_DATA_IDX = HEADER_IDX + 6   # first actual data row
 
     header     = lines[HEADER_IDX].split(",")
     sub_line   = lines[SUB_LABEL_IDX] if len(lines) > SUB_LABEL_IDX else ""
