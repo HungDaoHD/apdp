@@ -370,8 +370,22 @@ async def download_data_file(survey_id: int, filename: str,
     key = f"{survey_id}/{rel_key}"
     if not storage.exists(key):
         raise HTTPException(404, f"{filename} not found — run Refresh first")
+
+    # Strip PII columns (user-name, user-phone) from rawdata.csv before download
+    if filename == "rawdata.csv":
+        csv_text = storage.read_text(key)
+        try:
+            meta = storage.read_json(f"{survey_id}/data/metadata.json")
+            if isinstance(meta, list):
+                csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
+        except Exception:
+            pass
+        content = csv_text.encode("utf-8-sig")
+    else:
+        content = storage.read_bytes(key)
+
     return Response(
-        content=storage.read_bytes(key),
+        content=content,
         media_type=media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{survey_id}_{filename}"',
