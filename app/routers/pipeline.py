@@ -26,6 +26,15 @@ def _unwrap_exc(exc: BaseException) -> BaseException:
 
 _VERSION_RE = re.compile(r"^v\d+$|^tmp$")
 
+# H3 — profile_status whitelist
+_ALLOWED_STATUSES = frozenset({"approved", "pending", "rejected"})
+
+
+def _parse_profile_status(raw: str) -> list[str]:
+    """Parse and whitelist profile_status query param."""
+    result = [s.strip().lower() for s in raw.split(",") if s.strip().lower() in _ALLOWED_STATUSES]
+    return result if result else ["approved"]
+
 
 # ── Disk-based refresh job status (shared across all Gunicorn workers) ─────────
 
@@ -63,10 +72,22 @@ def _read_refresh_status(survey_id: int) -> dict:
                 from datetime import timezone as _tz
                 age = (datetime.now(_tz.utc) - datetime.fromisoformat(started_at)).total_seconds()
                 if age > _REFRESH_TIMEOUT_SECS:
-                    return {"status": "error", "detail": f"Refresh timed out after {int(age)}s — worker may have been recycled. Please try again."}
+                    return {"status": "error", "detail": "Refresh timed out — worker may have been recycled. Please try again."}
             except Exception:
                 pass
-    return data
+    # Strip internal fields before returning to client
+    return {k: v for k, v in data.items() if k != "started_by_session"}
+
+
+def _sanitize_error(detail: str) -> str:
+    """Return a safe error message for the client (H2).
+
+    Auth errors are kept recognisable so the frontend modal can trigger;
+    all other details are replaced with a generic message.
+    """
+    if any(kw in detail.lower() for kw in ("401", "unauthorized", "unauthorised")):
+        return "QMe authentication failed — please reconnect"
+    return "Refresh failed — see server logs"
 
 
 def _validate_version(version: str) -> str:
@@ -82,11 +103,13 @@ async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks,
                          session_id: str = Depends(require_qme)):
     """Start refresh as a background job — returns immediately to avoid proxy timeout."""
     # Guard: reject if a job is already running for this survey
-    if _read_refresh_status(survey_id).get("status") == "running":
+    existing = _read_refresh_status(survey_id)
+    if existing.get("status") == "running":
         return {"status": "running", "detail": "Refresh already in progress"}
     _write_refresh_status(survey_id, {
-        "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat(),
+        "status":             "running",
+        "started_at":         datetime.now(timezone.utc).isoformat(),
+        "started_by_session": session_id,   # H1: ownership tracking
     })
     background_tasks.add_task(_do_refresh, survey_id, session_id)
     return {"status": "started"}
@@ -123,8 +146,18 @@ async def refresh_status(survey_id: int):
 
 
 @router.post("/{survey_id}/refresh/cancel")
-async def refresh_cancel(survey_id: int):
-    """Force-reset a stuck refresh job (clears the status file)."""
+async def refresh_cancel(survey_id: int, session_id: str = Depends(require_qme)):
+    """Force-reset a stuck refresh job — only the session that started it may cancel."""
+    import json as _json
+    try:
+        raw = _json.loads(_refresh_status_file(survey_id).read_text())
+        owner = raw.get("started_by_session")
+        if owner and owner != session_id:
+            raise HTTPException(403, "Not authorised to cancel this refresh job")
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # file missing or unreadable — allow cancel
     _write_refresh_status(survey_id, {"status": "cancelled"})
     return {"status": "cancelled"}
 
@@ -169,7 +202,7 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
         root = _unwrap_exc(exc)
         detail = str(root)
         log.exception("[refresh:%s] pipeline failed: %s", survey_id, detail)
-        _write_refresh_status(survey_id, {"status": "error", "detail": detail})
+        _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(detail)})
 
 
 def _upsert_info(survey_id: int, session_id: str) -> None:
@@ -215,7 +248,7 @@ async def generate_xlsx(survey_id: int, request: Request,
     if dt_config is None and not storage.exists(f"{survey_id}/datatable/datatable.json"):
         raise HTTPException(400, "No datatable.json found")
 
-    statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
+    statuses = _parse_profile_status(profile_status)
     try:
         loop = asyncio.get_running_loop()
         xlsx_bytes = await loop.run_in_executor(
@@ -265,7 +298,7 @@ async def preview_table(survey_id: int, request: Request,
     if dt_config is None and not storage.exists(f"{survey_id}/datatable/datatable.json"):
         raise HTTPException(400, "No datatable.json — provide datatable_config in body")
 
-    statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
+    statuses = _parse_profile_status(profile_status)
     try:
         loop = asyncio.get_running_loop()
         table_results = await loop.run_in_executor(
@@ -378,7 +411,7 @@ async def run_pipeline(survey_id: int, version: str | None = None,
 
     if version is not None:
         version = _validate_version(version)
-    statuses = [s.strip() for s in profile_status.split(",") if s.strip()]
+    statuses = _parse_profile_status(profile_status)
     try:
         return pipeline_svc.run_table(survey_id, version, profile_status=statuses)
     except FileNotFoundError as exc:

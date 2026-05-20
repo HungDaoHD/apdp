@@ -226,6 +226,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 </div>
 
 <script>
+// ── HTML escape helper (M3: prevent XSS via error messages) ──
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 // ════════════════════════════════════════════════════
 // LOADING LOCK
 // ════════════════════════════════════════════════════
@@ -267,7 +272,7 @@ async function loadProjects() {
     renderCards();
   } catch(e) {
     document.getElementById('projArea').innerHTML =
-      `<div class="empty"><div class="empty-ico">⚠️</div><h3>Failed to load</h3><p>${e.message}</p></div>`;
+      `<div class="empty"><div class="empty-ico">⚠️</div><h3>Failed to load</h3><p>${esc(e.message)}</p></div>`;
   } finally {
     hideLoading();
   }
@@ -465,7 +470,7 @@ async function doSearch() {
       </div>`;
     }).join('');
   } catch(e) {
-    res.innerHTML = `<div class="res-empty">Error: ${e.message}</div>`;
+    res.innerHTML = `<div class="res-empty">Error: ${esc(e.message)}</div>`;
   } finally {
     hideLoading();
   }

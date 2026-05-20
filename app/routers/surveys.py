@@ -111,6 +111,7 @@ async def list_mcp_tools(session_id: str = Depends(require_qme)):
 
 @router.get("/search")
 async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends(require_qme)):
+    limit = min(max(limit, 1), 200)  # M6: clamp to [1, 200]
     from surveyflow import QMeClient
     from config import settings
 
