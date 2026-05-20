@@ -17,6 +17,13 @@ from services.storage import get_storage
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/surveys", tags=["pipeline"])
 
+
+def _unwrap_exc(exc: BaseException) -> BaseException:
+    """Unwrap ExceptionGroup (Python 3.11+ / anyio TaskGroup) to the first leaf cause."""
+    if hasattr(exc, "exceptions") and exc.exceptions:  # type: ignore[attr-defined]
+        return _unwrap_exc(exc.exceptions[0])  # type: ignore[attr-defined]
+    return exc
+
 _VERSION_RE = re.compile(r"^v\d+$|^tmp$")
 
 
@@ -159,8 +166,10 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
         _write_refresh_status(survey_id, {"status": "done", **result})
         log.info("[refresh:%s] status=done written", survey_id)
     except Exception as exc:
-        log.exception("[refresh:%s] pipeline failed: %s", survey_id, exc)
-        _write_refresh_status(survey_id, {"status": "error", "detail": str(exc)})
+        root = _unwrap_exc(exc)
+        detail = str(root)
+        log.exception("[refresh:%s] pipeline failed: %s", survey_id, detail)
+        _write_refresh_status(survey_id, {"status": "error", "detail": detail})
 
 
 def _upsert_info(survey_id: int, session_id: str) -> None:

@@ -323,28 +323,19 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <div class="sep"></div>
   <span class="fbadge none" id="surveyBadge" style="max-width:260px">Loading…</span>
   <div class="sep"></div>
-  <span class="fbadge none" id="refreshBadge">data: —</span>
   <select id="ingestModeSelect"
     style="display:none">
     <option value="csv">Export CSV</option>
   </select>
-  <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled>🔄 Refresh</button>
+  <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled title="Refresh data from QMe" style="padding:4px 7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
   <div id="langSelectorWrap" style="display:none;align-items:center;gap:5px;margin-left:6px">
-    <span style="font-size:10px;color:#999;white-space:nowrap">🌐 Lang</span>
     <select id="langSelector" onchange="setLang(this.value)"
       style="font-size:11px;padding:2px 5px;border:1px solid #d0d5dd;border-radius:5px;background:white;color:#333;cursor:pointer;height:24px"></select>
-  </div>
-  <div class="sep"></div>
-  <div class="psfilt" title="Filter respondents by profile status">
-    <span class="psfilt-lbl">Status:</span>
-    <button class="psbtn on" id="psApproved" onclick="toggleStatus('approved')">Approved</button>
-    <button class="psbtn" id="psPending" onclick="toggleStatus('pending')">Pending</button>
   </div>
   <div class="sep"></div>
   <button class="btn" id="runBtn" disabled onclick="showPreview()"
     style="background:#7c3aed;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
   <div class="gap"></div>
-  <button class="btn btn-gho" onclick="toggleQP()" id="qpToggle">◀ Questions</button>
   <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save Data Table</button>
   <button class="btn btn-pri btn-sm" onclick="downloadXlsxDirect()" id="downloadBtn" disabled><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table</button>
   <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn" style="display:none">{} Raw</button>
@@ -400,6 +391,8 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <div class="dot"></div>
   <span class="msg">No file open</span>
   <span style="flex:1"></span>
+  <span class="fbadge none" id="refreshBadge" style="font-size:10px">data: —</span>
+  <span style="color:#e0e4ea">|</span>
   <span style="color:#ccc" id="shortcut">Ctrl+S to save</span>
 </div>
 
@@ -428,22 +421,39 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 <!-- Auth error popup -->
 <div class="mov" id="authErrMov" style="display:none;z-index:9000">
   <div class="mdlg" style="width:400px;max-width:90vw">
-    <div class="mhd" style="background:#fff3cd;border-radius:10px 10px 0 0">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:22px">⚠️</span>
-        <div>
-          <div style="font-weight:700;font-size:14px;color:#856404">QMe Session Expired</div>
-          <div style="font-size:12px;color:#856404;margin-top:2px">Token expired or unauthorised</div>
-        </div>
+    <div class="mhd">
+      <strong>🔗 Reconnect QMe</strong>
+    </div>
+
+    <!-- Step 1: email + password -->
+    <div id="authStep1">
+      <div class="mbody" style="gap:10px">
+        <p style="margin:0;font-size:12px;color:#888">Session expired — please log in again to continue.</p>
+        <input id="authEmail" type="email" placeholder="Email" autocomplete="email"
+          style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit;box-sizing:border-box">
+        <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password"
+          style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit;box-sizing:border-box"
+          onkeydown="if(event.key==='Enter')authDoLogin()">
+      </div>
+      <div class="mft">
+        <div id="authLoginStatus" class="mft-status" style="display:none"></div>
+        <button class="btn btn-gho" onclick="document.getElementById('authErrMov').style.display='none'">Dismiss</button>
+        <button id="authLoginBtn" class="btn btn-pri" onclick="authDoLogin()">Send OTP</button>
       </div>
     </div>
-    <div style="padding:18px 20px">
-      <p style="margin:0 0 16px;font-size:13px;color:#333;line-height:1.5">
-        Your QMe session has expired. Please go back to the <strong>Projects page</strong> and reconnect to QMe before refreshing.
-      </p>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-sec btn-sm" onclick="document.getElementById('authErrMov').style.display='none'">Dismiss</button>
-        <button class="btn btn-sm" style="background:#f36a17;color:white" onclick="window.location='/projects'">Go to Projects</button>
+
+    <!-- Step 2: OTP -->
+    <div id="authStep2" style="display:none">
+      <div class="mbody" style="gap:10px">
+        <p style="margin:0;font-size:12px;color:#555">OTP đã được gửi tới email của bạn.</p>
+        <input id="authOtp" type="text" placeholder="Nhập OTP" maxlength="10"
+          style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:18px;letter-spacing:6px;text-align:center;outline:none;font-family:monospace;box-sizing:border-box"
+          onkeydown="if(event.key==='Enter')authDoVerify()">
+      </div>
+      <div class="mft">
+        <div id="authOtpStatus" class="mft-status" style="display:none"></div>
+        <button class="btn btn-gho" onclick="authBackToLogin()">← Back</button>
+        <button id="authVerifyBtn" class="btn btn-pri" onclick="authDoVerify()">Verify</button>
       </div>
     </div>
   </div>
@@ -463,6 +473,19 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 </div>
 
 <script>
+// ── Global 401 interceptor ───────────────────────────
+(function() {
+  const _orig = window.fetch;
+  window.fetch = async function(...args) {
+    const r = await _orig.apply(this, args);
+    if (r.status === 401) {
+      if (typeof authShowModal === 'function') authShowModal();
+      else document.getElementById('authErrMov').style.display = 'flex';
+    }
+    return r;
+  };
+})();
+
 // ════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════
@@ -2049,7 +2072,7 @@ function _setDataCounts(counts) {
   _dataCounts = { n_rows: counts.n_rows||0, n_approved: counts.n_approved||0, n_pending: counts.n_pending||0 };
   const rfBadge = document.getElementById('refreshBadge');
   if (rfBadge && _dataCounts.n_rows) {
-    rfBadge.textContent = 'status=ready';
+    rfBadge.textContent = dataStatusText();
     rfBadge.className   = 'fbadge ok';
   }
 }
@@ -2057,7 +2080,7 @@ function _setDataCounts(counts) {
 function _setRefreshProcessing() {
   const rfBadge = document.getElementById('refreshBadge');
   if (rfBadge) {
-    rfBadge.textContent = 'status=processing';
+    rfBadge.textContent = 'refreshing…';
     rfBadge.className   = 'fbadge warn';
   }
 }
@@ -2079,10 +2102,7 @@ function checkRunBtn() {
 // ── Profile-status filter ─────────────────────────────
 // Returns array of active statuses, e.g. ['approved'] or ['approved','pending']
 function getProfileStatuses() {
-  const s = [];
-  if (document.getElementById('psApproved')?.classList.contains('on')) s.push('approved');
-  if (document.getElementById('psPending')?.classList.contains('on'))  s.push('pending');
-  return s.length ? s : ['approved'];  // fallback: never empty
+  return ['approved', 'pending'];
 }
 
 function toggleStatus(key) {
@@ -2957,7 +2977,7 @@ async function doRefresh() {
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
   _setRefreshProcessing();
-  _setLoading('status=processing', currentSurveyName, true);
+  _setLoading('Refreshing…', currentSurveyName, true);
   setStatus('Fetching from QMe…', '');
   try {
     // Always use export CSV mode — background job with polling
@@ -2974,16 +2994,15 @@ async function doRefresh() {
       if (Date.now() - t0 > MAX_WAIT_MS)
         throw new Error(`Refresh timed out after ${elapsed}s — please try again.`);
       setStatus(`Fetching from QMe… (${elapsed}s)`, '');
-      _setLoading(`status=processing (${elapsed}s)`, currentSurveyName, true);
       let job = {};
       try { job = await fetch(`/api/surveys/${currentSurveyId}/refresh/status`).then(r => r.json()); } catch {}
       if (job.status === 'done') { d = job; break; }
       if (job.status === 'error') throw new Error(job.detail || 'refresh failed');
       const stepMsg = job.step ? `↳ ${job.step}` : '';
-      _setLoading(`status=processing (${elapsed}s)`, `${currentSurveyName}\n${stepMsg}`, true);
+      _setLoading(`Refreshing… (${elapsed}s)`, `${currentSurveyName}\n${stepMsg}`, true);
     }
 
-    _setLoading('status=ready', currentSurveyName);
+    _setLoading('Refreshing…', currentSurveyName);
     setStatus(`✓ Fetched ${d.n_rows} rows — reloading…`, 'saved');
     await apiLoadMeta(currentSurveyId);
     _setDataCounts(d);
@@ -3093,6 +3112,87 @@ async function downloadXlsxDirect() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table';
+  }
+}
+
+// ── QMe re-login (inline in auth modal) ──────────────
+
+let _authRef = '', _authLoginKey = '';
+
+function authShowModal() {
+  const mov = document.getElementById('authErrMov');
+  mov.style.display = 'flex';
+  document.getElementById('authStep1').style.display = '';
+  document.getElementById('authStep2').style.display = 'none';
+  document.getElementById('authLoginStatus').style.display = 'none';
+  document.getElementById('authOtp').value = '';
+  setTimeout(() => document.getElementById('authEmail').focus(), 50);
+}
+
+function authBackToLogin() {
+  document.getElementById('authStep2').style.display = 'none';
+  document.getElementById('authStep1').style.display = '';
+}
+
+async function authDoLogin() {
+  const email    = document.getElementById('authEmail').value.trim();
+  const password = document.getElementById('authPassword').value;
+  if (!email || !password) return;
+  const btn    = document.getElementById('authLoginBtn');
+  const status = document.getElementById('authLoginStatus');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  status.style.display = 'none';
+  try {
+    const r = await fetch('/api/qme/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || JSON.stringify(d));
+    _authRef = d.ref || '';
+    _authLoginKey = d.login_key || '';
+    document.getElementById('authStep1').style.display = 'none';
+    document.getElementById('authStep2').style.display = '';
+    document.getElementById('authOtpStatus').style.display = 'none';
+    document.getElementById('authOtp').value = '';
+    setTimeout(() => document.getElementById('authOtp').focus(), 50);
+  } catch(e) {
+    status.style.display = '';
+    status.className = 'mft-status err';
+    status.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send OTP';
+  }
+}
+
+async function authDoVerify() {
+  const email = document.getElementById('authEmail').value.trim();
+  const otp   = document.getElementById('authOtp').value.trim();
+  if (!otp) return;
+  const btn    = document.getElementById('authVerifyBtn');
+  const status = document.getElementById('authOtpStatus');
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  status.style.display = 'none';
+  try {
+    const r = await fetch('/api/qme/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, ref: _authRef, otp, login_key: _authLoginKey }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || JSON.stringify(d));
+    // Success — close modal, stay on current page
+    document.getElementById('authErrMov').style.display = 'none';
+    setStatus('✓ Reconnected to QMe', 'saved');
+    // Re-enable refresh button if survey is loaded
+    if (currentSurveyId) document.getElementById('refreshBtn').disabled = false;
+  } catch(e) {
+    status.style.display = '';
+    status.className = 'mft-status err';
+    status.textContent = e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Verify';
   }
 }
 
