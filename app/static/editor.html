@@ -91,6 +91,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 /* Profile-status filter */
 .psfilt{display:flex;align-items:center;gap:3px;margin-left:3px}
 .psfilt-lbl{font-size:9px;color:#8899aa;text-transform:uppercase;letter-spacing:.4px;margin-right:1px;white-space:nowrap}
+.dlitem{display:block;padding:6px 14px;font-size:11px;color:#333;cursor:pointer;white-space:nowrap;text-decoration:none}.dlitem:hover{background:#f5f7fa}
 .psbtn{padding:2px 8px;border:1px solid #d0d5dd;border-radius:10px;background:white;font-size:10px;font-weight:500;cursor:pointer;color:#667;transition:all .12s;white-space:nowrap}
 .psbtn.on{background:#1a73e8;border-color:#1a73e8;color:white}
 .psbtn.on-pend{background:#7c3aed;border-color:#7c3aed;color:white}
@@ -327,6 +328,16 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
     style="display:none">
     <option value="csv">Export CSV</option>
   </select>
+  <div style="position:relative;display:inline-block" id="dlWrap">
+    <button class="btn btn-gho btn-sm" id="dlBtn" disabled onclick="toggleDlMenu()" title="Download data files" style="padding:4px 8px;display:flex;align-items:center;gap:4px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Data</button>
+    <div id="dlMenu" style="display:none;position:absolute;top:calc(100% + 4px);left:0;background:white;border:1px solid #d0d5dd;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:999;min-width:170px;padding:4px 0">
+      <div style="padding:4px 10px 2px;font-size:10px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Download</div>
+      <a class="dlitem" onclick="dlFile('rawdata.csv')">rawdata.csv</a>
+      <a class="dlitem" onclick="dlFile('metadata.json')">metadata.json</a>
+      <a class="dlitem" onclick="dlFile('data_export.csv')">data_export.csv</a>
+      <a class="dlitem" onclick="dlFile('definition.json')">definition.json</a>
+    </div>
+  </div>
   <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled title="Refresh data from QMe" style="padding:4px 7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
   <div id="langSelectorWrap" style="display:none;align-items:center;gap:5px;margin-left:6px">
     <select id="langSelector" onchange="setLang(this.value)"
@@ -2945,6 +2956,26 @@ async function cancelRefresh() {
   setStatus('Refresh cancelled.', '');
 }
 
+function toggleDlMenu() {
+  const m = document.getElementById('dlMenu');
+  if (!m) return;
+  const open = m.style.display !== 'none';
+  m.style.display = open ? 'none' : 'block';
+  if (!open) {
+    const close = e => { m.style.display = 'none'; document.removeEventListener('click', close); };
+    setTimeout(() => document.addEventListener('click', close), 0);
+  }
+}
+
+function dlFile(filename) {
+  document.getElementById('dlMenu').style.display = 'none';
+  if (!currentSurveyId) return;
+  const a = document.createElement('a');
+  a.href = `/api/surveys/${currentSurveyId}/download-data/${filename}`;
+  a.download = `${currentSurveyId}_${filename}`;
+  a.click();
+}
+
 async function activateSurvey(id, title) {
   currentSurveyId   = id;
   currentSurveyName = title;
@@ -2969,6 +3000,7 @@ async function activateSurvey(id, title) {
     rfBadge.className = 'fbadge none';
   }
   document.getElementById('refreshBtn').disabled = false;
+  document.getElementById('dlBtn').disabled = !st.has_data;
 
   if (st.has_data) {
     _setLoading('Loading questions…', title);
@@ -3022,6 +3054,7 @@ async function doRefresh() {
     _setDataCounts(d);
     rawCsv = null; rawHeaders = [];
     document.getElementById('downloadBtn').disabled = false;
+    document.getElementById('dlBtn').disabled = false;
     checkRunBtn();
     setStatus(`✓ Refresh complete — ${dataStatusText()}`, 'saved');
   } catch(e) {

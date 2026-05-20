@@ -351,6 +351,35 @@ async def get_metadata(survey_id: int):
     )
 
 
+_DOWNLOAD_FILES = {
+    "rawdata.csv":      ("data/rawdata.csv",       "text/csv"),
+    "metadata.json":    ("data/metadata.json",     "application/json"),
+    "data_export.csv":  ("mcp/data_export.csv",    "text/csv"),
+    "definition.json":  ("mcp/definition.json",    "application/json"),
+}
+
+
+@router.get("/{survey_id}/download-data/{filename}")
+async def download_data_file(survey_id: int, filename: str,
+                             session_id: str = Depends(require_qme)):
+    """Download a raw data file (rawdata.csv, metadata.json, data_export.csv, definition.json)."""
+    if filename not in _DOWNLOAD_FILES:
+        raise HTTPException(404, f"Unknown file: {filename}")
+    rel_key, media_type = _DOWNLOAD_FILES[filename]
+    storage = get_storage()
+    key = f"{survey_id}/{rel_key}"
+    if not storage.exists(key):
+        raise HTTPException(404, f"{filename} not found — run Refresh first")
+    return Response(
+        content=storage.read_bytes(key),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{survey_id}_{filename}"',
+            **_NO_CACHE,
+        },
+    )
+
+
 @router.get("/{survey_id}/rawdata")
 async def get_rawdata(survey_id: int, request: Request,
                       session_id: str = Depends(require_qme)):
