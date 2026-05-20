@@ -436,9 +436,9 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
     <div id="authStep1">
       <div class="mbody" style="gap:10px">
         <p style="margin:0;font-size:12px;color:#888">Session expired — please log in again to continue.</p>
-        <input id="authEmail" type="email" placeholder="Email" autocomplete="email"
+        <input id="authEmail" type="email" placeholder="Email" autocomplete="off"
           style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit;box-sizing:border-box">
-        <input id="authPassword" type="password" placeholder="Password" autocomplete="current-password"
+        <input id="authPassword" type="password" placeholder="Password" autocomplete="new-password"
           style="width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit;box-sizing:border-box"
           onkeydown="if(event.key==='Enter')authDoLogin()">
       </div>
