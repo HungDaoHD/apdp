@@ -40,4 +40,4 @@ Thumbs.db
 # Runtime data (token, survey files)
 data/
 
-*.txt
+plan.txt
