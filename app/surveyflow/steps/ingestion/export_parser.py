@@ -150,36 +150,82 @@ def _find_header_idx(lines: list) -> int:
     return 6
 
 
+def _find_first_data_idx(lines: list, header: list, header_idx: int) -> int:
+    """Return the 0-indexed line number of the first actual data row.
+
+    Uses the ``'ID'`` column (QMe task ID, e.g. ``'723380_2999352'``) as
+    the detection signal — it is always non-empty for data rows and always
+    empty for annotation / sub-header rows.
+
+    This makes the parser robust to both export formats from ``FetchStep``:
+    * ``csv`` field  → full native CSV with blank lines between rows
+    * ``rows`` field → list of strings joined by ``\\n`` (no blank lines)
+
+    Falls back to ``header_idx + 6`` if ``'ID'`` column is not found.
+    """
+    try:
+        id_col = next(i for i, h in enumerate(header) if h.strip() == "ID")
+    except StopIteration:
+        logger.warning("_find_first_data_idx: 'ID' column not found — falling back to header+6")
+        return header_idx + 6
+
+    for i in range(header_idx + 1, min(header_idx + 30, len(lines))):
+        line = lines[i]
+        if not line.strip():
+            continue
+        row = next(_csv.reader(_io.StringIO(line)))
+        if id_col < len(row) and row[id_col].strip():
+            return i
+
+    logger.warning("_find_first_data_idx: no data row found within 30 lines — falling back to header+6")
+    return header_idx + 6
+
+
 def parse_export_csv(data_export: pathlib.Path) -> "pd.DataFrame":
     """Parse *data_export.csv* (from ``prepare_survey_data_file``) into a clean DataFrame.
 
-    File layout::
+    Handles two response formats from ``FetchStep._read_all_chunks``:
 
-        Line 1   : title banner              ← skipped
-        Line 2   : blank                     ← skipped
-        Line 3   : "Type x for check …"     ← skipped
-        Line 4   : blank                     ← skipped
-        Line 5   : blank / sub-info          ← skipped
-        Line 6   : blank                     ← skipped
-        Line 7   : COLUMN HEADERS            ← auto-detected (first line starting with "Approve")
-        Line 8   : blank                     ← skipped
-        Line 9   : sub-header annotations    ← used for multiplenumber detection (header+2)
-        Lines 10–12: further annotations     ← skipped
-        Lines 13+: alternating data / blank  ← data rows (header+6 onward, blanks skipped)
+    * **csv field** (local / full export): native QMe CSV with blank lines
+      between every row.  Header is at a fixed offset; annotations follow
+      with interleaved blanks.
+
+    * **rows field** (production): list of strings joined by ``\\n`` — no
+      blank lines.  Same annotation rows exist but are consecutive.
+
+    Both formats are handled by auto-detecting the header line
+    (``_find_header_idx``) and the first data line (``_find_first_data_idx``).
     """
     import pandas as pd
 
     with open(data_export, encoding="utf-8-sig") as f:
         lines = f.read().splitlines()
 
-    HEADER_IDX     = _find_header_idx(lines)
-    SUB_LABEL_IDX  = HEADER_IDX + 2   # sub-header with Q{n}_1, Q{n}_2 …
-    FIRST_DATA_IDX = HEADER_IDX + 6   # first actual data row
+    HEADER_IDX = _find_header_idx(lines)
 
-    header     = lines[HEADER_IDX].split(",")
-    sub_line   = lines[SUB_LABEL_IDX] if len(lines) > SUB_LABEL_IDX else ""
-    sub_labels = sub_line.split(",") if sub_line else []
-    header     = _patch_multiplenumber_headers(header, sub_labels)
+    # Parse header before computing SUB_LABEL_IDX / FIRST_DATA_IDX so both
+    # helpers can reference the column list.
+    raw_header = lines[HEADER_IDX].split(",")
+
+    # Sub-label row: scan the 10 lines after the header for the first non-blank
+    # line that contains Q{n}_{k} sub-labels (used for multiplenumber detection).
+    sub_labels: list = []
+    for i in range(HEADER_IDX + 1, min(HEADER_IDX + 10, len(lines))):
+        line = lines[i]
+        if not line.strip():
+            continue
+        fields = line.split(",")
+        if any(_SUB_IDX_RE.match(f.strip()) for f in fields if f.strip()):
+            sub_labels = fields
+            break
+
+    header         = _patch_multiplenumber_headers(raw_header, sub_labels)
+    FIRST_DATA_IDX = _find_first_data_idx(lines, raw_header, HEADER_IDX)
+
+    logger.debug(
+        "parse_export_csv: header=%d  first_data=%d  cols=%d",
+        HEADER_IDX, FIRST_DATA_IDX, len(header),
+    )
 
     data_rows = []
     for line in lines[FIRST_DATA_IDX:]:
