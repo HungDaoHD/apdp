@@ -1,6 +1,13 @@
 """SurveyFlow Web App — FastAPI entry point."""
 import logging
+import sys
 from pathlib import Path
+
+# Ensure the vendored surveyflow (app/surveyflow/) takes precedence over any
+# installed package, regardless of the working directory or editable installs.
+_APP_DIR = str(Path(__file__).parent)
+if _APP_DIR not in sys.path:
+    sys.path.insert(0, _APP_DIR)
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
