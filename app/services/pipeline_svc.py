@@ -109,49 +109,40 @@ def run_table(survey_id: int, version: str | None = None,
 def generate_xlsx(survey_id: int,
                   dt_config: list[dict] | None = None,
                   profile_status: list[str] | None = None) -> bytes:
-    """Render datatable.xlsx — reads table_results JSON from storage (no re-compute).
+    """Compute cross-tab and render datatable.xlsx using TableStep.
 
-    Falls back to full compute if preview JSON is not yet available.
-    dt_config: used only on fallback compute path.
-    profile_status: used only on fallback compute path.
+    Always runs a full compute — no cache is used or written.
+    dt_config: override datatable config; None → load from storage.
+    profile_status: filter rawdata rows; defaults to ["approved", "pending"].
     """
     from services.storage import get_storage
     from surveyflow.steps.table.table_step import TableStep
 
     storage = get_storage()
-    preview_key = f"{survey_id}/preview/table_results.json"
+    statuses = profile_status or ["approved", "pending"]
+
+    if dt_config is None:
+        dt_config = storage.read_json(f"{survey_id}/datatable/datatable.json")
+
+    raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
+    df = pd.read_csv(
+        io.BytesIO(_filter_rawdata(raw_bytes, statuses)),
+        low_memory=False,
+    )
+    metadata = storage.read_json(f"{survey_id}/data/metadata.json")
 
     with tempfile.TemporaryDirectory() as tmp:
         output_dir = Path(tmp) / str(survey_id)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if storage.exists(preview_key):
-            # Fast path: render from stored JSON — no re-compute
-            table_results = storage.read_json(preview_key)
-            logger.info("generate_xlsx: rendering from stored preview JSON (survey %s)", survey_id)
-            ctx = TableStep().render_xlsx({
-                "table_results": table_results,
-                "output_dir":    str(output_dir),
-            })
-        else:
-            # Fallback: full compute + render (preview not yet run)
-            logger.info("generate_xlsx: no preview JSON — full compute (survey %s)", survey_id)
-            statuses = profile_status or ["approved", "pending"]
-            if dt_config is None:
-                dt_config = storage.read_json(f"{survey_id}/datatable/datatable.json")
-            raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
-            df = pd.read_csv(
-                io.BytesIO(_filter_rawdata(raw_bytes, statuses)),
-                low_memory=False,
-            )
-            metadata = storage.read_json(f"{survey_id}/data/metadata.json")
-            ctx = TableStep().compute({
-                "df":               df,
-                "metadata":         metadata,
-                "datatable_config": dt_config,
-            })
-            ctx["output_dir"] = str(output_dir)
-            ctx = TableStep().render_xlsx(ctx)
+        logger.info("generate_xlsx: computing tables (survey %s)", survey_id)
+        ctx = TableStep().compute({
+            "df":               df,
+            "metadata":         metadata,
+            "datatable_config": dt_config,
+        })
+        ctx["output_dir"] = str(output_dir)
+        TableStep().render_xlsx(ctx)
 
         return (output_dir / "datatable.xlsx").read_bytes()
 
@@ -193,12 +184,6 @@ def compute_preview(survey_id: int,
         "datatable_config": dt_config,
         "table_indices":    table_indices,
     })
-
-    # Persist table_results so generate_xlsx() can render_xlsx() without
-    # re-computing — works across workers and server restarts.
-    if table_indices is None:
-        storage.write_json(f"{survey_id}/preview/table_results.json",
-                           ctx["table_results"])
 
     return ctx["table_results"]
 
@@ -287,16 +272,25 @@ def refresh(survey_id: int, client, step_cb=None) -> dict:
 _PII_TYPES = frozenset({"user-name", "user-phone"})
 
 
-def strip_pii_columns(csv_text: str, metadata: list) -> str:
+def strip_pii_columns(csv_text: str, metadata: "dict | list") -> str:
     """Remove user-name and user-phone columns from rawdata before serving to browser.
 
     Identifies PII columns by matching question labels against known PII answer types.
     Original rawdata on disk is never modified.
+
+    Accepts both metadata formats:
+    - New dict format: {"questions": {"1": {...}, "2": {...}}, "system_columns": {...}}
+    - Old list format: [{"label": ..., "answer_type": ...}, ...]
     """
     try:
+        if isinstance(metadata, dict):
+            questions = list(metadata.get("questions", {}).values())
+        else:
+            questions = metadata
+
         pii_labels = {
             q.get("label")
-            for q in metadata
+            for q in questions
             if (q.get("answer_type") or q.get("question_type") or q.get("type", ""))
             in _PII_TYPES
             and q.get("label")

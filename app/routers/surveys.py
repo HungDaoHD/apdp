@@ -16,6 +16,42 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/surveys", tags=["surveys"])
 
 
+# ── Auth-error helpers ────────────────────────────────────────────────────────
+
+def _unwrap_exc(exc: BaseException) -> BaseException:
+    """Unwrap ExceptionGroup (anyio TaskGroup / Python 3.11+) to the first leaf."""
+    if hasattr(exc, "exceptions") and exc.exceptions:
+        return _unwrap_exc(exc.exceptions[0])
+    return exc
+
+
+def _is_auth_error(exc: BaseException) -> bool:
+    """Return True if exc (possibly wrapped in ExceptionGroup) signals a 401/403."""
+    root = _unwrap_exc(exc)
+    msg  = str(root).lower()
+    if any(kw in msg for kw in ("401", "403", "unauthorized", "unauthorised",
+                                 "token expired", "reconnect")):
+        return True
+    try:
+        import httpx
+        if isinstance(root, httpx.HTTPStatusError) and root.response.status_code in (401, 403):
+            return True
+    except ImportError:
+        pass
+    return False
+
+
+def _raise_if_auth(exc: BaseException, session_id: str | None = None) -> None:
+    """If *exc* is an auth error: clear the stale token and raise HTTP 401."""
+    if _is_auth_error(exc):
+        if session_id:
+            try:
+                get_token_storage(session_id).clear()
+            except Exception:
+                pass
+        raise HTTPException(401, "QMe authentication failed — please reconnect")
+
+
 # ── projects (stored surveys) ─────────────────────────────────────────────────
 
 @router.get("/projects")
@@ -95,6 +131,7 @@ async def list_mcp_tools(session_id: str = Depends(require_qme)):
         tools = await loop.run_in_executor(None, client.list_tools)
     except Exception as exc:
         log.warning("list_mcp_tools failed: %s", exc)
+        _raise_if_auth(exc, session_id)
         raise HTTPException(502, f"MCP error: {exc}")
 
     return [
@@ -132,6 +169,7 @@ async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends
         return {"raw": str(result)}
     except Exception as exc:
         log.warning("search_surveys failed: %s", exc)
+        _raise_if_auth(exc, session_id)
         raise HTTPException(502, f"Search unavailable: {exc}")
 
 
@@ -175,6 +213,7 @@ async def fetch_survey(survey_id: int, session_id: str = Depends(require_qme)):
         return await loop.run_in_executor(None, _fetch)
     except Exception as exc:
         log.warning("fetch_survey failed for survey %s: %s", survey_id, exc)
+        _raise_if_auth(exc, session_id)
         raise HTTPException(502, str(exc))
 
 

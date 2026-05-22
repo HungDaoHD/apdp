@@ -97,6 +97,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#d0d4dc;border-radius:3px}
 
+/* ── Fetch progress card ── */
+#fetchProgress{position:fixed;bottom:24px;right:24px;z-index:8500;
+  background:white;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.2);
+  padding:16px 20px;min-width:340px;max-width:480px;
+  border-left:4px solid #1a73e8;display:none;flex-direction:column;gap:10px;
+  animation:fpSlideIn .25s ease}
+@keyframes fpSlideIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+#fpRow{display:flex;align-items:center;gap:10px}
+#fpIcon{width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#fpText{flex:1}
+#fpTitle{font-size:13px;font-weight:600;color:#1a1a2e}
+#fpStep{font-size:11px;color:#888;margin-top:2px;font-family:monospace}
+#fpElapsed{font-size:10px;color:#bbb;margin-top:1px}
+#fpClose{background:none;border:none;cursor:pointer;color:#bbb;font-size:16px;line-height:1;padding:2px;display:none}
+#fpClose:hover{color:#555}
+#fpBar{height:3px;background:#e8eaed;border-radius:3px;overflow:hidden}
+#fpBarFill{height:100%;width:5%;background:#1a73e8;border-radius:3px;transition:width .4s ease}
+
 /* ── Pagination ── */
 .pagination{display:flex;align-items:center;justify-content:center;gap:4px;margin-top:22px;flex-wrap:wrap}
 .pg-btn{min-width:32px;height:32px;padding:0 8px;border:1px solid #dde1e7;border-radius:6px;background:white;color:#444;font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;justify-content:center}
@@ -131,10 +149,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 </div>
 
 <!-- Global loading overlay -->
-<div id="loadingOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);
-     z-index:8000;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+<div id="loadingOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+     z-index:8000;flex-direction:column;align-items:center;justify-content:center;gap:12px">
   <div class="spin" style="width:36px;height:36px;border-width:4px"></div>
-  <div id="loadingMsg" style="color:#e0e6ef;font-size:13px;font-weight:500">Loading…</div>
+  <div id="loadingMsg" style="color:#e0e6ef;font-size:13px;font-weight:600;text-align:center;max-width:340px"></div>
+  <div id="loadingStep" style="color:#8899aa;font-size:11px;font-family:monospace;display:none;text-align:center;max-width:320px"></div>
+  <div id="loadingElapsed" style="color:#667788;font-size:10px;display:none"></div>
+  <div id="loadingBar" style="width:280px;height:3px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden;display:none">
+    <div id="loadingBarFill" style="height:100%;width:5%;background:#a8c7fa;border-radius:3px;transition:width .4s ease"></div>
+  </div>
+</div>
+
+<!-- Fetch progress card -->
+<div id="fetchProgress">
+  <div id="fpRow">
+    <div id="fpIcon"><div class="spin" style="width:18px;height:18px;border-width:2.5px"></div></div>
+    <div id="fpText">
+      <div id="fpTitle">Fetching…</div>
+      <div id="fpStep"></div>
+      <div id="fpElapsed"></div>
+    </div>
+    <button id="fpClose" onclick="hideFetchProgress()">✕</button>
+  </div>
+  <div id="fpBar"><div id="fpBarFill"></div></div>
 </div>
 
 <!-- QMe login modal -->
@@ -226,21 +263,90 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 </div>
 
 <script>
-// ── HTML escape helper (M3: prevent XSS via error messages) ──
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
 // ════════════════════════════════════════════════════
 // LOADING LOCK
 // ════════════════════════════════════════════════════
-function showLoading(msg = 'Loading…') {
-  const el = document.getElementById('loadingOverlay');
+function showLoading(msg = 'Loading…', step = '', elapsed = null) {
   document.getElementById('loadingMsg').textContent = msg;
-  el.style.display = 'flex';
+  const stepEl    = document.getElementById('loadingStep');
+  const elapsedEl = document.getElementById('loadingElapsed');
+  const barEl     = document.getElementById('loadingBar');
+  stepEl.textContent    = step;
+  stepEl.style.display  = step ? '' : 'none';
+  elapsedEl.textContent = elapsed !== null ? `${elapsed}s elapsed` : '';
+  elapsedEl.style.display = elapsed !== null ? '' : 'none';
+  barEl.style.display   = '';
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  // Animate bar only on first call (don't reset if already running)
+  if (!_fpBarAnim) {
+    let pct = 5;
+    document.getElementById('loadingBarFill').style.width = pct + '%';
+    _fpBarAnim = setInterval(() => {
+      pct = Math.min(pct + (80 / 90), 85);
+      document.getElementById('loadingBarFill').style.width = pct + '%';
+    }, 1000);
+  }
 }
 function hideLoading() {
   document.getElementById('loadingOverlay').style.display = 'none';
+  clearInterval(_fpBarAnim); _fpBarAnim = null;
+  const fill = document.getElementById('loadingBarFill');
+  if (fill) { fill.style.width = '5%'; }
+}
+
+// ── Fetch progress card ──
+let _fpBarAnim = null;
+
+function showFetchProgress(title, step = '', elapsed = null, type = 'loading') {
+  const card  = document.getElementById('fetchProgress');
+  const icon  = document.getElementById('fpIcon');
+  const fill  = document.getElementById('fpBarFill');
+  const bar   = document.getElementById('fpBar');
+  const close = document.getElementById('fpClose');
+  document.getElementById('fpTitle').textContent   = title;
+  document.getElementById('fpStep').textContent    = step;
+  document.getElementById('fpElapsed').textContent = elapsed !== null ? `${elapsed}s elapsed` : '';
+
+  if (type === 'loading') {
+    card.style.borderLeftColor = '#1a73e8';
+    icon.innerHTML = '<div class="spin" style="width:18px;height:18px;border-width:2.5px"></div>';
+    bar.style.display = '';
+    close.style.display = 'none';
+    // Animate bar width 5% → 85% over ~90s to give a sense of progress
+    if (!_fpBarAnim) {
+      let pct = 5;
+      fill.style.width = pct + '%';
+      _fpBarAnim = setInterval(() => {
+        pct = Math.min(pct + (80 / 90), 85);  // ~90s to reach 85%
+        fill.style.width = pct + '%';
+      }, 1000);  // bar ticks every 1s for smooth animation regardless of poll interval
+    }
+  } else if (type === 'success') {
+    card.style.borderLeftColor = '#1e8449';
+    icon.innerHTML = '<span style="color:#1e8449;font-size:18px;font-weight:700">✓</span>';
+    bar.style.display = '';
+    fill.style.width = '100%';
+    fill.style.background = '#1e8449';
+    close.style.display = '';
+    clearInterval(_fpBarAnim); _fpBarAnim = null;
+  } else if (type === 'error') {
+    card.style.borderLeftColor = '#c0392b';
+    icon.innerHTML = '<span style="color:#c0392b;font-size:18px;font-weight:700">✕</span>';
+    bar.style.display = 'none';
+    close.style.display = '';
+    clearInterval(_fpBarAnim); _fpBarAnim = null;
+  }
+
+  card.style.display = 'flex';
+}
+
+function hideFetchProgress() {
+  document.getElementById('fetchProgress').style.display = 'none';
+  clearInterval(_fpBarAnim); _fpBarAnim = null;
+  // reset bar for next use
+  const fill = document.getElementById('fpBarFill');
+  fill.style.width = '5%';
+  fill.style.background = '#1a73e8';
 }
 
 // ════════════════════════════════════════════════════
@@ -449,12 +555,11 @@ function onOvClick(e) {
 async function doSearch() {
   const q = document.getElementById('dlgSearch').value.trim();
   const res = document.getElementById('dlgResults');
-  res.innerHTML = '<div class="res-empty">Searching…</div>';
+  res.innerHTML = '<div class="res-empty"><span class="spin" style="display:inline-block;width:14px;height:14px;border-width:2px;vertical-align:-3px;margin-right:6px"></span>Searching…</div>';
   dlgSelected = null;
   document.getElementById('dlgAddBtn').disabled = true;
-  showLoading('Searching QMe…');
   try {
-    const data = await fetch(`/api/surveys/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json());
+    const data = await apiFetch(`/api/surveys/search?q=${encodeURIComponent(q)}&limit=50`).then(r => r.json());
     const surveys = data.surveys || data.results || (Array.isArray(data) ? data : []);
     if (!surveys.length) { res.innerHTML = '<div class="res-empty">No surveys found</div>'; return; }
     res.innerHTML = surveys.map(s => {
@@ -471,8 +576,6 @@ async function doSearch() {
     }).join('');
   } catch(e) {
     res.innerHTML = `<div class="res-empty">Error: ${esc(e.message)}</div>`;
-  } finally {
-    hideLoading();
   }
 }
 
@@ -493,30 +596,39 @@ async function doAddSurvey() {
   const btn = document.getElementById('dlgAddBtn');
   btn.disabled = true;
   btn.textContent = '⏳ Fetching…';
-  setDlgStatus(`Fetching survey ${dlgSelected.id} from QMe…`, '');
-  showLoading(`Fetching survey ${dlgSelected.id} from QMe…`);
+
+  // Close dialog, show full-screen blocking overlay
+  closeNewDialog();
+  showLoading(`Fetching [${dlgSelected.id}] ${dlgSelected.title}`, 'Starting…');
+
   try {
-    // Start background job — returns immediately (no proxy timeout)
-    const r = await fetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
+    // Start background job — returns immediately
+    const r = await apiFetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
     let d = {};
-    try { d = await r.json(); } catch { /* proxy returned non-JSON */ }
+    try { d = await r.json(); } catch {}
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
 
-    // Poll until done
+    // Poll — update overlay with current step + elapsed
     const t0 = Date.now();
     while (true) {
-      await new Promise(res => setTimeout(res, 2000));
+      await new Promise(res => setTimeout(res, 30000));
       const elapsed = Math.round((Date.now() - t0) / 1000);
-      setDlgStatus(`Fetching from QMe… (${elapsed}s)`, '');
-      showLoading(`Fetching from QMe… (${elapsed}s)`);
       let job = {};
       try { job = await fetch(`/api/surveys/${dlgSelected.id}/refresh/status`).then(r => r.json()); } catch {}
       if (job.status === 'done') { d = job; break; }
-      if (job.status === 'error') throw new Error(job.detail || 'refresh failed');
+      if (job.status === 'error') throw new Error(job.detail || 'Refresh failed');
+      showLoading(
+        `Fetching [${dlgSelected.id}] ${dlgSelected.title}`,
+        job.step || 'Processing…',
+        elapsed
+      );
     }
 
-    setDlgStatus(`✓ Done — ${d.n_rows} rows`, 'ok');
-    showLoading('Opening project…');
+    // Success — overlay → success card → navigate
+    hideLoading();
+    const rows = d.n_rows != null ? ` — ${d.n_rows} rows` : '';
+    showFetchProgress(`✓ Fetch complete${rows}`, 'Opening editor…', null, 'success');
+    loadProjects();
 
     let displayTitle = `[${dlgSelected.id}] ${dlgSelected.title}`;
     try {
@@ -526,19 +638,19 @@ async function doAddSurvey() {
     } catch(_) {}
 
     setTimeout(() => {
+      hideFetchProgress();
       window.location = `/editor?survey_id=${dlgSelected.id}&title=${encodeURIComponent(displayTitle)}`;
-    }, 500);
+    }, 2000);
+
   } catch(e) {
-    if (/reconnect|token expired|unauthori[sz]ed/i.test(e.message)) {
-      setDlgStatus('✗ QMe session expired — please reconnect.', 'err');
-      hideLoading();
-      setTimeout(() => connectQme(), 400);
+    hideLoading();
+    if (/reconnect|token expired|unauthori[sz]ed|401/i.test(e.message)) {
+      _showAuthExpired();
     } else {
-      setDlgStatus(`✗ Error: ${e.message}`, 'err');
+      showFetchProgress(`✕ Fetch failed`, e.message, null, 'error');
     }
     btn.disabled = false;
     btn.textContent = '🔄 Fetch & Open';
-    hideLoading();
   }
 }
 
@@ -554,6 +666,26 @@ function setDlgStatus(msg, cls) {
 // ════════════════════════════════════════════════════
 function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/** Fetch wrapper — shows login gate and throws on HTTP 401. */
+async function apiFetch(url, opts = {}) {
+  const r = await fetch(url, opts);
+  if (r.status === 401) {
+    _showAuthExpired();
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.detail || 'QMe authentication required — please reconnect');
+  }
+  return r;
+}
+
+/** Mark QMe as disconnected and open the login modal. */
+function _showAuthExpired() {
+  document.getElementById('qmeGate').style.display = 'flex';
+  document.getElementById('qmeDot').style.background = '#f87171';
+  document.getElementById('qmeLbl').textContent = 'Connect QMe';
+  document.getElementById('qmeBtn').onclick = connectQme;
+  setTimeout(() => connectQme(), 300);
 }
 
 document.addEventListener('keydown', e => {
@@ -587,7 +719,6 @@ async function checkQmeStatus() {
 }
 
 let _qmeRef = '';
-let _qmeLoginKey = '';
 
 function connectQme() {
   document.getElementById('qmeMov').style.display = 'flex';
@@ -625,7 +756,6 @@ async function qmeDoLogin() {
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
     _qmeRef = data.ref || '';
-    _qmeLoginKey = data.login_key || '';
     document.getElementById('qmeStep1').style.display = 'none';
     document.getElementById('qmeStep2').style.display = '';
     document.getElementById('qmeOtpStatus').style.display = 'none';
@@ -654,7 +784,7 @@ async function qmeDoVerify() {
     const r = await fetch('/api/qme/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, ref: _qmeRef, otp, login_key: _qmeLoginKey }),
+      body: JSON.stringify({ email, ref: _qmeRef, otp }),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || JSON.stringify(data));

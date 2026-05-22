@@ -25,31 +25,41 @@ router = APIRouter(prefix="/api/qme", tags=["qme-auth"])
 _QME = "https://retail.qand.me"
 _TOKEN_URL = f"{settings.QME_MCP_BASE_URL}/oauth/token"
 
-_SESSION_TTL = 600  # 10 minutes
+_SESSION_TTL = 300  # 5 minutes
 
 _COOKIE_NAME = "sf_session"
 _COOKIE_MAX_AGE = 8 * 3600  # 8 hours
 
-# Rate limiting — per IP, best-effort (each worker tracks independently)
+# Rate limiting — per IP, disk-backed (shared across all Gunicorn workers)
 _RATE_LIMIT_MAX    = 5   # max login attempts
 _RATE_LIMIT_WINDOW = 60  # per 60 seconds
-_login_attempts: dict[str, list[float]] = {}
 
 
 def _check_rate_limit(ip: str) -> None:
+    import json as _json
     now = time.time()
-    attempts = _login_attempts.get(ip, [])
-    attempts = [t for t in attempts if now - t < _RATE_LIMIT_WINDOW]
+    # Hash IP so raw addresses are not stored in filenames
+    ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
+    rate_file = _login_dir() / f".rate_{ip_hash}.json"
+    try:
+        attempts = [t for t in _json.loads(rate_file.read_text()).get("a", [])
+                    if now - t < _RATE_LIMIT_WINDOW]
+    except Exception:
+        attempts = []
     if len(attempts) >= _RATE_LIMIT_MAX:
         raise HTTPException(429, "Too many login attempts — please wait a minute")
     attempts.append(now)
-    _login_attempts[ip] = attempts
+    try:
+        rate_file.parent.mkdir(parents=True, exist_ok=True)
+        rate_file.write_text(_json.dumps({"a": attempts}))
+    except Exception:
+        pass
 
 
 # ── Disk-based login sessions (shared across all Gunicorn workers) ─────────────
 
 def _login_dir() -> Path:
-    return Path(os.getenv("DATA_DIR", "data"))
+    return Path(settings.DATA_DIR)
 
 
 def _login_file(login_key: str) -> Path:
@@ -140,7 +150,7 @@ async def qme_login(body: LoginBody, request: Request):
             "resource":              settings.QME_MCP_BASE_URL,
         })
     )
-    log.info("auth_url: %s", auth_url)
+    log.info("auth_url: %s (params redacted)", auth_url.split("?")[0])
 
     pw = hashlib.sha256(body.password.encode()).hexdigest()
 
@@ -216,7 +226,17 @@ async def qme_login(body: LoginBody, request: Request):
         "created_at":    time.time(),
     })
 
-    return {"ok": True, "ref": ref, "login_key": login_key}
+    # H-3: return login_key as httpOnly cookie (not in body) to prevent JS access
+    resp = JSONResponse({"ok": True, "ref": ref})
+    resp.set_cookie(
+        "sf_login_key",
+        login_key,
+        httponly=True,
+        samesite="strict",
+        max_age=_SESSION_TTL,
+        secure=settings.SECURE_COOKIES,
+    )
+    return resp
 
 
 # ── Step 2 — OTP ──────────────────────────────────────────────────────────────
@@ -225,15 +245,18 @@ class VerifyBody(BaseModel):
     email: str
     ref: str
     otp: str
-    login_key: str
 
 @router.post("/verify")
-async def qme_verify(body: VerifyBody):
-    session = _get_login_session(body.login_key)
+async def qme_verify(body: VerifyBody, request: Request):
+    # H-3: login_key is stored in httpOnly cookie, not sent in body
+    login_key = request.cookies.get("sf_login_key", "")
+    if not login_key:
+        raise HTTPException(400, "No pending login session — please login again")
+    session = _get_login_session(login_key)
     if not session:
         raise HTTPException(400, "No pending login session — please login again")
     if time.time() - session.get("created_at", 0) > _SESSION_TTL:
-        _delete_login_session(body.login_key)
+        _delete_login_session(login_key)
         raise HTTPException(400, "Login session expired — please login again")
 
     cookies = session["cookies"]  # dict from login step (already visited loginverify)
@@ -297,7 +320,7 @@ async def qme_verify(body: VerifyBody):
         )
 
     # OTP correct — consume the login session so it can't be reused
-    _delete_login_session(body.login_key)
+    _delete_login_session(login_key)
 
     # Invalidate any existing sessions for this email before issuing a new one
     email = session.get("email") or body.email
@@ -318,6 +341,8 @@ async def qme_verify(body: VerifyBody):
         max_age=_COOKIE_MAX_AGE,
         secure=settings.SECURE_COOKIES,
     )
+    # H-3: clear the login-flow cookie now that auth is complete
+    resp.delete_cookie("sf_login_key")
     return resp
 
 

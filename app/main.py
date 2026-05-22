@@ -3,13 +3,15 @@ import logging
 import sys
 from pathlib import Path
 
-# Ensure the vendored surveyflow (app/surveyflow/) takes precedence over any
-# installed package, regardless of the working directory or editable installs.
+# Ensure app/ directory is on sys.path for local module imports
+# (routers, config, services, dependencies).
+# surveyflow is installed as a package — editable locally, from GitHub in production.
 _APP_DIR = str(Path(__file__).parent)
 if _APP_DIR not in sys.path:
     sys.path.insert(0, _APP_DIR)
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -23,12 +25,27 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(messa
 
 app = FastAPI(title="Q&Me SurveyFlow", version="1.0.0")
 
+# M-6: Explicit CORS policy — deny all cross-origin requests (same-origin only)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[],        # no cross-origin allowed
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.on_event("startup")
 async def on_startup() -> None:
     """Restore persisted sessions from disk so users don't need to re-login after restart."""
     from services.mcp_client import init_sessions
     init_sessions()
+    # H-4: warn if SECURE_COOKIES is off (risky on non-localhost deployments)
+    if not settings.SECURE_COOKIES:
+        logging.getLogger(__name__).warning(
+            "SECURE_COOKIES=False — session cookies sent over HTTP. "
+            "Set SECURE_COOKIES=True when deploying behind HTTPS."
+        )
 
 
 _STATIC = Path(__file__).parent / "static"

@@ -111,7 +111,10 @@ class MemoryTokenStorage:
         try:
             f = self._token_file()
             f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(json.dumps({
+            # L-1: atomic write — write to .tmp, chmod, then rename to avoid
+            # a window where the file exists but has loose permissions
+            tmp = f.with_suffix(".tmp")
+            tmp.write_text(json.dumps({
                 "access_token":  self._access_token,
                 "token_type":    self._token_type,
                 "refresh_token": self._refresh_token,
@@ -119,7 +122,11 @@ class MemoryTokenStorage:
                 "expires_at":    self._expires_at,
                 "email":         self._email,
             }))
-            f.chmod(0o600)  # owner read/write only — no other users on server can read
+            try:
+                tmp.chmod(0o600)  # owner read/write only
+            except Exception:
+                pass  # Windows: chmod is a no-op, ACLs are set at dir level
+            tmp.replace(f)  # atomic rename
         except Exception as e:
             log.warning("Could not save token to disk: %s", e)
 

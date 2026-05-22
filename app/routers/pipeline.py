@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
+from config import settings
 from dependencies import require_qme
 from services import pipeline_svc
 from services.mcp_client import get_storage as get_token_storage, get_access_token
@@ -23,6 +24,29 @@ def _unwrap_exc(exc: BaseException) -> BaseException:
     if hasattr(exc, "exceptions") and exc.exceptions:  # type: ignore[attr-defined]
         return _unwrap_exc(exc.exceptions[0])  # type: ignore[attr-defined]
     return exc
+
+
+def _is_auth_error(exc: BaseException) -> bool:
+    """Return True if exc signals a QMe 401/403 auth failure."""
+    root = _unwrap_exc(exc)
+    msg  = str(root).lower()
+    if any(kw in msg for kw in ("401", "403", "unauthorized", "unauthorised",
+                                 "token expired", "reconnect")):
+        return True
+    try:
+        import httpx
+        if isinstance(root, httpx.HTTPStatusError) and root.response.status_code in (401, 403):
+            return True
+    except ImportError:
+        pass
+    return False
+
+
+def _clear_token(session_id: str) -> None:
+    try:
+        get_token_storage(session_id).clear()
+    except Exception:
+        pass
 
 _VERSION_RE = re.compile(r"^v\d+$|^tmp$")
 
@@ -39,9 +63,8 @@ def _parse_profile_status(raw: str) -> list[str]:
 # ── Disk-based refresh job status (shared across all Gunicorn workers) ─────────
 
 def _refresh_status_file(survey_id: int):
-    import os
     from pathlib import Path
-    return Path(os.getenv("DATA_DIR", "data")) / f".refresh_{survey_id}.json"
+    return Path(settings.DATA_DIR) / f".refresh_{survey_id}.json"
 
 
 _REFRESH_TIMEOUT_SECS = 600   # 10 minutes — treat stale "running" as error
@@ -136,11 +159,14 @@ async def refresh_survey_csv(survey_id: int, session_id: str = Depends(require_q
         return {"status": "done", **result}
     except Exception as exc:
         log.exception("refresh_csv pipeline failed for survey %s", survey_id)
+        if _is_auth_error(exc):
+            _clear_token(session_id)
+            raise HTTPException(401, "QMe authentication failed — please reconnect")
         raise HTTPException(500, "Pipeline error — check server logs")
 
 
 @router.get("/{survey_id}/refresh/status")
-async def refresh_status(survey_id: int):
+async def refresh_status(survey_id: int, session_id: str = Depends(require_qme)):
     """Poll this endpoint after POST /refresh to check job progress."""
     return _read_refresh_status(survey_id)
 
@@ -202,6 +228,8 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
         root = _unwrap_exc(exc)
         detail = str(root)
         log.exception("[refresh:%s] pipeline failed: %s", survey_id, detail)
+        if _is_auth_error(exc):
+            _clear_token(session_id)
         _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(detail)})
 
 
@@ -227,7 +255,8 @@ def _upsert_info(survey_id: int, session_id: str) -> None:
 
 @router.post("/{survey_id}/generate")
 async def generate_xlsx(survey_id: int, request: Request,
-                        profile_status: str = "approved,pending"):
+                        profile_status: str = "approved,pending",
+                        session_id: str = Depends(require_qme)):
     """Render datatable.xlsx — reuses cached compute from /preview when available.
 
     Body (optional): { "datatable_config": [...] }
@@ -273,7 +302,8 @@ async def generate_xlsx(survey_id: int, request: Request,
 
 @router.post("/{survey_id}/preview")
 async def preview_table(survey_id: int, request: Request,
-                        profile_status: str = "approved,pending"):
+                        profile_status: str = "approved,pending",
+                        session_id: str = Depends(require_qme)):
     """Compute cross-tab server-side → returns JSON table_results.
 
     Body (all optional):
@@ -316,7 +346,7 @@ async def preview_table(survey_id: int, request: Request,
 # ── ingestion ─────────────────────────────────────────────────────────────────
 
 @router.post("/{survey_id}/ingest")
-async def ingest_survey(survey_id: int):
+async def ingest_survey(survey_id: int, session_id: str = Depends(require_qme)):
     storage = get_storage()
     if not storage.exists(f"{survey_id}/mcp/definition.json") or \
        not storage.exists(f"{survey_id}/mcp/rows_pages.json"):
@@ -338,7 +368,7 @@ _NO_CACHE = {"Cache-Control": "no-store"}
 
 
 @router.get("/{survey_id}/metadata")
-async def get_metadata(survey_id: int):
+async def get_metadata(survey_id: int, session_id: str = Depends(require_qme)):
     storage = get_storage()
     key = f"{survey_id}/data/metadata.json"
     if not storage.exists(key):
@@ -376,8 +406,7 @@ async def download_data_file(survey_id: int, filename: str,
         csv_text = storage.read_text(key)
         try:
             meta = storage.read_json(f"{survey_id}/data/metadata.json")
-            if isinstance(meta, list):
-                csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
+            csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
         except Exception:
             pass
         content = csv_text.encode("utf-8-sig")
@@ -411,8 +440,7 @@ async def get_rawdata(survey_id: int, request: Request,
     csv_text = storage.read_text(key)
     try:
         meta = storage.read_json(f"{survey_id}/data/metadata.json")
-        if isinstance(meta, list):
-            csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
+        csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
     except Exception:
         pass  # metadata unavailable — serve without stripping (still no-cache)
 
@@ -422,7 +450,7 @@ async def get_rawdata(survey_id: int, request: Request,
 # ── datatable CRUD ────────────────────────────────────────────────────────────
 
 @router.get("/{survey_id}/datatable")
-async def get_datatable(survey_id: int):
+async def get_datatable(survey_id: int, session_id: str = Depends(require_qme)):
     storage = get_storage()
     key = f"{survey_id}/datatable/datatable.json"
     if not storage.exists(key):
@@ -431,7 +459,8 @@ async def get_datatable(survey_id: int):
 
 
 @router.post("/{survey_id}/datatable")
-async def save_datatable(survey_id: int, request: Request):
+async def save_datatable(survey_id: int, request: Request,
+                         session_id: str = Depends(require_qme)):
     body = await request.json()
     get_storage().write_json(f"{survey_id}/datatable/datatable.json", body)
     return {"status": "saved"}
@@ -441,7 +470,8 @@ async def save_datatable(survey_id: int, request: Request):
 
 @router.post("/{survey_id}/run")
 async def run_pipeline(survey_id: int, version: str | None = None,
-                       profile_status: str = "approved"):
+                       profile_status: str = "approved",
+                       session_id: str = Depends(require_qme)):
     """Run table step and save versioned datatable.xlsx.
 
     profile_status: comma-separated list, e.g. "approved" or "approved,pending"
@@ -467,7 +497,8 @@ async def run_pipeline(survey_id: int, version: str | None = None,
 # ── download xlsx ─────────────────────────────────────────────────────────────
 
 @router.get("/{survey_id}/download/{version}")
-async def download_xlsx(survey_id: int, version: str = "v1"):
+async def download_xlsx(survey_id: int, version: str = "v1",
+                        session_id: str = Depends(require_qme)):
     version = _validate_version(version)
     storage = get_storage()
     key = f"{survey_id}/{version}/datatable.xlsx"

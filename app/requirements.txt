@@ -1,3 +1,4 @@
+surveyflow @ git+https://github.com/HungDaoHD/surveyflow.git
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 gunicorn>=21.2.0

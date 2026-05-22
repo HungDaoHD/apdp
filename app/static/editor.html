@@ -4,8 +4,12 @@
 <link rel="shortcut icon" href="/static/favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Q&Me — datatable.json Editor</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"
+        integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs"
+        crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+        integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
+        crossorigin="anonymous"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#1a1a2e;background:#f0f2f5;height:100vh;overflow:hidden;display:flex;flex-direction:column}
@@ -267,6 +271,28 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 .lov-msg{color:#c5d8f5;font-size:13px;font-weight:500;text-align:center;max-width:300px;line-height:1.5}
 .lov-sub{color:#6e8cb0;font-size:11px;text-align:center;white-space:pre-line;max-width:300px;line-height:1.6}
 
+/* ── Fetch progress card ── */
+#fetchProgress{position:fixed;bottom:24px;right:24px;z-index:9000;
+  background:white;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.25);
+  padding:16px 20px;min-width:340px;max-width:500px;
+  border-left:4px solid #1a73e8;display:none;flex-direction:column;gap:10px;
+  animation:fpSlide .25s ease}
+@keyframes fpSlide{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+#fpRow{display:flex;align-items:center;gap:10px}
+#fpIcon{width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+#fpText{flex:1}
+#fpTitle{font-size:13px;font-weight:600;color:#1a1a2e}
+#fpStep{font-size:11px;color:#888;margin-top:2px;font-family:monospace}
+#fpElapsed{font-size:10px;color:#bbb;margin-top:1px}
+#fpActions{display:flex;gap:6px;align-items:center}
+#fpCancel{font-size:10px;padding:3px 10px;border-radius:5px;border:1px solid #dde1e7;
+  background:transparent;color:#888;cursor:pointer;display:none}
+#fpCancel:hover{border-color:#c0392b;color:#c0392b}
+#fpClose{background:none;border:none;cursor:pointer;color:#bbb;font-size:16px;line-height:1;padding:2px;display:none}
+#fpClose:hover{color:#555}
+#fpBar{height:3px;background:#e8eaed;border-radius:3px;overflow:hidden}
+#fpBarFill{height:100%;width:5%;background:#1a73e8;border-radius:3px;transition:width .4s ease}
+
 /* ── Preview panel ──────────────────────────────── */
 #previewPanel{position:fixed;inset:0;z-index:500;background:#f0f2f5;display:none;flex-direction:column}
 .pv-loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:#666;font-size:14px}
@@ -306,11 +332,31 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 </head>
 <body>
 
+<!-- Fetch progress card -->
+<div id="fetchProgress">
+  <div id="fpRow">
+    <div id="fpIcon"><div class="lov-spin" style="width:18px;height:18px;border-width:2.5px"></div></div>
+    <div id="fpText">
+      <div id="fpTitle">Refreshing…</div>
+      <div id="fpStep"></div>
+      <div id="fpElapsed"></div>
+    </div>
+    <div id="fpActions">
+      <button id="fpCancel" onclick="cancelRefresh()">Cancel</button>
+      <button id="fpClose" onclick="hideFetchProgress()">✕</button>
+    </div>
+  </div>
+  <div id="fpBar"><div id="fpBarFill"></div></div>
+</div>
+
 <!-- Loading overlay -->
 <div id="loadingOverlay">
   <div class="lov-spin"></div>
   <div class="lov-msg" id="loadingMsg">Loading survey…</div>
   <div class="lov-sub" id="loadingSub"></div>
+  <div id="lovBar" style="display:none;width:280px;height:3px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden;margin-top:4px">
+    <div id="lovBarFill" style="height:100%;width:5%;background:#a8c7fa;border-radius:3px;transition:width .4s ease"></div>
+  </div>
   <button id="lovCancelBtn" onclick="cancelRefresh()"
     style="display:none;margin-top:8px;padding:5px 18px;font-size:11px;border:1px solid #4a5a7a;border-radius:5px;background:rgba(255,255,255,.07);color:#a0b4cc;cursor:pointer">
     ✕ Cancel
@@ -349,10 +395,10 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
     <button class="psbtn on on-pend" id="psPending" onclick="toggleStatus('pending')">Pending</button>
   </div>
   <div class="sep"></div>
-  <button class="btn" id="runBtn" disabled onclick="showPreview()"
-    style="background:#7c3aed;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
-  <div class="gap"></div>
   <button class="btn btn-suc" onclick="saveFile()" id="saveBtn" disabled>💾 Save Data Table</button>
+  <button class="btn" id="runBtn" disabled onclick="showPreview()"
+    style="background:#1a73e8;color:white;opacity:.45;margin-left:2px">▶ Preview</button>
+  <div class="gap"></div>
   <button class="btn btn-pri btn-sm" onclick="downloadXlsxDirect()" id="downloadBtn" disabled><svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table</button>
   <button class="btn btn-gho" onclick="toggleRaw()" id="rawBtn" style="display:none">{} Raw</button>
 </div>
@@ -2933,17 +2979,90 @@ function downloadXlsx() {
 let currentSurveyId   = null;
 let currentSurveyName = null;
 
-function _setLoading(msg, sub = '', showCancel = false) {
+function _setLoading(msg, sub = '', showCancel = false, showBar = false) {
   const ov = document.getElementById('loadingOverlay');
   if (msg) {
     document.getElementById('loadingMsg').textContent = msg;
     document.getElementById('loadingSub').textContent = sub;
     document.getElementById('lovCancelBtn').style.display = showCancel ? '' : 'none';
+    const barEl = document.getElementById('lovBar');
+    if (barEl) barEl.style.display = showBar ? '' : 'none';
+    if (showBar && !_fpBarAnim) {
+      let pct = 5;
+      document.getElementById('lovBarFill').style.width = pct + '%';
+      _fpBarAnim = setInterval(() => {
+        pct = Math.min(pct + (80 / 90), 85);
+        document.getElementById('lovBarFill').style.width = pct + '%';
+      }, 1000);
+    }
     ov.classList.remove('hidden');
   } else {
     document.getElementById('lovCancelBtn').style.display = 'none';
+    const barEl = document.getElementById('lovBar');
+    if (barEl) barEl.style.display = 'none';
+    clearInterval(_fpBarAnim); _fpBarAnim = null;
+    const fill = document.getElementById('lovBarFill');
+    if (fill) fill.style.width = '5%';
     ov.classList.add('hidden');
   }
+}
+
+// ── Fetch progress card ──
+let _fpBarAnim = null;
+
+function showFetchProgress(title, step = '', elapsed = null, type = 'loading') {
+  const card   = document.getElementById('fetchProgress');
+  const icon   = document.getElementById('fpIcon');
+  const fill   = document.getElementById('fpBarFill');
+  const bar    = document.getElementById('fpBar');
+  const cancel = document.getElementById('fpCancel');
+  const close  = document.getElementById('fpClose');
+  document.getElementById('fpTitle').textContent   = title;
+  document.getElementById('fpStep').textContent    = step;
+  document.getElementById('fpElapsed').textContent = elapsed !== null ? `${elapsed}s elapsed` : '';
+
+  if (type === 'loading') {
+    card.style.borderLeftColor = '#1a73e8';
+    icon.innerHTML = '<div class="lov-spin" style="width:18px;height:18px;border-width:2.5px"></div>';
+    bar.style.display    = '';
+    cancel.style.display = '';
+    close.style.display  = 'none';
+    fill.style.background = '#1a73e8';
+    if (!_fpBarAnim) {
+      let pct = 5;
+      fill.style.width = pct + '%';
+      _fpBarAnim = setInterval(() => {
+        pct = Math.min(pct + (80 / 90), 85);
+        fill.style.width = pct + '%';
+      }, 1000);
+    }
+  } else if (type === 'success') {
+    card.style.borderLeftColor = '#1e8449';
+    icon.innerHTML = '<span style="color:#1e8449;font-size:18px;font-weight:700">✓</span>';
+    bar.style.display    = '';
+    fill.style.width     = '100%';
+    fill.style.background = '#1e8449';
+    cancel.style.display = 'none';
+    close.style.display  = '';
+    clearInterval(_fpBarAnim); _fpBarAnim = null;
+  } else if (type === 'error') {
+    card.style.borderLeftColor = '#c0392b';
+    icon.innerHTML = '<span style="color:#c0392b;font-size:18px;font-weight:700">✕</span>';
+    bar.style.display    = 'none';
+    cancel.style.display = 'none';
+    close.style.display  = '';
+    clearInterval(_fpBarAnim); _fpBarAnim = null;
+  }
+
+  card.style.display = 'flex';
+}
+
+function hideFetchProgress() {
+  document.getElementById('fetchProgress').style.display = 'none';
+  clearInterval(_fpBarAnim); _fpBarAnim = null;
+  const fill = document.getElementById('fpBarFill');
+  fill.style.width = '5%';
+  fill.style.background = '#1a73e8';
 }
 
 async function cancelRefresh() {
@@ -3023,33 +3142,37 @@ async function doRefresh() {
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
   _setRefreshProcessing();
-  _setLoading('Refreshing…', currentSurveyName, true);
+  _setLoading(`Refreshing ${currentSurveyName}`, 'Starting…', true, true);
   setStatus('Fetching from QMe…', '');
   try {
-    // Always use export CSV mode — background job with polling
     const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST'});
     let d = {};
     try { d = await r.json(); } catch {}
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
 
     const t0 = Date.now();
-    const MAX_WAIT_MS = 12 * 60 * 1000;  // 12 minutes client-side timeout
+    const MAX_WAIT_MS = 12 * 60 * 1000;
     while (true) {
-      await new Promise(res => setTimeout(res, 10000));
+      await new Promise(res => setTimeout(res, 30000));
       const elapsed = Math.round((Date.now() - t0) / 1000);
       if (Date.now() - t0 > MAX_WAIT_MS)
         throw new Error(`Refresh timed out after ${elapsed}s — please try again.`);
-      setStatus(`Fetching from QMe… (${elapsed}s)`, '');
       let job = {};
       try { job = await fetch(`/api/surveys/${currentSurveyId}/refresh/status`).then(r => r.json()); } catch {}
       if (job.status === 'done') { d = job; break; }
-      if (job.status === 'error') throw new Error(job.detail || 'refresh failed');
-      const stepMsg = job.step ? `↳ ${job.step}` : '';
-      _setLoading(`Refreshing… (${elapsed}s)`, `${currentSurveyName}\n${stepMsg}`, true);
+      if (job.status === 'error') throw new Error(job.detail || 'Refresh failed');
+      _setLoading(
+        `Refreshing ${currentSurveyName}`,
+        `${job.step || 'Processing…'}  (${elapsed}s)`,
+        true, true
+      );
+      setStatus(`Fetching from QMe… (${elapsed}s)`, '');
     }
 
-    _setLoading('Refreshing…', currentSurveyName);
-    setStatus(`✓ Fetched ${d.n_rows} rows — reloading…`, 'saved');
+    // Success — close overlay, show bottom-right card briefly
+    _setLoading(null);
+    const rows = d.n_rows != null ? ` — ${d.n_rows} rows` : '';
+    showFetchProgress(`✓ Refresh complete${rows}`, 'Reloading metadata…', null, 'success');
     await apiLoadMeta(currentSurveyId);
     _setDataCounts(d);
     rawCsv = null; rawHeaders = [];
@@ -3057,15 +3180,17 @@ async function doRefresh() {
     document.getElementById('dlBtn').disabled = false;
     checkRunBtn();
     setStatus(`✓ Refresh complete — ${dataStatusText()}`, 'saved');
+    setTimeout(hideFetchProgress, 3000);
   } catch(e) {
+    _setLoading(null);
     if (/reconnect|token expired|unauthori[sz]ed/i.test(e.message)) {
       document.getElementById('authErrMov').style.display = 'flex';
     } else {
+      showFetchProgress('✕ Refresh failed', e.message, null, 'error');
       setStatus('⚠ Refresh error: ' + e.message, '');
     }
   } finally {
     btn.disabled = false;
-    _setLoading(null);
   }
 }
 
@@ -3134,13 +3259,19 @@ async function saveFile() {
 async function downloadXlsxDirect() {
   if (!currentSurveyId) return;
   const btn = document.getElementById('downloadBtn');
+  const btnHtml = btn.innerHTML;
   btn.disabled = true;
   btn.textContent = '⏳ Generating…';
+  showFetchProgress(`Exporting ${currentSurveyName}`, 'Generating datatable.xlsx…');
   setStatus('Generating datatable.xlsx…', '');
   try {
     await saveFile();
     const psParam = getProfileStatuses().join(',');
-    const res = await fetch(`/api/surveys/${currentSurveyId}/generate?profile_status=${encodeURIComponent(psParam)}`, {method:'POST'});
+    const res = await fetch(`/api/surveys/${currentSurveyId}/generate?profile_status=${encodeURIComponent(psParam)}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ datatable_config: data }),  // send full config → server bypasses stale cache
+    });
     if (!res.ok) {
       const d = await res.json();
       throw new Error(d.detail || 'generate failed');
@@ -3153,12 +3284,15 @@ async function downloadXlsxDirect() {
     });
     a.click();
     URL.revokeObjectURL(url);
+    showFetchProgress('✓ datatable.xlsx downloaded', currentSurveyName, null, 'success');
     setStatus('✓ Downloaded datatable.xlsx', 'saved');
+    setTimeout(hideFetchProgress, 3000);
   } catch(e) {
+    showFetchProgress('✕ Export failed', e.message, null, 'error');
     setStatus('⚠ Download error: ' + e.message, '');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" style="vertical-align:-2px;margin-right:4px" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="3" fill="#217346"/><path d="M13 12l4-6h-2.5L12 10.2 9.5 6H7l4 6-4.2 6H9.5L12 13.8l2.5 4.2H17L13 12z" fill="white"/></svg>Export Data Table';
+    btn.innerHTML = btnHtml;
   }
 }
 
