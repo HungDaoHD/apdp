@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-_TOKEN_MAX_AGE = 86400  # 24 hours
+_TOKEN_MAX_AGE = 30 * 86400  # 30 days — upper cap; actual TTL comes from QMe's expires_in
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -61,9 +61,46 @@ class MemoryTokenStorage:
         self._token_type    = tokens.token_type or "Bearer"
         self._refresh_token = tokens.refresh_token
         self._scope         = tokens.scope
-        self._expires_at    = time.time() + _TOKEN_MAX_AGE
+        # Use QMe's expires_in if provided; cap at _TOKEN_MAX_AGE
+        ttl = int(tokens.expires_in) if tokens.expires_in else _TOKEN_MAX_AGE
+        ttl = min(ttl, _TOKEN_MAX_AGE)
+        self._expires_at    = time.time() + ttl
         self._save_to_disk()
-        log.info("QMe token stored for session %s… (expires in 24 h)", self._session_id[:8])
+        log.info("QMe token stored for session %s… (expires in %ds / %.1fh)",
+                 self._session_id[:8], ttl, ttl / 3600)
+
+    async def refresh(self) -> bool:
+        """Exchange refresh_token for a new access_token. Returns True on success."""
+        if not self._refresh_token:
+            log.warning("refresh: no refresh_token for session %s…", self._session_id[:8])
+            return False
+        from config import settings
+        import httpx
+        token_url = f"{settings.QME_MCP_BASE_URL}/oauth/token"
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.post(token_url, data={
+                    "grant_type":    "refresh_token",
+                    "refresh_token": self._refresh_token,
+                    "client_id":     self._client_id,
+                    "client_secret": self._client_secret or "",
+                })
+            log.info("token refresh → %s (session=%s…)", r.status_code, self._session_id[:8])
+            if r.status_code == 200:
+                data = r.json()
+                await self.set_tokens(OAuthToken(
+                    access_token  = data["access_token"],
+                    token_type    = data.get("token_type", "Bearer"),
+                    expires_in    = data.get("expires_in"),
+                    refresh_token = data.get("refresh_token") or self._refresh_token,
+                    scope         = data.get("scope"),
+                ))
+                return True
+            log.warning("token refresh failed (%s) for session %s…: %s",
+                        r.status_code, self._session_id[:8], r.text[:200])
+        except Exception as exc:
+            log.warning("token refresh error for session %s…: %s", self._session_id[:8], exc)
+        return False
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         if not self._client_id:
@@ -205,31 +242,62 @@ def invalidate_sessions_for_email(email: str) -> None:
 # ── MCP call helper ───────────────────────────────────────────────────────────
 
 async def call_tool(name: str, arguments: dict, session_id: str) -> Any:
-    """Call a QMe MCP tool using the SDK. Raises MCPError if not connected."""
+    """Call a QMe MCP tool using the SDK. Auto-refreshes token on expiry. Raises MCPError if not connected."""
     import httpx
     from config import settings
 
     storage = get_storage(session_id)
+
+    # Pre-emptive refresh: token expired locally but we have a refresh_token
+    if not storage.is_connected():
+        if storage._refresh_token:
+            log.info("call_tool: token expired, refreshing (session=%s…)", session_id[:8])
+            ok = await storage.refresh()
+            if not ok:
+                raise MCPError("Not connected to QMe — please reconnect.")
+        else:
+            raise MCPError("Not connected to QMe — please reconnect.")
+
+    async def _do_call(access_token: str):
+        headers = {"Authorization": f"Bearer {access_token}"}
+        try:
+            async with streamablehttp_client(settings.QME_MCP_BASE_URL, headers=headers) as (r, w, _):
+                async with ClientSession(r, w) as sess:
+                    await sess.initialize()
+                    return await sess.call_tool(name, arguments)
+        except* httpx.HTTPStatusError as eg:
+            exc = eg.exceptions[0]
+            status = exc.response.status_code
+            if status in (401, 403):
+                raise MCPError(f"__auth_{status}__") from exc
+            raise MCPError(f"QMe MCP server returned {status} — check token or survey ID.") from exc
+        except* Exception as eg:
+            exc = eg.exceptions[0]
+            raise MCPError(f"MCP call failed: {exc}") from exc
+
     tokens = await storage.get_tokens()
     if not tokens or not tokens.access_token:
         raise MCPError("Not connected to QMe — please reconnect.")
 
-    headers = {"Authorization": f"Bearer {tokens.access_token}"}
-
     try:
-        async with streamablehttp_client(settings.QME_MCP_BASE_URL, headers=headers) as (r, w, _):
-            async with ClientSession(r, w) as session:
-                await session.initialize()
-                result = await session.call_tool(name, arguments)
-    except* httpx.HTTPStatusError as eg:
-        exc = eg.exceptions[0]
-        status = exc.response.status_code
-        if status in (401, 403):
-            raise MCPError("QMe token expired or unauthorised — please reconnect.") from exc
-        raise MCPError(f"QMe MCP server returned {status} — check token or survey ID.") from exc
-    except* Exception as eg:
-        exc = eg.exceptions[0]
-        raise MCPError(f"MCP call failed: {exc}") from exc
+        result = await _do_call(tokens.access_token)
+    except MCPError as first_err:
+        # On 401/403 mid-call: try refresh once then retry
+        if "__auth_" in str(first_err) and storage._refresh_token:
+            log.info("call_tool: got %s mid-call, refreshing token (session=%s…)",
+                     str(first_err), session_id[:8])
+            ok = await storage.refresh()
+            if not ok:
+                raise MCPError("QMe token expired or unauthorised — please reconnect.") from first_err
+            tokens = await storage.get_tokens()
+            if not tokens or not tokens.access_token:
+                raise MCPError("QMe token expired or unauthorised — please reconnect.")
+            result = await _do_call(tokens.access_token)
+        else:
+            # Re-raise with clean message (strip internal marker)
+            msg = str(first_err).replace("__auth_401__", "QMe token expired or unauthorised — please reconnect.") \
+                                 .replace("__auth_403__", "QMe token unauthorised — please reconnect.")
+            raise MCPError(msg) from first_err
 
     if result.content and hasattr(result.content[0], "text"):
         import json as _json

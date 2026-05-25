@@ -28,7 +28,7 @@ _TOKEN_URL = f"{settings.QME_MCP_BASE_URL}/oauth/token"
 _SESSION_TTL = 300  # 5 minutes
 
 _COOKIE_NAME = "sf_session"
-_COOKIE_MAX_AGE = 8 * 3600  # 8 hours
+_COOKIE_MAX_AGE = 30 * 86400  # 30 days
 
 # Rate limiting — per IP, disk-backed (shared across all Gunicorn workers)
 _RATE_LIMIT_MAX    = 5   # max login attempts
