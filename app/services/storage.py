@@ -66,7 +66,9 @@ class LocalStorage(StorageBackend):
     def write_bytes(self, key: str, data: bytes) -> None:
         p = self._p(key)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(data)
+        tmp = p.parent / (p.name + ".tmp")
+        tmp.write_bytes(data)
+        tmp.replace(p)
 
     def exists(self, key: str) -> bool:
         return self._p(key).exists()

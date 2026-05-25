@@ -10,3 +10,4 @@ services:
     volumes:
       - ./app:/app
     restart: unless-stopped
+    stop_grace_period: 30s
