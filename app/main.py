@@ -30,8 +30,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[],        # no cross-origin allowed
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=[],
+    allow_headers=[],
 )
 
 
@@ -59,12 +59,22 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 @app.get("/api/version")
 async def get_version():
+    apdp_version = "unknown"
+    for candidate in [
+        Path(__file__).parent / "version.txt",         # Docker: COPY version.txt .
+        Path(__file__).parent.parent / "version.txt",  # local dev: repo root
+    ]:
+        try:
+            apdp_version = candidate.read_text().strip()
+            break
+        except Exception:
+            pass
     try:
         import surveyflow
         sf_version = surveyflow.__version__
     except Exception:
         sf_version = "unknown"
-    return {"surveyflow": sf_version}
+    return {"apdp": apdp_version, "surveyflow": sf_version}
 
 
 _NO_CACHE = {"Cache-Control": "no-store"}

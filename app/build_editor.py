@@ -1,8 +1,20 @@
-"""One-time script to build app/static/editor.html from the surveyflow source."""
+"""One-time script to build app/static/editor.html from the surveyflow source.
+
+Usage:
+    python build_editor.py <src_html> <dst_html>
+
+Example:
+    python build_editor.py ../surveyflow/skills/surveyflow/datatable-editor.html static/editor.html
+"""
+import sys
 from pathlib import Path
 
-SRC = Path("C:/Users/PC/OneDrive/DevZone/PyPackages/surveyflow/skills/surveyflow/datatable-editor.html")
-DST = Path("G:/My Drive/AP_Tools/apdp/app/static/editor.html")
+if len(sys.argv) != 3:
+    print(__doc__)
+    sys.exit(1)
+
+SRC = Path(sys.argv[1])
+DST = Path(sys.argv[2])
 
 html = SRC.read_text(encoding="utf-8")
 

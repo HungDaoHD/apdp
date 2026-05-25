@@ -3384,7 +3384,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     const v = await fetch('/api/version').then(r => r.json());
     const el = document.getElementById('sfVersionBadge');
-    if (el) el.textContent = `surveyflow v${v.surveyflow}`;
+    if (el) el.textContent = `surveyflow v${v.surveyflow} · apdp v${v.apdp}`;
   } catch(e) {}
 
   // Show Raw button only for admin email

@@ -5,7 +5,7 @@ import asyncio
 import logging
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from dependencies import require_qme
 from services.mcp_client import get_storage as get_token_storage, get_access_token
@@ -39,6 +39,12 @@ def _is_auth_error(exc: BaseException) -> bool:
     except ImportError:
         pass
     return False
+
+
+def _sanitize_mcp_error(exc: BaseException) -> str:
+    if _is_auth_error(exc):
+        return "QMe authentication failed — please reconnect"
+    return "QMe service error — see server logs"
 
 
 def _raise_if_auth(exc: BaseException, session_id: str | None = None) -> None:
@@ -132,7 +138,7 @@ async def list_mcp_tools(session_id: str = Depends(require_qme)):
     except Exception as exc:
         log.warning("list_mcp_tools failed: %s", exc)
         _raise_if_auth(exc, session_id)
-        raise HTTPException(502, f"MCP error: {exc}")
+        raise HTTPException(502, _sanitize_mcp_error(exc))
 
     return [
         {
@@ -147,8 +153,13 @@ async def list_mcp_tools(session_id: str = Depends(require_qme)):
 # ── search ────────────────────────────────────────────────────────────────────
 
 @router.get("/search")
-async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends(require_qme)):
-    limit = min(max(limit, 1), 200)  # M6: clamp to [1, 200]
+async def search_surveys(request: Request, q: str = "", limit: int = 50,
+                         session_id: str = Depends(require_qme)):
+    limit = min(max(limit, 1), 200)
+    ip = request.client.host if request.client else "unknown"
+    from config import settings
+    from services.rate_limiter import check as _rl_check
+    _rl_check(ip, settings.DATA_DIR, limit=20, window=60, prefix="rate_search")
     from surveyflow import QMeClient
     from config import settings
 
@@ -170,7 +181,7 @@ async def search_surveys(q: str = "", limit: int = 50, session_id: str = Depends
     except Exception as exc:
         log.warning("search_surveys failed: %s", exc)
         _raise_if_auth(exc, session_id)
-        raise HTTPException(502, f"Search unavailable: {exc}")
+        raise HTTPException(502, _sanitize_mcp_error(exc))
 
 
 # ── fetch from QMe ────────────────────────────────────────────────────────────
@@ -214,7 +225,7 @@ async def fetch_survey(survey_id: int, session_id: str = Depends(require_qme)):
     except Exception as exc:
         log.warning("fetch_survey failed for survey %s: %s", survey_id, exc)
         _raise_if_auth(exc, session_id)
-        raise HTTPException(502, str(exc))
+        raise HTTPException(502, _sanitize_mcp_error(exc))
 
 
 # ── status ────────────────────────────────────────────────────────────────────

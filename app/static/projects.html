@@ -809,6 +809,10 @@ async function disconnectQme() {
 // ── Init ──
 loadProjects();
 checkQmeStatus();
+fetch('/api/version').then(r => r.json()).then(d => {
+  document.getElementById('appVersion').textContent = `apdp v${d.apdp} · sf v${d.surveyflow}`;
+}).catch(() => {});
 </script>
+<div id="appVersion" style="position:fixed;bottom:8px;right:12px;font-size:10px;color:#555;pointer-events:none;z-index:10001;white-space:nowrap;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:3px;border:1px solid rgba(0,0,0,.08);box-shadow:0 1px 3px rgba(0,0,0,.1)"></div>
 </body>
 </html>

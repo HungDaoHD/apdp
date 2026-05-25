@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import settings
-from services.mcp_client import get_storage, cleanup_expired_sessions, invalidate_sessions_for_email
+from services.mcp_client import get_storage, cleanup_expired_sessions, invalidate_sessions_for_email, _get_fernet
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/qme", tags=["qme-auth"])
@@ -28,32 +28,12 @@ _TOKEN_URL = f"{settings.QME_MCP_BASE_URL}/oauth/token"
 _SESSION_TTL = 300  # 5 minutes
 
 _COOKIE_NAME = "sf_session"
-_COOKIE_MAX_AGE = 30 * 86400  # 30 days
-
-# Rate limiting — per IP, disk-backed (shared across all Gunicorn workers)
-_RATE_LIMIT_MAX    = 5   # max login attempts
-_RATE_LIMIT_WINDOW = 60  # per 60 seconds
+_COOKIE_MAX_AGE = 7 * 86400   # 7 days
 
 
 def _check_rate_limit(ip: str) -> None:
-    import json as _json
-    now = time.time()
-    # Hash IP so raw addresses are not stored in filenames
-    ip_hash = hashlib.sha256(ip.encode()).hexdigest()[:16]
-    rate_file = _login_dir() / f".rate_{ip_hash}.json"
-    try:
-        attempts = [t for t in _json.loads(rate_file.read_text()).get("a", [])
-                    if now - t < _RATE_LIMIT_WINDOW]
-    except Exception:
-        attempts = []
-    if len(attempts) >= _RATE_LIMIT_MAX:
-        raise HTTPException(429, "Too many login attempts — please wait a minute")
-    attempts.append(now)
-    try:
-        rate_file.parent.mkdir(parents=True, exist_ok=True)
-        rate_file.write_text(_json.dumps({"a": attempts}))
-    except Exception:
-        pass
+    from services.rate_limiter import check as _rl_check
+    _rl_check(ip, settings.DATA_DIR, limit=5, window=60, prefix="rate_login")
 
 
 # ── Disk-based login sessions (shared across all Gunicorn workers) ─────────────
@@ -69,16 +49,29 @@ def _login_file(login_key: str) -> Path:
 def _save_login_session(login_key: str, data: dict) -> None:
     f = _login_file(login_key)
     f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps(data))
+    payload = json.dumps(data).encode()
+    fernet = _get_fernet()
+    if fernet:
+        payload = fernet.encrypt(payload)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_bytes(payload)
     try:
-        f.chmod(0o600)
+        tmp.chmod(0o600)
     except Exception:
         pass
+    tmp.replace(f)
 
 
 def _get_login_session(login_key: str) -> dict | None:
     try:
-        return json.loads(_login_file(login_key).read_text())
+        raw = _login_file(login_key).read_bytes()
+        fernet = _get_fernet()
+        if fernet:
+            try:
+                raw = fernet.decrypt(raw)
+            except Exception:
+                pass  # unencrypted legacy file
+        return json.loads(raw)
     except Exception:
         return None
 
@@ -160,7 +153,8 @@ async def qme_login(body: LoginBody, request: Request):
         log.info("authorize → %s  url=%s", r0.status_code, r0.url)
 
         if r0.status_code >= 400:
-            raise HTTPException(502, f"QMe authorize failed ({r0.status_code}): {r0.text[:300]}")
+            log.warning("QMe authorize failed (%s): %s", r0.status_code, r0.text[:300])
+            raise HTTPException(502, "QMe authorization service unavailable — please try again")
 
         csrf = _extract_csrf(r0.text)
         if not csrf:
@@ -392,7 +386,8 @@ async def _exchange_code(code: str, code_verifier: str, redirect_uri: str) -> di
     log.info("Token exchange → %s  %s", r.status_code, r.text[:300])
 
     if r.status_code != 200:
-        raise HTTPException(502, f"Token exchange failed ({r.status_code}): {r.text[:300]}")
+        log.warning("Token exchange failed (%s): %s", r.status_code, r.text[:300])
+        raise HTTPException(502, "Token exchange failed — please try logging in again")
     return r.json()
 
 

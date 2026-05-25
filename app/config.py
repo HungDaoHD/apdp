@@ -17,7 +17,8 @@ class Settings(BaseSettings):
 
     # Server
     PORT: int = 8000
-    SECURE_COOKIES: bool = False  # Set True when running behind HTTPS
+    SECURE_COOKIES: bool = True   # Set False only for local HTTP development
+    TOKEN_SECRET_KEY: str = ""    # Derive Fernet key to encrypt token files at rest
 
     # Storage
     DATA_DIR:         str = "data"

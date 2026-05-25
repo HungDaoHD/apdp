@@ -194,6 +194,7 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
 
     log.info("[refresh:%s] background task started", survey_id)
 
+    storage = get_token_storage(session_id)
     access_token = get_access_token(session_id)
     if not access_token:
         log.warning("[refresh:%s] no access token — aborting", survey_id)
@@ -201,7 +202,6 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
         return
 
     log.info("[refresh:%s] token OK — creating QMeClient (url=%s)", survey_id, settings.QME_MCP_BASE_URL)
-    client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
 
     started_at = datetime.now(timezone.utc).isoformat()
 
@@ -211,26 +211,51 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
         _write_refresh_status(survey_id, {
             "status":     "running",
             "step":       msg,
-            "started_at": started_at,   # keep original start time for stale guard
+            "started_at": started_at,
         })
+
+    async def _run(token: str) -> dict:
+        c = QMeClient(settings.QME_MCP_BASE_URL, token)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: pipeline_svc.refresh(survey_id, c, _step)
+        )
 
     try:
         _step("Connecting to QMe…")
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None, lambda: pipeline_svc.refresh(survey_id, client, _step)
-        )
-        log.info("[refresh:%s] executor finished — n_rows=%s", survey_id, result.get("n_rows"))
-        _upsert_info(survey_id, session_id)
-        _write_refresh_status(survey_id, {"status": "done", **result})
-        log.info("[refresh:%s] status=done written", survey_id)
-    except Exception as exc:
-        root = _unwrap_exc(exc)
-        detail = str(root)
-        log.exception("[refresh:%s] pipeline failed: %s", survey_id, detail)
-        if _is_auth_error(exc):
-            _clear_token(session_id)
-        _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(detail)})
+        result = await _run(access_token)
+    except Exception as first_exc:
+        if _is_auth_error(first_exc):
+            # QMeClient (sync) cannot auto-refresh — do it here then retry once
+            log.info("[refresh:%s] 401 mid-task — refreshing token and retrying once", survey_id)
+            ok = await storage.refresh()
+            new_token = get_access_token(session_id) if ok else None
+            if new_token:
+                try:
+                    _step("Token refreshed — retrying…")
+                    result = await _run(new_token)
+                except Exception as retry_exc:
+                    root = _unwrap_exc(retry_exc)
+                    log.exception("[refresh:%s] retry failed: %s", survey_id, root)
+                    if _is_auth_error(retry_exc):
+                        _clear_token(session_id)
+                    _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(str(root))})
+                    return
+            else:
+                _clear_token(session_id)
+                _write_refresh_status(survey_id, {"status": "error", "detail": "QMe authentication failed — please reconnect"})
+                return
+        else:
+            root = _unwrap_exc(first_exc)
+            detail = str(root)
+            log.exception("[refresh:%s] pipeline failed: %s", survey_id, detail)
+            _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(detail)})
+            return
+
+    log.info("[refresh:%s] executor finished — n_rows=%s", survey_id, result.get("n_rows"))
+    _upsert_info(survey_id, session_id)
+    _write_refresh_status(survey_id, {"status": "done", **result})
+    log.info("[refresh:%s] status=done written", survey_id)
 
 
 def _upsert_info(survey_id: int, session_id: str) -> None:
@@ -262,6 +287,11 @@ async def generate_xlsx(survey_id: int, request: Request,
     Body (optional): { "datatable_config": [...] }
     profile_status query param: comma-separated, e.g. "approved" or "approved,pending"
     """
+    ip = request.client.host if request.client else "unknown"
+    from services.rate_limiter import check as _rl_check
+    _rl_check(ip, settings.DATA_DIR, limit=10, window=60, prefix="rate_gen")
+    email = get_token_storage(session_id).email or "unknown"
+    log.warning("AUDIT generate_xlsx: survey=%s user=%s ip=%s", survey_id, email, ip)
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
@@ -285,8 +315,8 @@ async def generate_xlsx(survey_id: int, request: Request,
             lambda: pipeline_svc.generate_xlsx(survey_id, dt_config=dt_config,
                                                 profile_status=statuses),
         )
-    except FileNotFoundError as exc:
-        raise HTTPException(400, str(exc))
+    except FileNotFoundError:
+        raise HTTPException(400, "Required data file not found — run Refresh first")
     except Exception as exc:
         log.exception("generate_xlsx failed for survey %s", survey_id)
         raise HTTPException(500, "Pipeline error — check server logs")
@@ -462,6 +492,9 @@ async def get_datatable(survey_id: int, session_id: str = Depends(require_qme)):
 async def save_datatable(survey_id: int, request: Request,
                          session_id: str = Depends(require_qme)):
     body = await request.json()
+    email = get_token_storage(session_id).email or "unknown"
+    ip = request.client.host if request.client else "unknown"
+    log.warning("AUDIT save_datatable: survey=%s user=%s ip=%s", survey_id, email, ip)
     get_storage().write_json(f"{survey_id}/datatable/datatable.json", body)
     return {"status": "saved"}
 
@@ -469,13 +502,19 @@ async def save_datatable(survey_id: int, request: Request,
 # ── run pipeline (table step) ─────────────────────────────────────────────────
 
 @router.post("/{survey_id}/run")
-async def run_pipeline(survey_id: int, version: str | None = None,
+async def run_pipeline(survey_id: int, request: Request,
+                       version: str | None = None,
                        profile_status: str = "approved",
                        session_id: str = Depends(require_qme)):
     """Run table step and save versioned datatable.xlsx.
 
     profile_status: comma-separated list, e.g. "approved" or "approved,pending"
     """
+    ip = request.client.host if request.client else "unknown"
+    from services.rate_limiter import check as _rl_check
+    _rl_check(ip, settings.DATA_DIR, limit=10, window=60, prefix="rate_run")
+    email = get_token_storage(session_id).email or "unknown"
+    log.warning("AUDIT run_pipeline: survey=%s version=%s user=%s ip=%s", survey_id, version, email, ip)
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run /ingest first — rawdata.csv not found")
@@ -487,8 +526,8 @@ async def run_pipeline(survey_id: int, version: str | None = None,
     statuses = _parse_profile_status(profile_status)
     try:
         return pipeline_svc.run_table(survey_id, version, profile_status=statuses)
-    except FileNotFoundError as exc:
-        raise HTTPException(400, str(exc))
+    except FileNotFoundError:
+        raise HTTPException(400, "Required data file not found — run Refresh first")
     except Exception as exc:
         log.exception("run_table failed for survey %s", survey_id)
         raise HTTPException(500, "Pipeline error — check server logs")

@@ -21,6 +21,37 @@ def _token_dir() -> Path:
     return Path(os.getenv("DATA_DIR", "data"))
 
 
+def _get_fernet():
+    """Return a Fernet instance if TOKEN_SECRET_KEY is configured, else None."""
+    try:
+        from config import settings
+        if not settings.TOKEN_SECRET_KEY:
+            return None
+        import base64, hashlib
+        from cryptography.fernet import Fernet
+        key = base64.urlsafe_b64encode(hashlib.sha256(settings.TOKEN_SECRET_KEY.encode()).digest())
+        return Fernet(key)
+    except Exception:
+        return None
+
+
+def _restrict_windows(path: Path) -> None:
+    """Restrict file permissions to current user on Windows via icacls."""
+    try:
+        import subprocess
+        if os.name != "nt":
+            return
+        username = os.environ.get("USERNAME", "")
+        if not username:
+            return
+        subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{username}:(R,W)"],
+            check=False, capture_output=True,
+        )
+    except Exception:
+        pass
+
+
 class MCPError(Exception):
     """Raised when an MCP tool call fails."""
 
@@ -148,28 +179,37 @@ class MemoryTokenStorage:
         try:
             f = self._token_file()
             f.parent.mkdir(parents=True, exist_ok=True)
-            # L-1: atomic write — write to .tmp, chmod, then rename to avoid
-            # a window where the file exists but has loose permissions
-            tmp = f.with_suffix(".tmp")
-            tmp.write_text(json.dumps({
+            payload = json.dumps({
                 "access_token":  self._access_token,
                 "token_type":    self._token_type,
                 "refresh_token": self._refresh_token,
                 "scope":         self._scope,
                 "expires_at":    self._expires_at,
                 "email":         self._email,
-            }))
+            }).encode()
+            fernet = _get_fernet()
+            if fernet:
+                payload = fernet.encrypt(payload)
+            tmp = f.with_suffix(".tmp")
+            tmp.write_bytes(payload)
             try:
-                tmp.chmod(0o600)  # owner read/write only
+                tmp.chmod(0o600)
             except Exception:
-                pass  # Windows: chmod is a no-op, ACLs are set at dir level
-            tmp.replace(f)  # atomic rename
+                _restrict_windows(tmp)
+            tmp.replace(f)
         except Exception as e:
             log.warning("Could not save token to disk: %s", e)
 
     def _load_from_disk(self) -> None:
         try:
-            data = json.loads(self._token_file().read_text())
+            raw = self._token_file().read_bytes()
+            fernet = _get_fernet()
+            if fernet:
+                try:
+                    raw = fernet.decrypt(raw)
+                except Exception:
+                    pass  # unencrypted legacy file — will be re-saved encrypted on next write
+            data = json.loads(raw)
             if data.get("access_token") and time.time() < data.get("expires_at", 0) - 60:
                 self._access_token  = data["access_token"]
                 self._token_type    = data.get("token_type", "Bearer")

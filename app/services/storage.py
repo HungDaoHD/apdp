@@ -80,7 +80,7 @@ class LocalStorage(StorageBackend):
         return [
             str(p.relative_to(self.base)).replace("\\", "/")
             for p in base.rglob("*")
-            if p.is_file()
+            if p.is_file() and not p.name.endswith(".tmp")
         ]
 
     def list_survey_ids(self) -> list[int]:
