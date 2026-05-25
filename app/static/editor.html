@@ -71,6 +71,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .tb-nm{background:#e8eaf6;color:#3949ab;border:1px solid #9fa8da}
 .tb-rk{background:#fff8e1;color:#e65100;border:1px solid #ffcc02}
 .tb-ot{background:#f5f5f5;color:#888;border:1px solid #ddd}
+.tb-net{background:#fce4ec;color:#c62828;border:1px solid #ef9a9a}
+.tb-comb{background:#e0f2f1;color:#004d40;border:1px solid #80cbc4}
 
 /* Tables Sidebar */
 .tbs{width:160px;min-width:160px;background:white;border-right:1px solid #e0e4ea;display:flex;flex-direction:column}
@@ -321,9 +323,12 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 .dt-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-rlbl-base{font-weight:700;color:#333;background:#f0f2f5}
 .dt-rlbl-summ{font-weight:700;color:#7b1fa2;background:#f9f0ff;font-style:italic}
+.dt-rlbl-grp{font-weight:700;color:#1565c0;background:#dbeafe;padding-left:8px}
+.dt-rlbl-netted{padding-left:28px;color:#555;background:#f8f9fb}
 .dt-cell{text-align:right;padding:3px 8px;color:#222;background:white}
 .dt-base{background:#f0f2f5;font-weight:700;color:#444}
 .dt-summ{background:#f9f0ff;color:#6a1b9a;font-style:italic}
+.dt-grp{background:#dbeafe;font-weight:700;color:#1565c0}
 .dt-choice:nth-child(odd) .dt-cell{background:#fafbfc}
 .dt-sig{color:#c0392b;font-size:8px;font-weight:700;margin-left:2px}
 .dt-type{font-size:9px;background:#253870;color:#a8c7fa;padding:1px 5px;border-radius:3px;margin-left:6px;font-weight:400}
@@ -1247,7 +1252,8 @@ function openStubModal(idx) {
     item.question || '',
     renderStubModalBody(modalSt.item, mq),
     `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
-     <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`
+     <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
+    {noBackdrop:true}
   );
 }
 
@@ -1405,6 +1411,14 @@ function renderStubModalBody(item, mq) {
       <input type="checkbox" ${stats.includes(s)?'checked':''} onchange="mStatToggle('${s}',this.checked)">
       ${s}</label>`).join('')}
   </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;margin-top:14px">
+    <span class="slabel">Groups (${(item.groups||[]).length})</span>
+    <button class="btn btn-sec btn-xs" onclick="msAddGroup()">+ Group</button>
+  </div>
+  <div id="ms_groups">
+    ${(item.groups||[]).map((g,i)=>renderStubGroup(g,i)).join('')}
+    ${!(item.groups||[]).length?'<div style="font-size:11px;color:#bbb;padding:6px 0">No groups — all choices shown as individual rows</div>':''}
+  </div>
   ${choicesHtml}${rankingHtml}`;
 }
 
@@ -1496,9 +1510,55 @@ function mGrpDrop(e, i) {
 }
 function _refreshGroups() {
   const grps = modalSt?.item?.groups || [];
-  document.getElementById('mb_groups').innerHTML =
-    grps.map((g,i) => renderModalGroup(g,i)).join('') ||
+  const isStub = modalSt?.type === 'stub';
+  const el = document.getElementById(isStub ? 'ms_groups' : 'mb_groups');
+  if (!el) return;
+  const renderFn = isStub ? renderStubGroup : renderModalGroup;
+  el.innerHTML = grps.map((g,i) => renderFn(g,i)).join('') ||
     '<div style="font-size:11px;color:#bbb;padding:6px 0">No groups</div>';
+}
+
+// ── Stub group helpers (codes:[4,5], type:"netted"|"combine") ──────────────────
+function renderStubGroup(g, i) {
+  const codes = (g.codes||[]).join(', ');
+  const type  = g.type || 'netted';
+  return `<div class="bgr" id="msr_${i}" draggable="true"
+    ondragstart="mGrpDragStart(event,${i})"
+    ondragend="mGrpDragEnd(event)"
+    ondragover="mGrpDragOver(event,${i})"
+    ondrop="mGrpDrop(event,${i})">
+    <div class="sdh" style="cursor:grab;padding:0 4px;font-size:15px;color:#ccc;align-self:flex-end;padding-bottom:6px" title="Drag to reorder">⠿</div>
+    <div class="fg" style="flex:1.5"><label class="fl">Label</label>
+      <input type="text" value="${a(g.label||'')}" oninput="msGrpF(${i},'label',this.value)" placeholder="Positive"></div>
+    <div class="fg"><label class="fl">Codes (comma)</label>
+      <input type="text" value="${a(codes)}" oninput="msGrpCodes(${i},this.value)" placeholder="4,5"></div>
+    <div><label class="fl">Type</label>
+      <button class="btn btn-sec btn-xs" onclick="msGrpType(${i})" title="netted = group header + detail rows; combine = group header only">${type==='combine'?'Combine':'Netted'}</button></div>
+    <div><label class="fl">&nbsp;</label>
+      <button class="btn btn-dan btn-xs" onclick="msGrpRm(${i})">✕</button></div>
+  </div>`;
+}
+function msAddGroup() {
+  if (!modalSt?.item) return;
+  if (!modalSt.item.groups) modalSt.item.groups = [];
+  modalSt.item.groups.push({ label: 'New group', codes: [] });
+  _refreshGroups();
+}
+function msGrpF(i, k, v)  { if (modalSt?.item?.groups?.[i]) modalSt.item.groups[i][k] = v; }
+function msGrpCodes(i, v) {
+  const g = modalSt?.item?.groups?.[i]; if (!g) return;
+  g.codes = v.split(',').map(x => { const n = parseInt(x.trim()); return isNaN(n) ? x.trim() : n; }).filter(x => x !== '');
+}
+function msGrpType(i) {
+  const g = modalSt?.item?.groups?.[i]; if (!g) return;
+  g.type = (g.type || 'netted') === 'netted' ? 'combine' : 'netted';
+  _refreshGroups();
+}
+function msGrpRm(i) {
+  if (!modalSt?.item?.groups) return;
+  modalSt.item.groups.splice(i, 1);
+  if (!modalSt.item.groups.length) delete modalSt.item.groups;
+  _refreshGroups();
 }
 function mStatToggle(s,on) {
   const it=modalSt?.item; if (!it) return;
@@ -1648,7 +1708,7 @@ function closeModal() {
   document.getElementById('modal').style.display = 'none';
   modalSt = null; _modalNoBackdrop = false;
 }
-function onModalOvClick(e) { if (!_modalNoBackdrop && e.target===document.getElementById('modal')) closeModal(); }
+function onModalOvClick(e) { if (!_modalNoBackdrop && !e.target.closest('.mdlg')) closeModal(); }
 
 // ════════════════════════════════════════════════════
 // RENDER
@@ -1849,6 +1909,8 @@ function renderLayout(c) {
       <span class="slbl">${h(item.question||'?')}</span>
       <span class="sname">${h(item.label||'')}</span>
       ${t?`<span class="tb ${typeBadgeClass(t)}" style="font-size:9px">${t}</span>`:''}
+      ${(item.groups||[]).some(g=>!g.type||g.type==='netted')?`<span class="tb tb-net" style="font-size:9px">NET</span>`:''}
+      ${(item.groups||[]).some(g=>g.type==='combine')?`<span class="tb tb-comb" style="font-size:9px">COMB</span>`:''}
       ${extra.length?`<span class="sstats">[${extra.join(',')}]</span>`:''}
       <span class="sx" onclick="event.stopPropagation();removeStub(${i})">✕</span>
     </div>`;
@@ -2594,6 +2656,76 @@ function buildNumericRows(stats, colData) {
   return rows;
 }
 
+function buildGroupRows(stats, choices, colData, stubGroups, cellContent, pctDec, bannerCols, mq) {
+  // Build OR-count helper: count respondents where ANY of `codes` is selected
+  const col    = mq ? qRawCol(mq) : '';
+  const isBin  = mq ? isMAbinary(mq) : false;
+  const c2col  = {};
+  if (isBin && mq) {
+    for (const rc of (mq.rawdata_columns||[])) {
+      const m = rc.slice(mq.label.length).match(/^_(\d+)$/);
+      if (m) c2col[Number(m[1])] = rc;
+    }
+  }
+  function countOr(bcRows, codes) {
+    return bcRows.filter(r => {
+      if (isBin) return codes.some(c => { const bc = c2col[c]; return bc && Number(r[bc]) > 0; });
+      return cellVals(r[col]).some(v => codes.includes(v));
+    }).length;
+  }
+
+  const rows = [];
+  if (stats.includes('base')) {
+    rows.push({ label:'Base', type:'base', cells: colData.map(cd => ({ display:String(cd.base), raw:cd.base })) });
+  }
+  const allGroupedCodes = new Set(stubGroups.flatMap(g => (g.codes||[]).map(Number)));
+  for (const grp of stubGroups) {
+    const grpCodes = (grp.codes||[]).map(Number).filter(c => choices.some(ch => Number(ch.code) === c));
+    if (!grpCodes.length) continue;
+    const grpType = grp.type || 'netted';
+    const groupCells = (bannerCols||[]).map((bc, ci) => {
+      const base = colData[ci]?.base ?? 0;
+      const cnt  = countOr(bc.rows, grpCodes);
+      const pct  = base > 0 ? cnt/base*100 : 0;
+      const val  = cellContent==='count' ? cnt : pct;
+      return { display: cellContent==='count' ? String(cnt) : fmtPct(pct,pctDec), raw:val, count:cnt, base };
+    });
+    rows.push({ label: grp.label, type:'group', cells: groupCells });
+    if (grpType === 'netted') {
+      for (const code of grpCodes) {
+        const ch = choices.find(c => Number(c.code) === code);
+        if (!ch) continue;
+        const cells = colData.map(cd => {
+          const cnt = cd.counts.find(x=>x.code===code)?.count||0;
+          const pct = cd.base > 0 ? cnt/cd.base*100 : 0;
+          const val = cellContent==='count' ? cnt : pct;
+          return { display: cellContent==='count' ? String(cnt) : fmtPct(pct,pctDec), raw:val, count:cnt, base:cd.base };
+        });
+        rows.push({ label:`${ch.code}. ${i18nStr(ch.label)||String(ch.code)}`, type:'netted', cells });
+      }
+    }
+  }
+  // Ungrouped choices
+  for (const ch of choices) {
+    if (allGroupedCodes.has(Number(ch.code))) continue;
+    const code = Number(ch.code);
+    const cells = colData.map(cd => {
+      const cnt = cd.counts.find(x=>x.code===code)?.count||0;
+      const pct = cd.base > 0 ? cnt/cd.base*100 : 0;
+      const val = cellContent==='count' ? cnt : pct;
+      return { display: cellContent==='count' ? String(cnt) : fmtPct(pct,pctDec), raw:val, count:cnt, base:cd.base };
+    });
+    rows.push({ label:`${ch.code}. ${i18nStr(ch.label)||String(ch.code)}`, type:'choice', cells });
+  }
+  // Summary stats (over all choices)
+  if (stats.includes('t2b')) rows.push({ label:'T2B', type:'summary', cells: colData.map(cd=>{ const v=cellContent==='count'?cd.t2b:(cd.base>0?cd.t2b/cd.base*100:0); return { display:cellContent==='count'?String(cd.t2b):fmtPct(v,pctDec), raw:v }; })});
+  if (stats.includes('b2b')) rows.push({ label:'B2B', type:'summary', cells: colData.map(cd=>{ const v=cellContent==='count'?cd.b2b:(cd.base>0?cd.b2b/cd.base*100:0); return { display:cellContent==='count'?String(cd.b2b):fmtPct(v,pctDec), raw:v }; })});
+  if (stats.includes('mean')) rows.push({ label:'Mean', type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.mean), raw:cd.mean }))});
+  if (stats.includes('std'))  rows.push({ label:'Std',  type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.std),  raw:cd.std  }))});
+  if (stats.includes('se'))   rows.push({ label:'SE',   type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.std/Math.sqrt(cd.base||1)), raw:cd.std }))});
+  return rows;
+}
+
 // ── Block computation ────────────────────────────────
 function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pctDec=0) {
   const qLabel = stubItem.question;
@@ -2621,8 +2753,11 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pct
     const colData = isMAbinary(mq)
       ? bannerCols.map(bc => computeChoiceStatsBinary(bc.rows, mq.rawdata_columns, mq.label, filtCh.map(c=>c.code)))
       : bannerCols.map(bc => computeChoiceStats(bc.rows, col, filtCh.map(c=>c.code)));
-    return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qLabel, answerType:t,
-      rows: buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels, t==='SA'||t==='MA', pctDec) };
+    const stubGroups = stubItem.groups || [];
+    const rows = stubGroups.length
+      ? buildGroupRows(stats, filtCh, colData, stubGroups, cellContent, pctDec, bannerCols, mq)
+      : buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels, t==='SA'||t==='MA', pctDec);
+    return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qLabel, answerType:t, rows };
   }
   // Sub-question reference (e.g. "Q17_r1")
   const sq = metaSubMap[qLabel];
@@ -2822,13 +2957,22 @@ function renderTableHTML(tableData) {
 }
 
 function renderRow(row, nCols) {
-  const lc = row.type==='base' ? 'dt-rlbl dt-rlbl-base' : row.type==='summary' ? 'dt-rlbl dt-rlbl-summ' : 'dt-rlbl';
+  const lc = row.type==='base'    ? 'dt-rlbl dt-rlbl-base'
+           : row.type==='summary' ? 'dt-rlbl dt-rlbl-summ'
+           : row.type==='group'   ? 'dt-rlbl dt-rlbl-grp'
+           : row.type==='netted'  ? 'dt-rlbl dt-rlbl-netted'
+           : 'dt-rlbl';
   const cells = row.cells.map((c,ci) => {
     const sigTxt = row.sigs?.[ci]?.hi?.length ? ` <sup class="dt-sig">${row.sigs[ci].hi.join(',')}</sup>` : '';
-    const cc = row.type==='base' ? 'dt-cell dt-base' : row.type==='summary' ? 'dt-cell dt-summ' : 'dt-cell';
+    const cc = row.type==='base'    ? 'dt-cell dt-base'
+             : row.type==='summary' ? 'dt-cell dt-summ'
+             : row.type==='group'   ? 'dt-cell dt-grp'
+             : row.type==='netted'  ? 'dt-cell'
+             : 'dt-cell';
     return `<td class="${cc}">${c.display}${sigTxt}</td>`;
   }).join('');
-  return `<tr><td class="${lc}">${h(row.label)}</td>${cells}</tr>`;
+  const lblStyle = row.type==='netted' ? ' style="padding-left:32px"' : '';
+  return `<tr><td class="${lc}"${lblStyle}>${h(row.label)}</td>${cells}</tr>`;
 }
 
 // ── Preview panel ────────────────────────────────────
