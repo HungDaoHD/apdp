@@ -9,5 +9,6 @@ services:
       - "9000:8000"
     volumes:
       - ./app:/app
+      - ./version.txt:/app/version.txt:ro
     restart: unless-stopped
     stop_grace_period: 30s
