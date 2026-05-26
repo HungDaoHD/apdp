@@ -59,16 +59,10 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 @app.get("/api/version")
 async def get_version():
-    apdp_version = "unknown"
-    for candidate in [
-        Path(__file__).parent / "version.txt",         # Docker: COPY version.txt .
-        Path(__file__).parent.parent / "version.txt",  # local dev: repo root
-    ]:
-        try:
-            apdp_version = candidate.read_text().strip()
-            break
-        except Exception:
-            pass
+    try:
+        from _version import __version__ as apdp_version
+    except Exception:
+        apdp_version = "unknown"
     try:
         import surveyflow
         sf_version = surveyflow.__version__
