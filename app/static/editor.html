@@ -73,6 +73,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .tb-ot{background:#f5f5f5;color:#888;border:1px solid #ddd}
 .tb-net{background:#fce4ec;color:#c62828;border:1px solid #ef9a9a}
 .tb-comb{background:#e0f2f1;color:#004d40;border:1px solid #80cbc4}
+/* ── Quota Table ──────────────────────────────────── */
+.qta-bar{display:flex;align-items:center;gap:10px;padding:6px 12px;background:#f8f9fb;border-bottom:1px solid #e0e4ea;flex-shrink:0;flex-wrap:wrap}
+.qta-bar-lbl{font-size:11px;color:#555;font-weight:600}
+.qta-qsel{font-size:11px;padding:3px 6px;border:1px solid #c5cae9;border-radius:4px;background:white}
+.qta-hint{font-size:10px;color:#888;margin-left:auto}
+.qta-tbl{border-collapse:collapse;font-size:11px;min-width:100%}
+.qta-tbl th,.qta-tbl td{border:1px solid #dde;padding:3px 6px;white-space:nowrap}
+.qta-hdr-lbl{background:#253045;color:#e8ecf4;font-weight:700;position:sticky;left:0;z-index:5;min-width:30vw;max-width:30vw}
+.qta-hdr-grp{background:#1e3a5f;color:#93b4d9;text-align:center;font-weight:700}
+.qta-hdr-leaf{background:#253045;color:#e8ecf4;text-align:center;font-size:11px}
+.qta-hdr-t{background:#e8f5e9;color:#1b5e20;font-weight:700;text-align:center;font-size:10px;min-width:70px}
+.qta-hdr-c{background:#e3f2fd;color:#0d47a1;font-weight:700;text-align:center;font-size:10px;min-width:70px}
+.qta-hdr-r{background:#fce4ec;color:#880e4f;font-weight:700;text-align:center;font-size:10px;min-width:70px}
+.qta-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;z-index:1;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
+.qta-rlbl-base{font-weight:700;background:#f0f2f5}
+.qta-target-cell{padding:2px 4px;text-align:center}
+.qta-target{width:64px;border:1px solid #c8d6e5;border-radius:3px;padding:2px 4px;text-align:right;font-size:11px;background:white}
+.qta-target:focus{border-color:#1a73e8;outline:none}
+.qta-coll{text-align:right;padding:3px 8px}
+.qta-rem{text-align:right;padding:3px 8px;font-weight:600}
+.qta-rem-neg{color:#c62828}
+.qta-rem-ok{color:#1db954}
+.qta-rem-zero{}
 
 /* Tables Sidebar */
 .tbs{width:160px;min-width:160px;background:white;border-right:1px solid #e0e4ea;display:flex;flex-direction:column}
@@ -1720,7 +1743,7 @@ function renderSidebar() {
   if (!data.length) { el.innerHTML='<div style="padding:10px 11px;color:#bbb;font-size:11px">No table config</div>'; return; }
   el.innerHTML = data.map((c,i)=>`
     <div class="tbsi ${i===activeCfg?'on':''}" onclick="selCfg(${i})">
-      <div class="tbsi-name">${h(c.sub_title||'Table '+(i+1))}</div>
+      <div class="tbsi-name">${h(c.sub_title||'Table '+(i+1))}${c.type==='quota'?'<span style="font-size:9px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:8px;padding:1px 5px;margin-left:5px;font-weight:700">QUOTA</span>':''}</div>
       <div class="tbsi-sub">${h(c.title||'—')}</div>
     </div>`).join('');
 }
@@ -1741,10 +1764,11 @@ function renderMain() {
     return;
   }
   const c = data[activeCfg];
+  const isQuota = c.type === 'quota';
   el.innerHTML=`
     <div class="prow">
       <div class="ptitle">
-        <h2>${h(c.sub_title||'Table '+(activeCfg+1))}</h2>
+        <h2>${h(c.sub_title||'Table '+(activeCfg+1))}${isQuota?'<span style="font-size:10px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:8px;padding:2px 8px;margin-left:8px;font-weight:700;vertical-align:middle">QUOTA</span>':''}</h2>
         <p>${h(c.title||'—')}</p>
       </div>
       <button class="btn btn-dan btn-xs" onclick="removeCfg(${activeCfg})">🗑 Delete</button>
@@ -1753,7 +1777,7 @@ function renderMain() {
       <button class="tab ${activeTab==='layout'?'on':''}" onclick="setTab('layout')">
         📐 Layout <span class="tbg">${(c.banner||[]).length}+${(c.stub||[]).length}</span>
       </button>
-      <button class="tab ${activeTab==='settings'?'on':''}" onclick="setTab('settings')">⚙ Settings</button>
+      <button class="tab ${activeTab==='settings'?'on':''}" onclick="setTab('settings')">${isQuota?'🎯 Targets':'⚙ Settings'}</button>
     </div>
     <div id="tabBody">${activeTab==='layout'?renderLayout(c):renderSettings(c)}</div>`;
 }
@@ -1944,6 +1968,30 @@ function renderLayout(c) {
 
 // ─── SETTINGS TAB ─────────────────────────────────
 function renderSettings(c) {
+  if (c.type === 'quota') {
+    const tblBody = rawCsv
+      ? renderQuotaTargetInputs(c)
+      : `<div style="padding:20px;color:#888;text-align:center;font-size:12px">
+           ⚠ Chưa load rawdata.<br>
+           <button class="btn btn-sec btn-sm" style="margin-top:10px" onclick="openRd()">Load rawdata</button>
+         </div>`;
+    return `
+    <div class="card">
+      <div class="cardh"><div class="chl">📝 Basic Info</div></div>
+      <div class="cardb">
+        <div class="fr">
+          <div class="fg"><label class="fl">Title</label>
+            <input type="text" value="${a(c.title||'')}" oninput="setF('title',this.value)" placeholder="VD: VN8932 - Quota Table"></div>
+          <div class="fg"><label class="fl">Sub Title</label>
+            <input type="text" value="${a(c.sub_title||'')}" oninput="setF('sub_title',this.value)" placeholder="VD: Quota"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="cardh"><div class="chl">🎯 Targets</div></div>
+      <div class="cardb" style="padding:0;overflow:auto;max-height:65vh">${tblBody}</div>
+    </div>`;
+  }
   const sig=c.significance_test||{};
   const sigOn=!!sig.enabled, sigLvl=sig.levels||[], sigM=sig.method||'independent';
   const bm=c.banner_matrix, tables=c.tables||[];
@@ -2118,14 +2166,35 @@ function setSheetByContent(content, k, v) {
 }
 function setSheet(i,k,v) { cfg().tables[i][k]=v; markDirty(); if(k==='enabled') renderMain(); }
 function addCfg() {
-  const autoTitle = metaSurveyTitle ? `${metaSurveyTitle} - Data Table` : 'Survey - Data Table';
-  data.push({title: autoTitle, sub_title: 'Table ' + (data.length + 1),
-    significance_test:{enabled:false,levels:[90,95],method:'independent'},
-    banner:[{label:'Total',filter:null}],stub:[],
-    tables:[
-      {sheet:'Count', cell_content:'count',      show_sig:false, enabled:true},
-      {sheet:'Pct',   cell_content:'percentage',  show_sig:false, enabled:true, decimal:0}
-    ]});
+  showModal('Add Table', 'Choose table type',
+    `<div style="display:flex;gap:12px;padding:4px 0">
+      <button class="btn btn-pri" style="flex:1;padding:18px 10px;font-size:13px;line-height:1.6" onclick="addCfgType('datatable')">
+        📊 Data Table<br><small style="font-weight:400;font-size:11px">Count / Percentage / Sig test</small>
+      </button>
+      <button class="btn btn-sec" style="flex:1;padding:18px 10px;font-size:13px;line-height:1.6;border-color:#a5d6a7;color:#fff;background:#4caf50" onclick="addCfgType('quota')">
+        📋 Quota Table<br><small style="font-weight:400;font-size:11px">Target / Collected / Remaining</small>
+      </button>
+    </div>`,
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>`
+  );
+}
+function addCfgType(type) {
+  closeModal();
+  const autoTitle = metaSurveyTitle
+    ? `${metaSurveyTitle} - ${type==='quota'?'Quota':'Data Table'}`
+    : (type==='quota' ? 'Quota Table' : 'Survey - Data Table');
+  const newCfg = { type, title: autoTitle, sub_title: 'Table '+(data.length+1),
+    banner:[{label:'Total',filter:null}], stub:[] };
+  if (type === 'quota') {
+    newCfg.quota = { targets: {} };
+  } else {
+    newCfg.significance_test = {enabled:false,levels:[90,95],method:'independent'};
+    newCfg.tables = [
+      {sheet:'Count', cell_content:'count',     show_sig:false, enabled:true},
+      {sheet:'Pct',   cell_content:'percentage', show_sig:false, enabled:true, decimal:0}
+    ];
+  }
+  data.push(newCfg);
   activeCfg=data.length-1; activeTab='layout';
   document.getElementById('saveBtn').disabled=false;
   markDirty(); render(); checkRunBtn();
@@ -2220,6 +2289,11 @@ function loadRd(text, name) {
   const res = Papa.parse(text, { header:true, skipEmptyLines:true, dynamicTyping:false });
   rawCsv    = res.data;
   rawHeaders = res.meta.fields || [];
+  // If currently on quota Settings tab, refresh tabBody to reveal target inputs
+  if (activeTab === 'settings' && data.length && data[activeCfg]?.type === 'quota') {
+    const tb = document.getElementById('tabBody');
+    if (tb) tb.innerHTML = renderSettings(data[activeCfg]);
+  }
 }
 function checkRunBtn() {
   const ok  = !!(metadata.length && data.length && _dataCounts.n_rows);
@@ -2370,7 +2444,7 @@ function buildBannerTree(banner) {
   for (const item of banner) {
     if (item.filter === null && !item.question) {
       if (!hasShowTotal)
-        roots.push({ label: 'Total', rows: allRows, children: [] });
+        roots.push({ label: 'Total', rows: allRows, children: [], isTotal: true });
     }
   }
 
@@ -2746,14 +2820,22 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pct
       return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qLabel, answerType: t,
         rows: buildNumericRows(stats, colData) };
     }
-    const ch   = qChoices(mq);
-    const selCodes = stubItem.choice_codes ? stubItem.choice_codes.map(String) : null;
-    const filtCh = selCodes ? ch.filter(c=>selCodes.includes(String(c.code))) : ch;
+    const ch         = qChoices(mq);
+    const selCodes   = stubItem.choice_codes ? stubItem.choice_codes.map(String) : null;
+    const stubGroups = stubItem.groups || [];
+    let filtCh;
+    if (stubGroups.length) {
+      // Groups defined: include only codes that belong to a group OR are explicitly ticked.
+      // Ungrouped codes NOT in choice_codes are hidden (e.g. "Other" code 7 when not selected).
+      const groupCodes = new Set(stubGroups.flatMap(g => (g.codes||[]).map(String)));
+      filtCh = ch.filter(c => groupCodes.has(String(c.code)) || (selCodes && selCodes.includes(String(c.code))));
+    } else {
+      filtCh = selCodes ? ch.filter(c => selCodes.includes(String(c.code))) : ch;
+    }
     // MA binary (new export-CSV format): one column per choice code
     const colData = isMAbinary(mq)
       ? bannerCols.map(bc => computeChoiceStatsBinary(bc.rows, mq.rawdata_columns, mq.label, filtCh.map(c=>c.code)))
       : bannerCols.map(bc => computeChoiceStats(bc.rows, col, filtCh.map(c=>c.code)));
-    const stubGroups = stubItem.groups || [];
     const rows = stubGroups.length
       ? buildGroupRows(stats, filtCh, colData, stubGroups, cellContent, pctDec, bannerCols, mq)
       : buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels, t==='SA'||t==='MA', pctDec);
@@ -2979,11 +3061,322 @@ function renderRow(row, nCols) {
 let _pvActiveTab = 0;
 // _pvResults = client-computed [{roots, bannerCols, blocks, tableConfig}] — one per sheet tab
 
+// ── Quota Table ──────────────────────────────────────
+let _pvQuotaMode = false;
+
+// Build row descriptors for a quota stub item (SA/MA only)
+function buildQtaRows(stubItem, mq) {
+  if (!mq || !['SA','MA'].includes(qType(mq))) return [];
+  const allChoices = qChoices(mq);
+  const groups     = stubItem.groups || [];
+  const selCodes   = stubItem.choice_codes ? stubItem.choice_codes.map(String) : null;
+  // When groups are defined, restrict visible choices to group codes + explicitly ticked ones.
+  const choices = groups.length
+    ? (() => {
+        const groupCodes = new Set(groups.flatMap(g => (g.codes||[]).map(String)));
+        return allChoices.filter(c => groupCodes.has(String(c.code)) || (selCodes && selCodes.includes(String(c.code))));
+      })()
+    : (selCodes ? allChoices.filter(c => selCodes.includes(String(c.code))) : allChoices);
+  const allGroupedCodes = new Set(groups.flatMap(g => (g.codes||[]).map(Number)));
+  const rows = [];
+  // Base row — always auto-calc (sum of all editable row targets)
+  rows.push({ label:'Base', key:'__base__', isBase:true, autoCalc:true, mq });
+  // Group rows
+  for (const grp of groups) {
+    const grpCodes = (grp.codes||[]).map(Number).filter(c => choices.some(ch => Number(ch.code) === c));
+    if (!grpCodes.length) continue;
+    const grpType = grp.type || 'netted';
+    if (grpType === 'netted') {
+      // Netted header: auto-calc (sum of its choice targets)
+      rows.push({ label:grp.label, key:`grp_${grp.label}`, isGroup:true, groupType:'netted', codes:grpCodes, autoCalc:true, mq });
+      for (const code of grpCodes) {
+        const ch = choices.find(c => Number(c.code) === code);
+        if (!ch) continue;
+        rows.push({ label:`${ch.code}. ${i18nStr(ch.label)||String(ch.code)}`, key:String(code), isNetted:true, code, autoCalc:false, mq });
+      }
+    } else {
+      // Combine group: user sets target as a unit
+      rows.push({ label:grp.label, key:`grp_${grp.label}`, isGroup:true, groupType:'combine', codes:grpCodes, autoCalc:false, mq });
+    }
+  }
+  // Ungrouped choices (already filtered above — only shows if no groups, or explicitly ticked)
+  for (const ch of choices) {
+    if (allGroupedCodes.has(Number(ch.code))) continue;
+    rows.push({ label:`${ch.code}. ${i18nStr(ch.label)||String(ch.code)}`, key:String(Number(ch.code)), code:Number(ch.code), autoCalc:false, mq });
+  }
+  return rows;
+}
+
+// OR-count: respondents where ANY of `codes` appears in question mq
+function qtaCountCodes(bcRows, codes, mq) {
+  if (!mq || !codes || !codes.length) return 0;
+  if (isMAbinary(mq)) {
+    const c2col = {};
+    for (const rc of (mq.rawdata_columns||[])) {
+      const m = rc.slice(mq.label.length).match(/^_(\d+)$/);
+      if (m) c2col[Number(m[1])] = rc;
+    }
+    return bcRows.filter(r => codes.some(c => { const col = c2col[Number(c)]; return col && Number(r[col]) > 0; })).length;
+  }
+  const col = qRawCol(mq);
+  return bcRows.filter(r => cellVals(r[col]).some(v => codes.includes(v))).length;
+}
+
+// Collected respondents for a quota row
+function qtaCollected(bcRows, row, mq) {
+  if (row.isBase) return bcRows.length;
+  if (!mq) return 0;
+  if (row.isGroup) return qtaCountCodes(bcRows, row.codes, mq);
+  if (row.code !== undefined && row.code !== null) return qtaCountCodes(bcRows, [row.code], mq);
+  return 0;
+}
+
+// Target value for an auto-calc cell
+function qtaGetAutoTarget(row, ci, bannerCols, targetsForStub, allRows) {
+  const bc = bannerCols[ci];
+  // Total banner column: all cells = sum of same-key targets across non-Total leaves
+  if (bc.isTotal) {
+    const nonTotalCols = bannerCols.filter(b => !b.isTotal);
+    if (row.isBase) {
+      // Base/Total = sum of editable-row targets across all non-Total cols
+      return nonTotalCols.reduce((sum, b) =>
+        sum + allRows.filter(r => !r.autoCalc).reduce((s, r) => s + (Number(targetsForStub[b.label]?.[r.key]) || 0), 0), 0);
+    }
+    return nonTotalCols.reduce((sum, b) => sum + (Number(targetsForStub[b.label]?.[row.key]) || 0), 0);
+  }
+  // Base row (non-Total col): sum of all editable row targets for this col
+  if (row.isBase) {
+    return allRows.filter(r => !r.autoCalc)
+      .reduce((sum, r) => sum + (Number(targetsForStub[bc.label]?.[r.key]) || 0), 0);
+  }
+  // Netted group header: sum of its choice targets for this col
+  if (row.isGroup && row.groupType === 'netted') {
+    return row.codes.reduce((sum, code) => sum + (Number(targetsForStub[bc.label]?.[String(code)]) || 0), 0);
+  }
+  return 0;
+}
+
+// Recalculate all auto-calc display cells after any target input changes
+function qtaRecalcBlock(si) {
+  const cfg = data[activeCfg];
+  const roots      = buildBannerTree(cfg.banner || []);
+  const bannerCols = getLeafs(roots);
+  const stubItem   = (cfg.stub||[])[si];
+  if (!stubItem) return;
+  const mq = findMetaQ(stubItem.question);
+  if (!mq) return;
+  const rows = buildQtaRows(stubItem, mq);
+  const stubQ = stubItem.question || String(si);
+  const targetsForStub = cfg.quota?.targets?.[stubQ] || {};
+  rows.forEach((row, ri) => {
+    bannerCols.forEach((bc, ci) => {
+      if (!row.autoCalc && !bc.isTotal) return;
+      const tgtEl = document.getElementById(`qta_t_${si}_${ri}_${ci}`);
+      const remEl = document.getElementById(`qta_r_${si}_${ri}_${ci}`);
+      if (!tgtEl && !remEl) return;
+      const tgt = qtaGetAutoTarget(row, ci, bannerCols, targetsForStub, rows);
+      const collected = Number(remEl?.dataset.collected || 0);
+      const rem = tgt - collected;
+      if (tgtEl) tgtEl.textContent = String(tgt);
+      if (remEl) {
+        remEl.textContent = String(rem);
+        remEl.className = 'qta-rem ' + (rem < 0 ? 'qta-rem-neg' : rem === 0 ? 'qta-rem-zero' : 'qta-rem-ok');
+      }
+    });
+  });
+}
+
+// Wrapper called from data-* attributes — avoids double-quote issues in HTML attributes
+function qtaSetTargetEl(el) {
+  const d = el.dataset;
+  qtaSetTarget(Number(d.si), Number(d.ri), Number(d.ci), d.banner, d.key, el.value);
+}
+
+function qtaSetTarget(si, ri, ci, bannerLabel, rowKey, val) {
+  const cfg = data[activeCfg];
+  if (!cfg.quota) cfg.quota = {};
+  if (!cfg.quota.targets) cfg.quota.targets = {};
+  const stubQ = (cfg.stub||[])[si]?.question || String(si);
+  if (!cfg.quota.targets[stubQ]) cfg.quota.targets[stubQ] = {};
+  if (!cfg.quota.targets[stubQ][bannerLabel]) cfg.quota.targets[stubQ][bannerLabel] = {};
+  cfg.quota.targets[stubQ][bannerLabel][rowKey] = Number(val) || 0;
+  markDirty();
+  // Update Remaining for the edited cell in-place (preserves input focus)
+  const remEl = document.getElementById(`qta_r_${si}_${ri}_${ci}`);
+  if (remEl) {
+    const collected = Number(remEl.dataset.collected || 0);
+    const rem = (Number(val) || 0) - collected;
+    remEl.textContent = String(rem);
+    remEl.className = 'qta-rem ' + (rem < 0 ? 'qta-rem-neg' : rem === 0 ? 'qta-rem-zero' : 'qta-rem-ok');
+  }
+  qtaRecalcBlock(si);
+}
+
+function buildQuotaHeader(roots) {
+  const maxDepth = getMaxDepth(roots);
+  const nLblRows = maxDepth + 1;
+  const rowHtml  = Array.from({ length: nLblRows }, () => '');
+  function traverse(node, depth) {
+    if (!node.children || !node.children.length) {
+      const rowspan = maxDepth - depth + 1;
+      const rsAttr  = rowspan > 1 ? ` rowspan="${rowspan}"` : '';
+      rowHtml[depth] += `<th class="qta-hdr-leaf" colspan="3"${rsAttr}>${h(node.label)}</th>`;
+    } else {
+      rowHtml[depth] += `<th class="qta-hdr-grp" colspan="${countLeafs(node)*3}">${h(node.label)}</th>`;
+      node.children.forEach(c => traverse(c, depth + 1));
+    }
+  }
+  roots.forEach(r => traverse(r, 0));
+  let html = '';
+  for (let i = 0; i < nLblRows; i++) {
+    const stub = i === 0 ? `<th class="qta-hdr-lbl" rowspan="${nLblRows+1}"></th>` : '';
+    html += `<tr>${stub}${rowHtml[i]}</tr>`;
+  }
+  const tcrRow = getLeafs(roots).map(() =>
+    `<th class="qta-hdr-t">Target</th><th class="qta-hdr-c">Collected</th><th class="qta-hdr-r">Remaining</th>`
+  ).join('');
+  html += `<tr>${tcrRow}</tr>`;
+  return html;
+}
+
+// Settings/Targets tab — simplified: only editable rows, only non-Total cols, one input per cell
+function renderQuotaTargetInputs(cfg) {
+  const quota      = cfg.quota || {};
+  const targets    = quota.targets || {};
+  const roots      = buildBannerTree(cfg.banner || []);
+  const allCols    = getLeafs(roots);
+  const editCols   = allCols.filter(bc => !bc.isTotal);   // skip Total (auto-calc in preview)
+  if (!editCols.length) return `<div style="padding:16px;color:#aaa;text-align:center;font-size:11px">Thêm banner column để nhập target.</div>`;
+
+  // Header — 1 column per editable banner leaf
+  const maxDepth = getMaxDepth(roots.filter(r => !r.isTotal));
+  const nLblRows = Math.max(maxDepth + 1, 1);
+  const rowHtml  = Array.from({ length: nLblRows }, () => '');
+  function traverse(node, depth) {
+    if (node.isTotal) return;
+    if (!node.children || !node.children.length) {
+      const rowspan = maxDepth - depth + 1;
+      const rsAttr  = rowspan > 1 ? ` rowspan="${rowspan}"` : '';
+      rowHtml[depth] += `<th class="qta-hdr-leaf"${rsAttr}>${h(node.label)}</th>`;
+    } else {
+      const leafCount = getLeafs([node]).filter(l => !l.isTotal).length;
+      if (!leafCount) return;
+      rowHtml[depth] += `<th class="qta-hdr-grp" colspan="${leafCount}">${h(node.label)}</th>`;
+      node.children.forEach(c => traverse(c, depth + 1));
+    }
+  }
+  roots.forEach(r => traverse(r, 0));
+  let headerHtml = '';
+  for (let i = 0; i < nLblRows; i++) {
+    const lbl = i === 0 ? `<th class="qta-hdr-lbl" rowspan="${nLblRows}"></th>` : '';
+    headerHtml += `<tr>${lbl}${rowHtml[i]}</tr>`;
+  }
+
+  let body = '';
+  (cfg.stub||[]).forEach((stubItem, si) => {
+    if (stubItem.row_group) return;
+    const mq = findMetaQ(stubItem.question);
+    if (!mq || !['SA','MA'].includes(qType(mq))) return;
+    const stubQ    = stubItem.question;
+    const stubTgts = targets[stubQ] || {};
+    const allRows  = buildQtaRows(stubItem, mq);
+    const editRows = allRows.filter(r => !r.autoCalc);   // skip Base + Netted group headers
+    if (!editRows.length) return;
+    body += `<tr><td class="dt-subhdr" colspan="${editCols.length+1}">${h(stubItem.label||stubQ)}</td></tr>`;
+    editRows.forEach((row, rowIdx) => {
+      const ri       = allRows.indexOf(row);   // real ri for matching qtaRecalcBlock IDs (not used here but consistent)
+      const lblClass = 'qta-rlbl';
+      const lblStyle = row.isNetted ? ' style="padding-left:32px"' : '';
+      let cells = '';
+      editCols.forEach((bc, ci) => {
+        const realCi = allCols.indexOf(bc);    // real ci matching IDs in renderQuotaTable
+        const tgt    = Number(stubTgts[bc.label]?.[row.key]) || 0;
+        cells += `<td class="qta-target-cell"><input type="number" class="qta-target" value="${tgt}" min="0"
+          data-si="${si}" data-ri="${ri}" data-ci="${realCi}" data-banner="${a(bc.label)}" data-key="${a(row.key)}"
+          onchange="qtaSetTargetEl(this)"></td>`;
+      });
+      body += `<tr><td class="${lblClass}"${lblStyle}>${h(row.label)}</td>${cells}</tr>`;
+    });
+  });
+  if (!body) body = `<tr><td colspan="${editCols.length+1}" style="padding:16px;color:#aaa;text-align:center;font-size:11px">Add SA/MA questions to Stub to see rows here.</td></tr>`;
+  return `<table class="qta-tbl"><thead>${headerHtml}</thead><tbody>${body}</tbody></table>`;
+}
+
+function renderQuotaTable(cfg, readOnly = false) {
+  const quota      = cfg.quota || {};
+  const targets    = quota.targets || {};
+  const roots      = buildBannerTree(cfg.banner || []);
+  const bannerCols = getLeafs(roots);
+  const headerHtml = buildQuotaHeader(roots);
+  let body = '';
+  (cfg.stub||[]).forEach((stubItem, si) => {
+    if (stubItem.row_group) return;
+    const mq = findMetaQ(stubItem.question);
+    if (!mq || !['SA','MA'].includes(qType(mq))) return;
+    const stubQ    = stubItem.question;
+    const stubTgts = targets[stubQ] || {};
+    const rows     = buildQtaRows(stubItem, mq);
+    body += `<tr><td class="dt-subhdr" colspan="${bannerCols.length*3+1}">${h(stubItem.label||stubQ)}</td></tr>`;
+    rows.forEach((row, ri) => {
+      const lblClass = row.isBase ? 'qta-rlbl qta-rlbl-base' : 'qta-rlbl';
+      const lblStyle = row.isNetted ? ' style="padding-left:32px"' : '';
+      let cells = '';
+      bannerCols.forEach((bc, ci) => {
+        const collected  = qtaCollected(bc.rows, row, row.mq);
+        const isAutoCalc = row.autoCalc || bc.isTotal;
+        const tgt = isAutoCalc
+          ? qtaGetAutoTarget(row, ci, bannerCols, stubTgts, rows)
+          : Number(stubTgts[bc.label]?.[row.key]) || 0;
+        const rem    = tgt - collected;
+        const remCls = 'qta-rem '+(rem<0?'qta-rem-neg':rem===0?'qta-rem-zero':'qta-rem-ok');
+        if (readOnly) {
+          cells += `<td class="qta-target-cell"><span style="display:block;text-align:right;padding:2px 4px;min-width:64px">${tgt}</span></td>`;
+          cells += `<td class="qta-coll">${collected}</td>`;
+          cells += `<td class="${remCls}">${rem}</td>`;
+        } else if (isAutoCalc) {
+          // Preview editable mode: auto-calc span with IDs for qtaRecalcBlock
+          cells += `<td class="qta-target-cell"><span id="qta_t_${si}_${ri}_${ci}" style="display:block;text-align:right;padding:2px 4px;min-width:64px;color:#aaa">${tgt}</span></td>`;
+          cells += `<td class="qta-coll">${collected}</td>`;
+          cells += `<td class="${remCls}" id="qta_r_${si}_${ri}_${ci}" data-collected="${collected}">${rem}</td>`;
+        } else {
+          cells += `<td class="qta-target-cell"><input type="number" class="qta-target" value="${tgt}" min="0"
+            data-si="${si}" data-ri="${ri}" data-ci="${ci}" data-banner="${a(bc.label)}" data-key="${a(row.key)}"
+            onchange="qtaSetTargetEl(this)"></td>`;
+          cells += `<td class="qta-coll">${collected}</td>`;
+          cells += `<td class="${remCls}" id="qta_r_${si}_${ri}_${ci}" data-collected="${collected}">${rem}</td>`;
+        }
+      });
+      body += `<tr${row.isBase?' style="font-weight:700"':''}><td class="${lblClass}"${lblStyle}>${h(row.label)}</td>${cells}</tr>`;
+    });
+  });
+  if (!body) body = `<tr><td colspan="${bannerCols.length*3+1}" style="padding:16px;color:#aaa;text-align:center">Add SA/MA questions to Stub to see rows here.</td></tr>`;
+  return `<table class="qta-tbl"><thead>${headerHtml}</thead><tbody>${body}</tbody></table>`;
+}
+
+function renderQuotaContent() {
+  if (!data.length) return;
+  const cfg = data[activeCfg];
+  const el  = document.getElementById('pvContent');
+  el.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;padding:0';
+  const inner = rawCsv
+    ? `<div style="overflow:auto;flex:1;padding:14px">${renderQuotaTable(cfg, true)}</div>`
+    : `<div style="padding:20px;color:#888">⚠ Load rawdata first.</div>`;
+  el.innerHTML = `<div class="qta-bar"><span class="qta-hint">📋 Quota Table preview — enter targets in the 🎯 Targets tab.</span></div>${inner}`;
+  const tbl = el.querySelector('.qta-tbl');
+  if (tbl) {
+    let top = 0;
+    tbl.querySelectorAll('thead tr').forEach(tr => {
+      tr.querySelectorAll('th').forEach(th => { th.style.top = top+'px'; th.style.position = 'sticky'; });
+      top += tr.offsetHeight;
+    });
+  }
+}
+
 async function showPreview() {
   if (!data.length || !currentSurveyId) return;
   const cfg    = data[activeCfg];
   const tables = (cfg.tables||[]).filter(t => t.enabled !== false);
-  if (!tables.length) { setStatus('⚠ No enabled tables', ''); return; }
+  if (cfg.type !== 'quota' && !tables.length) { setStatus('⚠ No enabled tables', ''); return; }
 
   // Show panel immediately with loading spinner
   document.getElementById('pvTabs').innerHTML = '';
@@ -3000,12 +3393,21 @@ async function showPreview() {
     }
   }
 
+  // Quota Table — render directly, no sheet tabs
+  if (cfg.type === 'quota') {
+    _pvQuotaMode = true;
+    renderQuotaContent();
+    return;
+  }
+
   try {
-    _pvResults  = tables.map(t => computeTable(cfg, t));
+    _pvResults   = tables.map(t => computeTable(cfg, t));
     _pvActiveTab = 0;
-    document.getElementById('pvTabs').innerHTML = tables.map((t,i) =>
-      `<button class="pvtab ${i===0?'on':''}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
-    ).join('');
+    _pvQuotaMode = false;
+    document.getElementById('pvTabs').innerHTML =
+      tables.map((t,i) =>
+        `<button class="pvtab ${i===0?'on':''}" data-tab="${i}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
+      ).join('');
     document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Loading…</span></div>';
     requestAnimationFrame(() => requestAnimationFrame(renderPvContent));
   } catch(err) {
@@ -3016,13 +3418,19 @@ async function showPreview() {
 }
 function closePreview() { document.getElementById('previewPanel').style.display='none'; }
 function switchPvTab(i) {
-  _pvActiveTab = i;
-  document.querySelectorAll('.pvtab').forEach((el,idx) => el.classList.toggle('on', idx===i));
+  _pvQuotaMode = (i === 'quota');
+  if (!_pvQuotaMode) _pvActiveTab = i;
+  document.querySelectorAll('#pvTabs .pvtab').forEach(el =>
+    el.classList.toggle('on', el.dataset.tab === String(i))
+  );
   renderPvContent();
 }
 function renderPvContent() {
+  if (_pvQuotaMode) { renderQuotaContent(); return; }
   const r = _pvResults?.[_pvActiveTab]; if (!r) return;
-  document.getElementById('pvContent').innerHTML = renderTableHTML(r);
+  const el = document.getElementById('pvContent');
+  el.style.cssText = '';   // reset any quota-mode overrides
+  el.innerHTML = renderTableHTML(r);
   const tbl = document.querySelector('#pvContent .dt-tbl');
   if (tbl) {
     let top = 0;
