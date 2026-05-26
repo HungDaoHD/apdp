@@ -73,6 +73,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .tb-ot{background:#f5f5f5;color:#888;border:1px solid #ddd}
 .tb-net{background:#fce4ec;color:#c62828;border:1px solid #ef9a9a}
 .tb-comb{background:#e0f2f1;color:#004d40;border:1px solid #80cbc4}
+.tb-cst{background:#ede7f6;color:#4527a0;border:1px solid #b39ddb}
 /* ── Quota Table ──────────────────────────────────── */
 .qta-bar{display:flex;align-items:center;gap:10px;padding:6px 12px;background:#f8f9fb;border-bottom:1px solid #e0e4ea;flex-shrink:0;flex-wrap:wrap}
 .qta-bar-lbl{font-size:11px;color:#555;font-weight:600}
@@ -588,7 +589,8 @@ let metaSurveyTitle  = '';   // top-level title from metadata.json (used as defa
 let availLangs       = [];   // e.g. ['vi','en'] detected from metadata
 let activeLang       = '';   // currently selected language code
 let lastFQ           = [];   // result of last filteredQ() — used for index-based drag
-let data       = [];       // datatable.json array
+let data       = [];       // datatable.json array (tables only, no sentinel)
+let customDefs = [];       // global custom question definitions from _custom_defs sentinel
 let activeCfg  = 0;
 let activeTab  = 'layout';
 let showRaw    = false;
@@ -731,10 +733,12 @@ function loadDT(text, name) {
   try {
     let p = JSON.parse(text);
     if (!Array.isArray(p)) p = [p];
+    if (p[0]?._custom_defs) { customDefs = p[0]._custom_defs; p = p.slice(1); }
+    else customDefs = [];
     data = p; activeCfg = 0; activeTab = 'layout'; dirty = false;
     document.getElementById('saveBtn').disabled = false;
     setStatus('Opened: '+name, 'saved');
-    render(); checkRunBtn();
+    render(); renderQL(); checkRunBtn();
   } catch(e) { setStatus('⚠ Datatable error: '+e.message,''); }
 }
 
@@ -846,32 +850,59 @@ function filteredQ() {
 function renderQL() {
   const el = document.getElementById('qList'); if (!el) return;
   lastFQ = filteredQ();
+  let html = '';
   if (!lastFQ.length) {
-    el.innerHTML = metadata.length
+    html = metadata.length
       ? '<div class="qempty">No matching<br>questions found</div>'
       : '<div class="qempty">Open <strong>metadata.json</strong><br>to view the list</div>';
-    return;
+  } else {
+    html = lastFQ.map((q, idx) => {
+      const t      = qType(q);
+      const title  = qTitle(q);
+      const ch     = qChoices(q);
+      const rows   = qRows(q);
+      const preview = ch.length   ? ch.slice(0,3).map(c=>c.label).join(' · ')+(ch.length>3?` +${ch.length-3}`:'')
+                    : rows.length ? `${rows.length} rows`
+                    : '';
+      return `<div class="qcard" draggable="true"
+          ondragstart="onQDragStart(event,${idx})"
+          ondragend="onQDragEnd(event)"
+          onclick="onQClick(${idx})">
+        <div class="qcard-top">
+          <span class="tb ${typeBadgeClass(t)}">${t||'?'}</span>
+          <span class="qlbl">${h(q.label||'?')}</span>
+        </div>
+        ${title?`<div class="qname" style="margin-top:3px">${h(title)}</div>`:''}
+        ${preview?`<div class="qcard-prev">${h(preview)}</div>`:''}
+      </div>`;
+    }).join('');
   }
-  el.innerHTML = lastFQ.map((q, idx) => {
-    const t      = qType(q);
-    const title  = qTitle(q);
-    const ch     = qChoices(q);
-    const rows   = qRows(q);
-    const preview = ch.length   ? ch.slice(0,3).map(c=>c.label).join(' · ')+(ch.length>3?` +${ch.length-3}`:'')
-                  : rows.length ? `${rows.length} rows`
-                  : '';
-    return `<div class="qcard" draggable="true"
-        ondragstart="onQDragStart(event,${idx})"
-        ondragend="onQDragEnd(event)"
-        onclick="onQClick(${idx})">
-      <div class="qcard-top">
-        <span class="tb ${typeBadgeClass(t)}">${t||'?'}</span>
-        <span class="qlbl">${h(q.label||'?')}</span>
+  // Custom defs section (always shown if any defs exist or when no search filter)
+  const search = (document.getElementById('qSearch')?.value||'').toLowerCase();
+  if (!search) {
+    const defCards = customDefs.map((def, di) => {
+      const nc = (def.choices||[]).length;
+      return `<div class="qcard" draggable="true"
+          ondragstart="onCQPalDragStart(event,${di})"
+          ondragend="onQDragEnd(event)"
+          onclick="openCustomDefModal(${di})"
+          style="border-color:#b39ddb;background:#f3e5f5">
+        <div class="qcard-top">
+          <span class="tb tb-cst" style="font-size:8px">CUSTOM</span>
+          <span class="qlbl" style="color:#4527a0">${h(def.label||'?')}</span>
+        </div>
+        <div class="qcard-prev">${nc} choice${nc!==1?'s':''} · drag to add</div>
+      </div>`;
+    }).join('');
+    html += `<div style="margin-top:8px;border-top:1px solid #e8e0f0;padding-top:6px">
+      <div style="font-size:10px;color:#888;padding:0 4px 4px;display:flex;align-items:center;justify-content:space-between">
+        <span>✨ Custom Questions</span>
+        <button class="btn btn-sec btn-xs" onclick="openCustomDefModal(-1)" style="font-size:9px">+ New</button>
       </div>
-      ${title?`<div class="qname" style="margin-top:3px">${h(title)}</div>`:''}
-      ${preview?`<div class="qcard-prev">${h(preview)}</div>`:''}
+      ${defCards||'<div style="font-size:10px;color:#bbb;padding:4px;text-align:center">No custom questions yet</div>'}
     </div>`;
-  }).join('');
+  }
+  el.innerHTML = html;
 }
 
 // ════════════════════════════════════════════════════
@@ -883,6 +914,13 @@ function onQDragStart(e, idx) {
   dragSt = { src:'palette', q };
   e.dataTransfer.effectAllowed = 'copy';
   e.dataTransfer.setData('text/plain', 'q:'+idx);  // required for Firefox
+  e.currentTarget.classList.add('dragging');
+}
+function onCQPalDragStart(e, di) {
+  const def = customDefs[di]; if (!def) return;
+  dragSt = { src:'custom-palette', di, def };
+  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData('text/plain', 'cq:'+di);
   e.currentTarget.classList.add('dragging');
 }
 function onQDragEnd(e) { e.currentTarget.classList.remove('dragging'); }
@@ -926,6 +964,10 @@ function onBChipDrop(e, ti) {
     _insertBannerFromQ(dragSt.q, ti);  // insert before ti
     dragSt = null; return;
   }
+  if (dragSt.src === 'custom-palette') {
+    addCustomRefBanner(dragSt.def, ti);
+    dragSt = null; return;
+  }
   if (dragSt.src === 'banner') {
     const from = dragSt.idx; dragSt = null;
     if (from === ti || isTotal(from) || isTotal(ti)) return;
@@ -955,6 +997,7 @@ function onBAreaDrop(e) {
   clearDragUI();
   if (!dragSt || dragSt.src==='stub') return;
   if (dragSt.src==='palette') addBannerFromQ(dragSt.q);
+  else if (dragSt.src==='custom-palette') addCustomRefBanner(dragSt.def);
   // banner reorder handled by chip drop (stopPropagation)
   dragSt = null;
 }
@@ -985,6 +1028,9 @@ function onSRowDrop(e, ti) {
   if (dragSt.src==='palette') {
     addStubFromQ(dragSt.q); dragSt = null; return;
   }
+  if (dragSt.src==='custom-palette') {
+    addCustomRefStub(dragSt.def); dragSt = null; return;
+  }
   if (dragSt.src==='stub') {
     const from = dragSt.idx; dragSt = null;
     if (from===ti) return;
@@ -1011,6 +1057,7 @@ function onSAreaDrop(e) {
   clearDragUI();
   if (!dragSt || dragSt.src==='banner') return;
   if (dragSt.src==='palette') addStubFromQ(dragSt.q);
+  else if (dragSt.src==='custom-palette') addCustomRefStub(dragSt.def);
   dragSt = null;
 }
 
@@ -1022,7 +1069,9 @@ function clearDragUI() {
 // DRAG — PALETTE → BANNER CELL (individual level cells)
 // ════════════════════════════════════════════════════
 function onBCellDragOver(e, ci, lv) {
-  if (!dragSt || dragSt.src !== 'palette') return;
+  if (!dragSt) return;
+  const ok = dragSt.src === 'palette' || dragSt.src === 'custom-palette';
+  if (!ok) return;
   e.preventDefault();
   e.stopPropagation();  // don't highlight whole grid
   e.currentTarget.querySelector('.bgcell')?.classList.add('cell-dov');
@@ -1033,13 +1082,17 @@ function onBCellDragLeave(e) {
 function onBCellDrop(e, ci, lv) {
   e.preventDefault(); e.stopPropagation();
   clearDragUI();
-  if (!dragSt || dragSt.src !== 'palette') return;
+  if (!dragSt) return;
+  if (dragSt.src === 'custom-palette') {
+    if (lv < 0) addCustomRefBanner(dragSt.def, ci >= 0 ? ci : undefined);
+    else if (ci >= 0) _setCustomRefLevel(ci, lv, dragSt.def);
+    dragSt = null; return;
+  }
+  if (dragSt.src !== 'palette') return;
   const q = dragSt.q; dragSt = null;
   if (lv < 0) {
-    // Level 1: add as new column before ci (insert)
     _insertBannerFromQ(q, ci);
   } else {
-    // Level 2+: set as sub-level
     _setBannerLevelFromQ(ci, lv, q);
   }
 }
@@ -1068,6 +1121,14 @@ function _setBannerLevelFromQ(ci, lvIdx, q) {
   const ch = qChoices(q);
   const groups = ch.map(c=>({label:i18nStr(c.label),value:typeof c.code==='number'?c.code:parseInt(c.code)||c.code}));
   col.levels[lvIdx] = { label: qTitle(q)||q.label||'?', question: q.label||'?', groups };
+  markDirty(); activeTab='layout'; renderMain();
+}
+function _setCustomRefLevel(ci, lvIdx, def) {
+  if (!data.length) return;
+  const col = cfg().banner[ci];
+  if (!col) return;
+  if (!col.levels) col.levels = [];
+  col.levels[lvIdx] = { type:'custom_ref', ref: def.label, label: def.label };
   markDirty(); activeTab='layout'; renderMain();
 }
 
@@ -1251,6 +1312,8 @@ function openBannerModal(idx) {
   const item = cfg().banner[idx];
   const isTotal = item.filter===null && !item.question;
   if (isTotal) return;
+  if (item.type === 'custom') { openCustomQModal('banner', idx); return; }
+  if (item.type === 'custom_ref') { openCustomRefBannerModal(idx); return; }
   // Lookup metadata for info
   const mq = findMetaQ(item.question);
   const t  = mq ? qType(mq) : '';
@@ -1267,6 +1330,8 @@ function openBannerModal(idx) {
 
 function openStubModal(idx) {
   const item = cfg().stub[idx];
+  if (item.type === 'custom') { openCustomQModal('stub', idx); return; }
+  if (item.type === 'custom_ref') { openCustomRefStubModal(idx); return; }
   const mq   = findMetaQ(item.question);
   modalSt    = { type:'stub', idx, item: JSON.parse(JSON.stringify(item)), mq };
   const icon = item.row_group ? '🔵' : '📋';
@@ -1760,7 +1825,7 @@ function renderMain() {
     el.innerHTML=`<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
       <span style="font-size:11px;color:#666">Raw JSON</span>
       <button class="btn btn-sec btn-sm" onclick="syncRaw();render()">↺ Apply</button></div>
-      <textarea class="raw-ta" id="rawEd" spellcheck="false" style="height:calc(100vh - 155px)">${h(JSON.stringify(data,null,2))}</textarea>`;
+      <textarea class="raw-ta" id="rawEd" spellcheck="false" style="height:calc(100vh - 155px)">${h(JSON.stringify(dtPayload(),null,2))}</textarea>`;
     return;
   }
   const c = data[activeCfg];
@@ -1813,9 +1878,54 @@ function renderBannerGrid(banner) {
       const isTotal = item.filter===null && !item.question;
       if (isTotal) return; // hidden from grid — always kept in data but not shown
 
+      if (item.type === 'custom' || item.type === 'custom_ref') {
+        if (lv === 0) {
+          const isRef = item.type === 'custom_ref';
+          const def   = isRef ? resolveCustomRef(item) : null;
+          const nc    = isRef ? (def ? (def.choices||[]).length : 0) : (item.choices||[]).length;
+          const lbl   = isRef ? (def ? def.label : (item.ref||'?')) : (item.label||'Custom');
+          const badge = isRef ? 'REF' : 'CUSTOM';
+          const cellBg = isRef ? 'background:#f3e5f5;' : '';
+          cells += `<td class="bgcol" data-bcol="${ci}"
+            draggable="true" ondragstart="onBChipDragStart(event,${ci})" ondragend="onBChipDragEnd(event)"
+            ondragover="onBChipDragOver(event,${ci})" ondrop="onBChipDrop(event,${ci})">
+            <div class="bgcell" onclick="openBannerModal(${ci})" style="${cellBg}">
+              <div style="display:flex;align-items:center;justify-content:center;gap:4px;padding:2px 0;flex-wrap:wrap">
+                <span class="tb tb-cst" style="font-size:8px">${badge}</span>
+              </div>
+              <div class="bgql" style="text-align:center;margin-top:4px">${h(lbl)}</div>
+              <div style="font-size:9px;color:#888;text-align:center;margin-top:2px">${nc} choice${nc!==1?'s':''}</div>
+              ${!placing ? `<div class="bgqacts" style="justify-content:center;margin-top:4px">
+                <button class="btn btn-sec btn-xs" onclick="event.stopPropagation();openBannerModal(${ci})">✎</button>
+                <button class="btn btn-dan btn-xs" onclick="event.stopPropagation();removeBanner(${ci})">✕</button>
+              </div>` : ''}
+            </div>
+          </td>`;
+          return; // only skip lv=0 — lv>=1 falls through to regular level rendering
+        }
+        // lv >= 1: fall through to regular rendering (supports addBannerLevel)
+      }
+
       let lvItem = lv === 0
         ? { question: item.question, label: item.label, groups: item.groups }
         : ((item.levels||[])[lv-1] || null);
+
+      // custom_ref level item at lv≥1 — render REF cell with remove button
+      if (lv > 0 && lvItem && lvItem.type === 'custom_ref') {
+        const rmFn = `removeBannerLevel(${ci},${lv-1})`;
+        cells += `<td class="bgcol" data-bcol="${ci}">
+          <div class="bgcell">
+            <div style="display:flex;align-items:center;justify-content:center;gap:4px;padding:2px 0;flex-wrap:wrap">
+              <span class="tb tb-cst" style="font-size:8px">REF</span>
+            </div>
+            <div class="bgql" style="text-align:center;margin-top:4px">${h(lvItem.label||lvItem.ref)}</div>
+            ${!placing ? `<div class="bgqacts" style="justify-content:center">
+              <button class="btn btn-dan btn-xs" onclick="event.stopPropagation();${rmFn}" title="Remove">✕</button>
+            </div>` : ''}
+          </div>
+        </td>`;
+        return;
+      }
 
       const hasQ = lvItem && lvItem.question;
 
@@ -1917,6 +2027,40 @@ function renderLayout(c) {
         <span class="sdh">⠿</span>
         <span class="tb tb-mx">GROUP</span>
         <span class="sname">${items.map(it=>h(it.question||'?')).join(' · ')}</span>
+        <span class="sx" onclick="event.stopPropagation();removeStub(${i})">✕</span>
+      </div>`;
+    }
+    if (item.type === 'custom') {
+      const nc = (item.choices||[]).length;
+      return `<div class="srow" draggable="true"
+        ondragstart="onSRowDragStart(event,${i})"
+        ondragend="onSRowDragEnd(event)"
+        ondragover="onSRowDragOver(event,${i})"
+        ondrop="onSRowDrop(event,${i})"
+        onclick="openStubModal(${i})">
+        <span class="sdh">⠿</span>
+        <span class="slbl" style="background:#ede7f6;color:#4527a0">${h(item.label||'?')}</span>
+        <span class="sname">${h(item.label||'Custom Question')}</span>
+        <span class="tb tb-cst" style="font-size:9px">CUSTOM</span>
+        <span class="sstats">${nc} choice${nc!==1?'s':''}</span>
+        <span class="sx" onclick="event.stopPropagation();removeStub(${i})">✕</span>
+      </div>`;
+    }
+    if (item.type === 'custom_ref') {
+      const def = resolveCustomRef(item);
+      const nc = def ? (def.choices||[]).length : 0;
+      const lbl = def ? def.label : item.ref;
+      return `<div class="srow" draggable="true"
+        ondragstart="onSRowDragStart(event,${i})"
+        ondragend="onSRowDragEnd(event)"
+        ondragover="onSRowDragOver(event,${i})"
+        ondrop="onSRowDrop(event,${i})"
+        onclick="openStubModal(${i})">
+        <span class="sdh">⠿</span>
+        <span class="slbl" style="background:#ede7f6;color:#4527a0">${h(lbl||'?')}</span>
+        <span class="sname">${h(lbl||'Custom Question')}</span>
+        <span class="tb tb-cst" style="font-size:9px">REF</span>
+        <span class="sstats">${nc} choice${nc!==1?'s':''}</span>
         <span class="sx" onclick="event.stopPropagation();removeStub(${i})">✕</span>
       </div>`;
     }
@@ -2114,6 +2258,525 @@ function addBannerItem() {
   });
 }
 function removeBanner(i) { cfg().banner.splice(i,1); markDirty(); renderMain(); }
+
+// ════════════════════════════════════════════════════
+// CUSTOM REF HELPERS (global defs → tables)
+// ════════════════════════════════════════════════════
+function resolveCustomRef(item) {
+  // item is a {type:'custom_ref', ref: label} stub/banner item
+  // Returns the matching def from customDefs, or null
+  return customDefs.find(d => d.label === item.ref) || null;
+}
+function addCustomRefStub(def) {
+  const c = cfg(); if (!c) return;
+  if (!c.stub) c.stub = [];
+  // Avoid duplicate ref
+  if (c.stub.some(it => it.type === 'custom_ref' && it.ref === def.label)) return;
+  c.stub.push({ type:'custom_ref', ref: def.label, stats:['base','percent'] });
+  markDirty(); renderMain();
+}
+function addCustomRefBanner(def, insertBefore) {
+  const c = cfg(); if (!c) return;
+  if (!c.banner) c.banner = [{ label:'Total', filter:null }];
+  const item = { type:'custom_ref', ref: def.label, label: def.label };
+  if (insertBefore !== undefined && insertBefore >= 0 && insertBefore < c.banner.length)
+    c.banner.splice(insertBefore, 0, item);
+  else
+    c.banner.push(item);
+  markDirty(); renderMain();
+}
+
+// ════════════════════════════════════════════════════
+// CUSTOM VIRTUAL QUESTION
+// ════════════════════════════════════════════════════
+function openCustomQModal(mode, idx) {
+  let item;
+  if (idx !== null && idx !== undefined) {
+    const src = mode === 'stub' ? cfg().stub[idx] : cfg().banner[idx];
+    item = JSON.parse(JSON.stringify(src));
+  } else {
+    item = { type:'custom', label:'', stats:['base','percent'],
+      choices:[{ code:1, label:'', filter:{ question:'', codes:[] } }] };
+  }
+  modalSt = { type:'custom-q', mode, idx: idx ?? null, item };
+  const isNew = idx === null || idx === undefined;
+  showModal('✨ Custom Question',
+    isNew ? `Virtual question for ${mode==='stub'?'Stub Row':'Banner Column'}` : `Edit — ${item.label||'Custom'}`,
+    _renderCQBody(),
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-pri" onclick="saveCQ()">${isNew?'➕ Add':'✓ Save'}</button>`,
+    { noBackdrop: true }
+  );
+}
+
+function _renderCQBody() {
+  const { item, mode } = modalSt;
+  const choices = item.choices || [];
+  const statsHtml = mode === 'stub' ? `
+  <div style="margin-bottom:12px">
+    <label class="fl">Stats</label>
+    <div class="sgrid">${STATS_ALL.map(s=>`<label class="schip">
+      <input type="checkbox" value="${s}" ${(item.stats||[]).includes(s)?'checked':''}
+        onchange="cqStatToggle('${s}',this.checked)"> ${s}</label>`).join('')}
+    </div>
+  </div>` : '';
+  return `
+  <div style="margin-bottom:12px">
+    <label class="fl">Label (Question Name)</label>
+    <input type="text" value="${a(item.label||'')}" placeholder="Brand Users" oninput="cqSetLabel(this.value)">
+  </div>
+  ${statsHtml}
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+    <span class="slabel">Choices (${choices.length})</span>
+    <button class="btn btn-sec btn-xs" onclick="cqAddChoice()">+ Add Choice</button>
+  </div>
+  <div id="cq_choices">${choices.map((ch,ci)=>_renderCQChoice(ch,ci)).join('')
+    || '<div style="font-size:11px;color:#bbb;padding:6px 0">No choices — click "+ Add Choice"</div>'}
+  </div>`;
+}
+
+// pfx = 'cq' for inline modal, 'cqDef' for def modal
+function _renderCQChoice(ch, ci, pfx='cq') {
+  const f = ch.filter || {};
+  const fType = f.and ? 'and' : f.or ? 'or' : 'single';
+  return `
+  <div style="border:1px solid #e0e4ea;border-radius:6px;padding:10px;margin-bottom:8px;background:#fafbfc">
+    <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">
+      <div style="flex-shrink:0;font-size:10px;font-weight:700;color:#888;padding-top:6px;min-width:16px">${ci+1}</div>
+      <div style="flex:1">
+        <label class="fl">Choice Label</label>
+        <input type="text" value="${a(ch.label||'')}" placeholder="HẢO HẢO USERS" oninput="${pfx}ChoiceLabel(${ci},this.value)">
+      </div>
+      <button class="btn btn-dan btn-xs" style="margin-top:16px;flex-shrink:0" onclick="${pfx}RemoveChoice(${ci})">✕</button>
+    </div>
+    <div style="margin-left:24px">
+      <label class="fl">Filter Mode</label>
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        <button class="btn btn-xs ${fType==='single'?'btn-pri':'btn-sec'}" onclick="${pfx}SetFType(${ci},'single')">Single</button>
+        <button class="btn btn-xs ${fType==='and'?'btn-pri':'btn-sec'}" onclick="${pfx}SetFType(${ci},'and')">AND — all of</button>
+        <button class="btn btn-xs ${fType==='or'?'btn-pri':'btn-sec'}" onclick="${pfx}SetFType(${ci},'or')">OR — any of</button>
+      </div>
+      ${_renderCQConditions(ch, ci, fType, pfx)}
+    </div>
+  </div>`;
+}
+
+function _renderCQConditions(ch, ci, fType, pfx='cq') {
+  if (fType === 'single') {
+    const f = (!ch.filter?.and && !ch.filter?.or) ? (ch.filter||{}) : { question:'', codes:[] };
+    return _renderCQLeaf(f, ci, -1, false, pfx);
+  }
+  const conds = (fType==='and' ? ch.filter?.and : ch.filter?.or) || [];
+  return `<div>${conds.map((c,ki)=>_renderCQLeaf(c,ci,ki,true,pfx)).join('')}
+    <button class="btn btn-sec btn-xs" style="margin-top:2px" onclick="${pfx}AddCond(${ci})">+ Condition</button>
+  </div>`;
+}
+
+function _renderCQLeaf(cond, ci, ki, showRm, pfx='cq') {
+  const q = cond.question||'', codes=(cond.codes||[]).join(', '), op=cond.op||'any', neg=!!cond.negate;
+  return `
+  <div style="display:flex;gap:6px;align-items:flex-end;margin-bottom:6px;flex-wrap:wrap">
+    <div style="flex:1;min-width:100px">
+      <label class="fl">Question</label>
+      <div style="display:flex;gap:3px">
+        <input type="text" value="${a(q)}" placeholder="S10c" style="flex:1"
+          oninput="${pfx}CondQ(${ci},${ki},this.value)">
+        <button class="btn btn-sec btn-xs" onclick="${pfx}PickQ(${ci},${ki})" title="Browse">🔍</button>
+      </div>
+    </div>
+    <div style="flex-shrink:0;width:110px">
+      <label class="fl">Op</label>
+      <select onchange="${pfx}CondOp(${ci},${ki},this.value)">
+        <option value="any" ${op==='any'?'selected':''}>Any of (OR)</option>
+        <option value="all" ${op==='all'?'selected':''}>All of (AND)</option>
+      </select>
+    </div>
+    <div style="flex:1;min-width:100px">
+      <label class="fl">Codes (comma-sep)</label>
+      <div style="display:flex;gap:3px">
+        <input type="text" value="${a(codes)}" placeholder="1, 2, 3"
+          oninput="${pfx}CondCodes(${ci},${ki},this.value)" style="flex:1">
+        <button class="btn btn-sec btn-xs" onclick="${pfx}PickCodes(${ci},${ki},this)" title="Pick codes">⊞</button>
+      </div>
+    </div>
+    <div style="flex-shrink:0;align-self:flex-end;padding-bottom:2px">
+      <button class="btn btn-xs ${neg?'btn-dan':'btn-sec'}" style="font-size:10px;font-weight:700;min-width:36px"
+        onclick="${pfx}CondNegate(${ci},${ki},${!neg})" title="Negate condition">NOT</button>
+    </div>
+    ${showRm?`<button class="btn btn-dan btn-xs" style="flex-shrink:0" onclick="${pfx}RmCond(${ci},${ki})">✕</button>`:''}
+  </div>`;
+}
+
+function _refreshCQ() { const el=document.getElementById('mBody'); if(el) el.innerHTML=_renderCQBody(); }
+
+// ── Codes picker popup ────────────────────────────
+let _codesPickerCb = null;
+function _showCodesPickerPopup(btn, mq, currentCodes, onApply) {
+  document.getElementById('codesPicker')?.remove();
+  document.removeEventListener('click', _closeCodesPickerOutside, true);
+  const choices = qChoices(mq);
+  if (!choices.length) { alert('No choices found for this question.'); return; }
+  const rect = btn.getBoundingClientRect();
+  const popup = document.createElement('div');
+  popup.id = 'codesPicker';
+  popup.style.cssText = `position:fixed;z-index:10000;background:#fff;border:1.5px solid #d8dde6;
+    border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:10px;
+    min-width:220px;max-width:340px;max-height:300px;overflow-y:auto;
+    top:${Math.min(rect.bottom+4, window.innerHeight-320)}px;left:${Math.min(rect.left, window.innerWidth-360)}px`;
+  const rows = choices.map(c => {
+    const on = currentCodes.includes(Number(c.code)) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:6px;padding:3px 2px;cursor:pointer;font-size:12px">
+      <input type="checkbox" value="${c.code}" ${on} style="accent-color:#5c35cc">
+      <span style="color:#555">${h(String(c.label||c.code))}</span>
+      <span style="color:#bbb;font-size:10px;margin-left:auto">[${c.code}]</span>
+    </label>`;
+  }).join('');
+  popup.innerHTML = `
+    <div style="font-size:11px;font-weight:600;color:#888;margin-bottom:6px;display:flex;justify-content:space-between">
+      <span>Select codes</span>
+      <button class="btn btn-sec btn-xs" onclick="
+        document.querySelectorAll('#codesPicker #cpChoices input').forEach(x=>x.checked=!x.checked)
+      " style="font-size:9px">Toggle all</button>
+    </div>
+    <div id="cpChoices">${rows}</div>
+    <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end">
+      <button class="btn btn-sec btn-xs" onclick="document.getElementById('codesPicker')?.remove()">Cancel</button>
+      <button class="btn btn-pri btn-xs" onclick="
+        const codes=[...document.querySelectorAll('#codesPicker #cpChoices input:checked')].map(x=>Number(x.value));
+        document.getElementById('codesPicker').remove();
+        _applyCodesFromPicker(codes);
+      ">✓ Apply</button>
+    </div>`;
+  document.body.appendChild(popup);
+  _codesPickerCb = onApply;
+  setTimeout(() => document.addEventListener('click', _closeCodesPickerOutside, true), 0);
+}
+function _applyCodesFromPicker(codes) {
+  document.removeEventListener('click', _closeCodesPickerOutside, true);
+  if (_codesPickerCb) { _codesPickerCb(codes); _codesPickerCb = null; }
+}
+function _closeCodesPickerOutside(e) {
+  const p = document.getElementById('codesPicker');
+  if (p && !p.contains(e.target)) {
+    p.remove(); _codesPickerCb = null;
+    document.removeEventListener('click', _closeCodesPickerOutside, true);
+  }
+}
+function cqPickCodes(ci, ki, btn) {
+  const leaf = _leafAt(ci, ki); if (!leaf) return;
+  const mq = findMetaQ(leaf.question);
+  if (!mq) { alert('Set a question first.'); return; }
+  _showCodesPickerPopup(btn, mq, (leaf.codes||[]).map(Number), codes => {
+    leaf.codes = codes;
+    btn.previousElementSibling.value = codes.join(', ');
+    _refreshCQ();
+  });
+}
+function cqDefPickCodes(ci, ki, btn) {
+  const leaf = _leafAtOn(_cqDefItem.choices, ci, ki); if (!leaf) return;
+  const mq = findMetaQ(leaf.question);
+  if (!mq) { alert('Set a question first.'); return; }
+  _showCodesPickerPopup(btn, mq, (leaf.codes||[]).map(Number), codes => {
+    leaf.codes = codes;
+    btn.previousElementSibling.value = codes.join(', ');
+    _refreshCQDef();
+  });
+}
+
+function cqSetLabel(v) { if(modalSt?.item) modalSt.item.label=v; }
+function cqStatToggle(s,on) {
+  if(!modalSt?.item) return;
+  const st=modalSt.item.stats||[];
+  modalSt.item.stats = on ? STATS_ALL.filter(x=>st.includes(x)||x===s) : st.filter(x=>x!==s);
+}
+function cqAddChoice() {
+  if(!modalSt?.item) return;
+  const ch=modalSt.item.choices||[]; const code=ch.length+1;
+  ch.push({code,label:'',filter:{question:'',codes:[]}}); modalSt.item.choices=ch; _refreshCQ();
+}
+function cqRemoveChoice(ci) {
+  modalSt.item.choices.splice(ci,1);
+  modalSt.item.choices.forEach((c,i)=>c.code=i+1); _refreshCQ();
+}
+function cqChoiceLabel(ci,v) { if(modalSt?.item?.choices?.[ci]) modalSt.item.choices[ci].label=v; }
+function cqSetFType(ci,fType) {
+  const ch=modalSt?.item?.choices?.[ci]; if(!ch) return;
+  const cur=ch.filter||{}, curType=cur.and?'and':cur.or?'or':'single';
+  if(curType===fType) return;
+  const existing = curType==='single'?[cur]:(cur.and||cur.or||[]);
+  if(fType==='single')    ch.filter=existing[0]||{question:'',codes:[]};
+  else if(fType==='and')  ch.filter={and:existing.length?existing:[{question:'',codes:[]}]};
+  else                    ch.filter={or:existing.length?existing:[{question:'',codes:[]}]};
+  _refreshCQ();
+}
+function cqAddCond(ci) {
+  const f=modalSt?.item?.choices?.[ci]?.filter; if(!f) return;
+  if(f.and) f.and.push({question:'',codes:[]});
+  else if(f.or) f.or.push({question:'',codes:[]}); _refreshCQ();
+}
+function cqRmCond(ci,ki) {
+  const f=modalSt?.item?.choices?.[ci]?.filter; if(!f) return;
+  if(f.and) f.and.splice(ki,1); else if(f.or) f.or.splice(ki,1); _refreshCQ();
+}
+function _leafAt(ci,ki) {
+  const ch=modalSt?.item?.choices?.[ci]; if(!ch) return null;
+  if(!ch.filter) ch.filter={question:'',codes:[]};
+  const f=ch.filter;
+  return ki===-1 ? f : (f.and||f.or||[])[ki]??null;
+}
+function cqCondQ(ci,ki,v)    { const l=_leafAt(ci,ki); if(l) l.question=v; }
+function cqCondOp(ci,ki,v)   { const l=_leafAt(ci,ki); if(!l) return; if(v==='any') delete l.op; else l.op=v; }
+function cqCondCodes(ci,ki,v){ const l=_leafAt(ci,ki); if(!l) return;
+  l.codes=v.split(',').map(x=>{ const n=Number(x.trim()); return isNaN(n)?null:n; }).filter(n=>n!==null); }
+function cqPickQ(ci,ki) {
+  showQPicker('🔍 Pick Question','Select question for filter condition', q => {
+    const l=_leafAt(ci,ki); if(l) l.question=q.label||'';
+    const { mode, idx, item } = modalSt;
+    modalSt = { type:'custom-q', mode, idx, item };
+    showModal('✨ Custom Question',
+      idx===null?`Virtual question for ${mode==='stub'?'Stub Row':'Banner Column'}`:`Edit — ${item.label||'Custom'}`,
+      _renderCQBody(),
+      `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+       <button class="btn btn-pri" onclick="saveCQ()">${idx===null?'➕ Add':'✓ Save'}</button>`,
+      { noBackdrop:true }
+    );
+  });
+}
+function saveCQ() {
+  const { item, mode, idx } = modalSt;
+  if(!item.label?.trim()) { alert('Please enter a label.'); return; }
+  if(!item.choices?.length) { alert('Please add at least one choice.'); return; }
+  item.choices.forEach((c,i)=>{ if(!c.label) c.label=`Choice ${i+1}`; });
+  if(mode==='stub') {
+    if(!cfg().stub) cfg().stub=[];
+    if(idx!==null) cfg().stub[idx]=item; else cfg().stub.push(item);
+  } else {
+    if(!cfg().banner) cfg().banner=[{label:'Total',filter:null}];
+    if(idx!==null) cfg().banner[idx]=item; else cfg().banner.push(item);
+  }
+  markDirty(); activeTab='layout'; renderMain(); closeModal();
+}
+// ════════════════════════════════════════════════════
+// CUSTOM DEF MODAL (edit global custom question definition)
+// ════════════════════════════════════════════════════
+let _cqDefIdx = null;  // -1 = new, >=0 = editing existing
+let _cqDefItem = null; // working copy of the def being edited
+
+function openCustomDefModal(defIdx) {
+  _cqDefIdx = defIdx;
+  if (defIdx >= 0 && defIdx < customDefs.length) {
+    _cqDefItem = JSON.parse(JSON.stringify(customDefs[defIdx]));
+  } else {
+    _cqDefIdx = -1;
+    _cqDefItem = { label:'', choices:[{ code:1, label:'', filter:{ question:'', codes:[] } }] };
+  }
+  const isNew = _cqDefIdx < 0;
+  showModal(
+    isNew ? '✨ New Custom Question' : '✨ Edit Custom Question',
+    isNew ? 'Define a reusable custom virtual question' : `Editing: ${_cqDefItem.label||'?'}`,
+    _renderCQDefBody(),
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+     ${!isNew?`<button class="btn btn-dan btn-xs" onclick="deleteCQDef()">🗑 Delete</button>`:''}
+     <button class="btn btn-pri" onclick="saveCQDef()">✓ Save</button>`,
+    { noBackdrop: true }
+  );
+}
+function _renderCQDefBody() {
+  const item = _cqDefItem;
+  let html = `<div style="margin-bottom:12px">
+    <label class="fl">Label (name for this custom question)</label>
+    <input type="text" value="${a(item.label||'')}" oninput="_cqDefItem.label=this.value"
+      placeholder="e.g. Brand Users" style="width:100%;box-sizing:border-box">
+  </div>
+  <div style="margin-bottom:6px;font-weight:600;font-size:12px">Choices</div>`;
+  (item.choices||[]).forEach((ch, ci) => {
+    html += _renderCQChoice(ch, ci, 'cqDef');
+  });
+  html += `<button class="btn btn-sec btn-sm" onclick="cqDefAddChoice()" style="margin-top:6px">+ Add Choice</button>
+  <div style="margin-top:10px;font-size:10px;color:#888">
+    💡 Drag this question from the palette to add it to any table's banner or stub as a <strong>reference</strong>.<br>
+    Changes here will auto-propagate to all tables that reference it.
+  </div>`;
+  return html;
+}
+function _refreshCQDef() {
+  document.getElementById('mBody').innerHTML = _renderCQDefBody();
+}
+function cqDefAddChoice() {
+  const next = (_cqDefItem.choices||[]).length + 1;
+  if(!_cqDefItem.choices) _cqDefItem.choices=[];
+  _cqDefItem.choices.push({ code: next, label:'', filter:{ question:'', codes:[] } });
+  _refreshCQDef();
+}
+function cqDefRemoveChoice(ci) {
+  _cqDefItem.choices.splice(ci,1);
+  _refreshCQDef();
+}
+function cqDefChoiceLabel(ci, v) { _cqDefItem.choices[ci].label = v; }
+function cqDefSetFType(ci, fType) { cqSetFTypeOn(_cqDefItem.choices, ci, fType); _refreshCQDef(); }
+function cqDefAddCond(ci)      { cqAddCondOn(_cqDefItem.choices, ci); _refreshCQDef(); }
+function cqDefRmCond(ci, ki)   { cqRmCondOn(_cqDefItem.choices, ci, ki); _refreshCQDef(); }
+function cqDefCondQ(ci,ki,v)   { cqCondQOn(_cqDefItem.choices, ci, ki, v); }
+function cqDefCondOp(ci,ki,v)  { cqCondOpOn(_cqDefItem.choices, ci, ki, v); }
+function cqDefCondCodes(ci,ki,v){ cqCondCodesOn(_cqDefItem.choices, ci, ki, v); }
+function cqDefPickQ(ci, ki) {
+  showQPicker('🔍 Pick Question', 'Select question for filter condition', q => {
+    cqDefCondQ(ci, ki, q.label||'');
+    const isNew = _cqDefIdx < 0;
+    showModal(
+      isNew ? '✨ New Custom Question' : '✨ Edit Custom Question',
+      isNew ? 'Define a reusable custom virtual question' : `Editing: ${_cqDefItem.label||'?'}`,
+      _renderCQDefBody(),
+      `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+       ${!isNew?`<button class="btn btn-dan btn-xs" onclick="deleteCQDef()">🗑 Delete</button>`:''}
+       <button class="btn btn-pri" onclick="saveCQDef()">✓ Save</button>`,
+      { noBackdrop: true }
+    );
+  });
+}
+function saveCQDef() {
+  if(!_cqDefItem.label?.trim()) { alert('Please enter a label.'); return; }
+  if(!_cqDefItem.choices?.length) { alert('Please add at least one choice.'); return; }
+  _cqDefItem.choices.forEach((c,i)=>{ if(!c.label) c.label=`Choice ${i+1}`; });
+  const oldLabel = _cqDefIdx >= 0 ? customDefs[_cqDefIdx]?.label : null;
+  const newLabel = _cqDefItem.label;
+  if (_cqDefIdx >= 0) {
+    customDefs[_cqDefIdx] = _cqDefItem;
+    // Propagate label rename + updated choices to all custom_ref items across all tables
+    if (oldLabel && oldLabel !== newLabel) {
+      data.forEach(tbl => {
+        (tbl.banner||[]).forEach(it => { if(it.type==='custom_ref' && it.ref===oldLabel){ it.ref=newLabel; it.label=newLabel; } });
+        (tbl.stub||[]).forEach(it   => { if(it.type==='custom_ref' && it.ref===oldLabel)  it.ref=newLabel; });
+      });
+    }
+  } else {
+    customDefs.push(_cqDefItem);
+  }
+  render(); renderQL(); closeModal();
+  saveFile();
+}
+function deleteCQDef() {
+  if (_cqDefIdx < 0) return;
+  const label = customDefs[_cqDefIdx]?.label;
+  if (!confirm(`Delete custom question "${label}"?\nAll references to it in all tables will also be removed.`)) return;
+  customDefs.splice(_cqDefIdx, 1);
+  // Remove all custom_ref items pointing to this def from all tables
+  data.forEach(tbl => {
+    if (tbl.banner) tbl.banner = tbl.banner.filter(it => !(it.type==='custom_ref' && it.ref===label));
+    if (tbl.stub)   tbl.stub   = tbl.stub.filter(it   => !(it.type==='custom_ref' && it.ref===label));
+  });
+  render(); renderQL(); closeModal();
+  saveFile();
+}
+
+// ── Custom ref stub modal ─────────────────────────
+function openCustomRefStubModal(idx) {
+  const item = cfg().stub[idx];
+  const def = resolveCustomRef(item);
+  const lbl = def ? def.label : (item.ref||'?');
+  modalSt = { type:'custom-ref-stub', idx, item: JSON.parse(JSON.stringify(item)) };
+  const statsHtml = STATS_ALL.map(s => {
+    const on = (item.stats||['base','percent']).includes(s);
+    return `<label style="display:inline-flex;align-items:center;gap:3px;margin-right:8px;cursor:pointer;font-size:12px">
+      <input type="checkbox" ${on?'checked':''} onchange="cqRefStatToggle('${s}',this.checked)">${s}</label>`;
+  }).join('');
+  showModal(
+    '✨ Custom Ref — Stub',
+    lbl,
+    `<div style="margin-bottom:8px;font-size:12px;color:#666">References global definition: <strong>${h(lbl)}</strong></div>
+     ${def?'':`<div style="color:#c62828;font-size:12px;margin-bottom:8px">⚠ Definition not found — it may have been deleted.</div>`}
+     <div style="margin-bottom:6px;font-weight:600;font-size:12px">Stats</div>
+     <div>${statsHtml}</div>
+     <div style="margin-top:14px">
+       <button class="btn btn-sec btn-sm" onclick="closeModal();openCustomDefModal(${customDefs.findIndex(d=>d.label===item.ref)})">✎ Edit Definition</button>
+     </div>`,
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-pri" onclick="saveCustomRefStub()">✓ Save</button>`,
+    { noBackdrop: true }
+  );
+}
+function cqRefStatToggle(s, on) {
+  if (!modalSt?.item) return;
+  let stats = modalSt.item.stats || ['base','percent'];
+  if (on) { if (!stats.includes(s)) stats.push(s); }
+  else stats = stats.filter(x => x !== s);
+  modalSt.item.stats = stats;
+}
+function saveCustomRefStub() {
+  cfg().stub[modalSt.idx] = modalSt.item;
+  markDirty(); renderMain(); closeModal();
+}
+
+// ── Custom ref banner modal ───────────────────────
+function openCustomRefBannerModal(idx) {
+  const item = cfg().banner[idx];
+  const def = resolveCustomRef(item);
+  const lbl = def ? def.label : (item.ref||'?');
+  const defIdx = customDefs.findIndex(d => d.label === item.ref);
+  showModal(
+    '✨ Custom Ref — Banner',
+    lbl,
+    `<div style="margin-bottom:8px;font-size:12px;color:#666">References global definition: <strong>${h(lbl)}</strong></div>
+     ${def?`<div style="font-size:12px">${(def.choices||[]).length} choices: ${(def.choices||[]).map(c=>h(c.label||'?')).join(', ')}</div>`
+          :`<div style="color:#c62828;font-size:12px">⚠ Definition not found — it may have been deleted.</div>`}
+     <div style="margin-top:14px">
+       <button class="btn btn-sec btn-sm" onclick="closeModal();openCustomDefModal(${defIdx})">✎ Edit Definition</button>
+     </div>`,
+    `<button class="btn btn-sec" onclick="closeModal()">Close</button>`,
+    { noBackdrop: true }
+  );
+}
+
+// ── Shared helpers for def vs inline choice mutations ──
+function cqSetFTypeOn(choices, ci, fType) {
+  const ch = choices[ci]; if (!ch) return;
+  const existing = [];
+  if (ch.filter?.and) ch.filter.and.forEach(f => existing.push(f));
+  else if (ch.filter?.or)  ch.filter.or.forEach(f  => existing.push(f));
+  else if (ch.filter)      existing.push(ch.filter);
+  if (fType === 'single') ch.filter = existing[0] || null;
+  else if (fType === 'and') ch.filter = { and: existing.length ? existing : [{}] };
+  else if (fType === 'or')  ch.filter = { or:  existing.length ? existing : [{}] };
+  else ch.filter = null;
+}
+function cqAddCondOn(choices, ci) {
+  const ch = choices[ci]; if (!ch) return;
+  if (ch.filter?.and) ch.filter.and.push({});
+  else if (ch.filter?.or) ch.filter.or.push({});
+}
+function cqRmCondOn(choices, ci, ki) {
+  const ch = choices[ci]; if (!ch) return;
+  if (ch.filter?.and) ch.filter.and.splice(ki, 1);
+  else if (ch.filter?.or) ch.filter.or.splice(ki, 1);
+}
+function _leafAtOn(choices, ci, ki) {
+  const ch = choices[ci]; if (!ch) return null;
+  if (ch.filter?.and) return ch.filter.and[ki] ?? null;
+  if (ch.filter?.or)  return ch.filter.or[ki]  ?? null;
+  if (!ch.filter) ch.filter = { question:'', codes:[] };
+  return ch.filter;
+}
+function cqCondQOn(choices, ci, ki, v) {
+  const leaf = _leafAtOn(choices, ci, ki); if (!leaf) return;
+  leaf.question = v;
+}
+function cqCondOpOn(choices, ci, ki, v) {
+  const leaf = _leafAtOn(choices, ci, ki); if (!leaf) return;
+  leaf.op = v;
+}
+function cqCondCodesOn(choices, ci, ki, v) {
+  const leaf = _leafAtOn(choices, ci, ki); if (!leaf) return;
+  leaf.codes = v.split(',').map(s=>s.trim()).filter(Boolean).map(Number).filter(n=>!isNaN(n));
+}
+function cqCondNegateOn(choices, ci, ki, on) {
+  const leaf = _leafAtOn(choices, ci, ki); if (!leaf) return;
+  if (on) leaf.negate = true; else delete leaf.negate;
+}
+// inline
+function cqCondNegate(ci, ki, on)    { const l=_leafAt(ci,ki); if(!l) return; if(on) l.negate=true; else delete l.negate; _refreshCQ(); }
+// def
+function cqDefCondNegate(ci, ki, on) { cqCondNegateOn(_cqDefItem.choices, ci, ki, on); _refreshCQDef(); }
+
 function setBannerTotal(ci, on) {
   const b = cfg()?.banner?.[ci]; if (!b) return;
   if (on) b.show_total = true; else delete b.show_total;
@@ -2216,8 +2879,16 @@ function toggleRaw() {
 }
 function syncRaw() {
   const ta=document.getElementById('rawEd'); if(!ta) return;
-  try { const p=JSON.parse(ta.value); data=Array.isArray(p)?p:[p]; activeCfg=Math.min(activeCfg,Math.max(0,data.length-1)); ta.classList.remove('err'); markDirty(); }
-  catch(e) { ta.classList.add('err'); }
+  try {
+    let p=JSON.parse(ta.value);
+    if(!Array.isArray(p)) p=[p];
+    if(p[0]?._custom_defs){customDefs=p[0]._custom_defs;p=p.slice(1);}
+    data=p; activeCfg=Math.min(activeCfg,Math.max(0,data.length-1)); ta.classList.remove('err'); markDirty();
+  } catch(e) { ta.classList.add('err'); }
+}
+function dtPayload() {
+  if(!customDefs.length) return data;
+  return [{ _custom_defs: customDefs }, ...data];
 }
 
 // ════════════════════════════════════════════════════
@@ -2397,11 +3068,44 @@ function filterRowsByGroupMABinary(parentRows, bq, g) {
   );
 }
 
+// ── Custom filter evaluation ─────────────────────────
+// Supports: leaf {question,codes,op} | {and:[...]} | {or:[...]}
+function evalFilter(row, filter) {
+  if (!filter) return true;
+  if (filter.and) return filter.and.every(f => evalFilter(row, f));
+  if (filter.or)  return filter.or.some(f  => evalFilter(row, f));
+  const mq = findMetaQ(filter.question);
+  if (!mq) return false;
+  const codes = (filter.codes || []).map(Number);
+  if (!codes.length) return true;
+  const op = filter.op || 'any';
+  let result;
+  if (isMAbinary(mq)) {
+    if (op === 'all') result = codes.every(code => { const bc = _getMAbinaryCol(mq, code); return bc && Number(row[bc]) > 0; });
+    else result = codes.some(code => { const bc = _getMAbinaryCol(mq, code); return bc && Number(row[bc]) > 0; });
+  } else {
+    const col = qRawCol(mq);
+    const rowVals = cellVals(row[col]);
+    result = op === 'all' ? codes.every(c => rowVals.includes(c)) : codes.some(c => rowVals.includes(c));
+  }
+  return filter.negate ? !result : result;
+}
+
 // Recursively build child nodes for one level item
 // parentRows: already-filtered rows for the parent node
 // levelItem: {question, label, groups, show_total}
 // nextLevels: remaining deeper level items
 function buildLevelChildren(parentRows, levelItem, nextLevels) {
+  if (levelItem.type === 'custom_ref') {
+    const def = resolveCustomRef(levelItem);
+    if (!def) return [];
+    return (def.choices || []).map(ch => {
+      const rows = parentRows.filter(row => evalFilter(row, ch.filter));
+      const node = { label: ch.label, rows, children: [] };
+      if (nextLevels.length) node.children = buildLevelChildren(rows, nextLevels[0], nextLevels.slice(1));
+      return node;
+    });
+  }
   const _lq  = findMetaQ(levelItem.question);
   const col  = _lq ? qRawCol(_lq) : qToCol(levelItem.question);
   const groups = levelItem.groups || [];
@@ -2451,6 +3155,28 @@ function buildBannerTree(banner) {
   // Pass 2 — question-based banner items
   for (const item of banner) {
     if (item.filter === null && !item.question) continue;
+
+    if (item.type === 'custom') {
+      const levels = item.levels || [];
+      const lv1Children = (item.choices || []).map(ch => {
+        const rows = allRows.filter(row => evalFilter(row, ch.filter));
+        return { label: ch.label, rows, children: levels.length ? buildLevelChildren(rows, levels[0], levels.slice(1)) : [] };
+      });
+      roots.push({ label: item.label || 'Custom', rows: allRows, children: lv1Children });
+      continue;
+    }
+
+    if (item.type === 'custom_ref') {
+      const def = resolveCustomRef(item);
+      if (!def) continue;
+      const levels = item.levels || [];
+      const lv1Children = (def.choices || []).map(ch => {
+        const rows = allRows.filter(row => evalFilter(row, ch.filter));
+        return { label: ch.label, rows, children: levels.length ? buildLevelChildren(rows, levels[0], levels.slice(1)) : [] };
+      });
+      roots.push({ label: def.label || 'Custom', rows: allRows, children: lv1Children });
+      continue;
+    }
 
     const _bq         = findMetaQ(item.question);
     const col         = _bq ? qRawCol(_bq) : qToCol(item.question);
@@ -2802,6 +3528,13 @@ function buildGroupRows(stats, choices, colData, stubGroups, cellContent, pctDec
 
 // ── Block computation ────────────────────────────────
 function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pctDec=0) {
+  if (stubItem.type === 'custom') return computeCustomBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pctDec);
+  if (stubItem.type === 'custom_ref') {
+    const def = resolveCustomRef(stubItem);
+    if (!def) return null;
+    const merged = Object.assign({}, def, { stats: stubItem.stats || def.stats || ['base','percent'] });
+    return computeCustomBlock(merged, bannerCols, cellContent, showSig, sigLevels, pctDec);
+  }
   const qLabel = stubItem.question;
   const stats  = stubItem.stats || ['base','percent'];
   const mq = findMetaQ(qLabel);
@@ -2853,6 +3586,30 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pct
       rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false, pctDec) };
   }
   return null;
+}
+
+function computeCustomBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pctDec=0) {
+  const stats   = stubItem.stats || ['base','percent'];
+  const choices = stubItem.choices || [];
+  const rows    = [];
+  if (stats.includes('base')) {
+    rows.push({ label:'Base', type:'base',
+      cells: bannerCols.map(bc => ({ display:String(bc.rows.length), raw:bc.rows.length }))
+    });
+  }
+  for (const ch of choices) {
+    const cells = bannerCols.map(bc => {
+      const cnt  = bc.rows.filter(row => evalFilter(row, ch.filter)).length;
+      const base = bc.rows.length;
+      const pct  = base > 0 ? cnt/base*100 : 0;
+      const val  = cellContent === 'count' ? cnt : pct;
+      return { display: cellContent==='count' ? String(cnt) : fmtPct(pct, pctDec), raw:val, count:cnt, base };
+    });
+    let sigs = null;
+    if (showSig) sigs = computeSig(cells.map(c=>({count:c.count,base:c.base})), sigLevels);
+    rows.push({ label: ch.label, type:'choice', cells, sigs });
+  }
+  return { type:'flat', qCode:'__custom__', qLabel: stubItem.label||'Custom', answerType:'Custom', rows };
 }
 
 // ── Ranking block (two modes) ────────────────────────
@@ -3794,7 +4551,7 @@ async function saveFile() {
     const res = await fetch(`/api/surveys/${currentSurveyId}/datatable`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(data, null, 2),
+      body: JSON.stringify(dtPayload(), null, 2),
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'save failed');
     dirty = false;
@@ -3822,7 +4579,7 @@ async function downloadXlsxDirect() {
     const res = await fetch(`/api/surveys/${currentSurveyId}/generate?profile_status=${encodeURIComponent(psParam)}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ datatable_config: data }),  // send full config → server bypasses stale cache
+      body: JSON.stringify({ datatable_config: dtPayload() }),  // send full config → server bypasses stale cache
     });
     if (!res.ok) {
       const d = await res.json();
