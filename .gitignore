@@ -36,8 +36,10 @@ Thumbs.db
 .claude/worktrees/
 
 *.xlsx
+*.pptx
 
 # Runtime data (token, survey files)
 data/
 
 plan.txt
+
