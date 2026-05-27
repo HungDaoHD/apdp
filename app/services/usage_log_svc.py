@@ -19,6 +19,7 @@ FW_USERS: set[str] = {
     "lieu.tran@asia-plus.net",
     "tananh.nguyen@asia-plus.net",
     "tan.nguyen@asia-plus.net",
+    "tam.nguyen@asia-plus.net",
     "vananh.do@asia-plus.net",
 }
 
