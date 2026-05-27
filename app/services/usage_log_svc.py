@@ -21,6 +21,7 @@ FW_USERS: set[str] = {
     "tan.nguyen@asia-plus.net",
     "tam.nguyen@asia-plus.net",
     "vananh.do@asia-plus.net",
+    "thuydo@kadence.com.vn",
 }
 
 # Human-readable action labels
