@@ -9,6 +9,7 @@ from pathlib import Path
 _LOCK = threading.Lock()
 
 FW_USERS: set[str] = {
+    "hung.dao@asia-plus.net",
     "bichthao.duong@asia-plus.net",
     "huyen.nguyen94@asia-plus.net",
     "pha.dang@asia-plus.net",
