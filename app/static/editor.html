@@ -20,6 +20,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .hdr-logo img{height:24px;display:block}
 .sep{width:1px;height:22px;background:#2d3748;flex-shrink:0}
 .fbadge{font-size:11px;padding:2px 9px;border-radius:4px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#refreshBadge{max-width:none}
 .fbadge.none{background:#252f3f;color:#555}
 .fbadge.ok{background:#1a3a2a;color:#6fcf97;border:1px solid #2a5a3a}
 .fbadge.warn{background:#3a2e10;color:#f6ad55;border:1px solid #6b4c10}
@@ -2939,7 +2940,8 @@ function onRdIn(e) {
   r.readAsText(f, 'utf-8'); e.target.value = '';
 }
 // Server-side counts (set after activateSurvey or doRefresh)
-let _dataCounts = { n_rows: 0, n_approved: 0, n_pending: 0 };
+let _dataCounts      = { n_rows: 0, n_approved: 0, n_pending: 0 };
+let _lastDataRefresh = null;  // Date of last rawdata load
 
 function dataStatusText() {
   const { n_rows, n_approved, n_pending } = _dataCounts;
@@ -2952,12 +2954,25 @@ function dataStatusText() {
   return parts.length ? parts.join(' · ') : `${n_rows} rows`;
 }
 
-function _setDataCounts(counts) {
+function _setDataCounts(counts, stampRefresh) {
   _dataCounts = { n_rows: counts.n_rows||0, n_approved: counts.n_approved||0, n_pending: counts.n_pending||0 };
+  if (stampRefresh) _lastDataRefresh = new Date();           // explicit stamp (e.g. after doRefresh)
+  else if (_dataCounts.n_rows && !_lastDataRefresh) _lastDataRefresh = new Date(); // first load only
   const rfBadge = document.getElementById('refreshBadge');
-  if (rfBadge && _dataCounts.n_rows) {
-    rfBadge.textContent = dataStatusText();
-    rfBadge.className   = 'fbadge ok';
+  if (rfBadge) {
+    if (_dataCounts.n_rows) {
+      const ts = _lastDataRefresh ? (() => {
+        const d = _lastDataRefresh;
+        const hh = String(d.getHours()).padStart(2,'0');
+        const mm = String(d.getMinutes()).padStart(2,'0');
+        const ss = String(d.getSeconds()).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        const mo = String(d.getMonth()+1).padStart(2,'0');
+        return `${hh}:${mm}:${ss} ${dd}/${mo}`;
+      })() : '';
+      rfBadge.textContent = dataStatusText() + (ts ? `  ·  refreshed ${ts}` : '');
+      rfBadge.className   = 'fbadge ok';
+    }
   }
   const btnA = document.getElementById('psApproved');
   const btnP = document.getElementById('psPending');
@@ -3833,7 +3848,9 @@ function renderRow(row, nCols) {
 }
 
 // ── Preview panel ────────────────────────────────────
-let _pvActiveTab = 0;
+let _pvActiveTab   = 0;
+let _pvMissingMode = false;
+let _pvLogicMode   = false;
 // _pvResults = client-computed [{roots, bannerCols, blocks, tableConfig}] — one per sheet tab
 
 // ── Quota Table ──────────────────────────────────────
@@ -4183,7 +4200,8 @@ async function showPreview() {
     document.getElementById('pvTabs').innerHTML =
       tables.map((t,i) =>
         `<button class="pvtab ${i===0?'on':''}" data-tab="${i}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
-      ).join('');
+      ).join('')
+      + `<button class="pvtab pvtab-missing" data-tab="missing" onclick="switchPvMissing()" style="margin-left:8px;border-left:1px solid #3d4757">🔍 Missing</button>`;
     document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Loading…</span></div>';
     requestAnimationFrame(() => requestAnimationFrame(renderPvContent));
   } catch(err) {
@@ -4194,6 +4212,7 @@ async function showPreview() {
 }
 function closePreview() { document.getElementById('previewPanel').style.display='none'; }
 function switchPvTab(i) {
+  _pvMissingMode = false;
   _pvQuotaMode = (i === 'quota');
   if (!_pvQuotaMode) _pvActiveTab = i;
   document.querySelectorAll('#pvTabs .pvtab').forEach(el =>
@@ -4215,6 +4234,167 @@ function renderPvContent() {
       top += tr.offsetHeight;
     });
   }
+}
+
+// ════════════════════════════════════════════════════
+// MISSING DATA CHECK (Option A)
+// ════════════════════════════════════════════════════
+
+function switchPvMissing() {
+  _pvMissingMode = true;
+  _pvQuotaMode   = false;
+  document.querySelectorAll('#pvTabs .pvtab').forEach(el =>
+    el.classList.toggle('on', el.dataset.tab === 'missing')
+  );
+  const cfg = data[activeCfg];
+  const el  = document.getElementById('pvContent');
+  el.style.cssText = '';
+  el.innerHTML = renderMissingTable(cfg);
+}
+
+// Returns true if the respondent gave no answer for the given meta-question
+function isMissingRow(row, mq) {
+  if (!mq) return false;
+  const t = qType(mq);
+
+  if (t.startsWith('Matrix')) {
+    // Matrix: ALL sub-questions missing → whole question missing
+    const subQs    = mq.sub_questions || {};
+    const children = mq.children || Object.keys(subQs);
+    if (!children.length) return false;
+    return children.every(key => {
+      const sq = subQs[key]; if (!sq) return false;
+      if (isMAbinary(sq))
+        return (sq.rawdata_columns || []).every(c => !Number(row[c]));
+      const v = row[qRawCol(sq)];
+      return v === null || v === undefined || v === '' || String(v).trim() === '' || String(v).trim() === 'nan';
+    });
+  }
+
+  if (isMAbinary(mq)) {
+    // MA binary: ALL binary columns are 0 / falsy → no choice selected
+    return (mq.rawdata_columns || []).every(c => !Number(row[c]));
+  }
+
+  // SA / NUM / FT
+  const v = row[qRawCol(mq)];
+  return v === null || v === undefined || v === '' || String(v).trim() === '' || String(v).trim() === 'nan';
+}
+
+// Format one missing cell with colour
+function _missingCell(n, base) {
+  if (base === 0) return { html: '<span style="color:#ccc">—</span>', bg: '' };
+  const pct = n / base * 100;
+  const bg  = pct >= 15 ? '#fde8e6' : pct >= 5  ? '#fff8e1' : '#e8f5e9';
+  const fg  = pct >= 15 ? '#c62828' : pct >= 5  ? '#f57f17' : '#2e7d32';
+  return {
+    html: `<span style="font-weight:700;color:${fg}">${n}</span>`
+        + `<span style="font-size:10px;color:${fg};margin-left:3px">(${pct.toFixed(1)}%)</span>`,
+    bg,
+  };
+}
+
+function renderMissingTable(cfg) {
+  const banner = cfg.banner || [];
+  const stub   = cfg.stub   || [];
+
+  const roots      = buildBannerTree(banner);
+  const bannerCols = getLeafs(roots);
+
+  if (!bannerCols.length)
+    return '<div class="pv-loading"><span>No banner columns defined.</span></div>';
+
+  // Flatten stub into analysable rows: {label, mq, indent, groupLabel}
+  const stubRows = [];
+  const addQ = (si, groupLabel) => {
+    const mq = findMetaQ(si.question); if (!mq) return;
+    const t  = qType(mq);
+    if (t.startsWith('Matrix')) {
+      const subQs    = mq.sub_questions || {};
+      const children = mq.children || Object.keys(subQs);
+      const parent   = si.label || mq.label;
+      children.forEach(key => {
+        const sq = subQs[key]; if (!sq) return;
+        stubRows.push({ label: sq.row_label || sq.label, mq: sq, type: qType(sq), indent: true, groupLabel: parent });
+      });
+    } else {
+      stubRows.push({ label: si.label || mq.label, mq, type: t, indent: false, groupLabel: groupLabel || null });
+    }
+  };
+
+  for (const si of stub) {
+    if (si.row_group) {
+      for (const item of si.items || []) addQ(item, null);
+    } else {
+      addQ(si, null);
+    }
+  }
+
+  if (!stubRows.length)
+    return '<div class="pv-loading"><span>No questions to check.</span></div>';
+
+  // ── Render ────────────────────────────────────────
+  const thStyle = 'padding:8px 10px;text-align:center;position:sticky;top:0;z-index:2;background:#16213e;white-space:nowrap;border-right:1px solid #2d3748';
+  const thFirst = 'padding:8px 12px;text-align:left;position:sticky;top:0;left:0;z-index:3;background:#16213e;min-width:220px;border-right:1px solid #2d3748';
+
+  let html = `<div style="overflow:auto;max-height:calc(100vh - 112px)">
+  <table style="border-collapse:collapse;font-size:12px;width:100%">
+  <thead>
+    <tr style="background:#16213e;color:white">
+      <th style="${thFirst}">Question</th>
+      <th style="${thStyle};min-width:60px">Type</th>
+      ${bannerCols.map(bc =>
+        `<th style="${thStyle};min-width:90px">${h(bc.label)}<br>
+         <span style="font-size:10px;font-weight:400;color:#8aa">n=${bc.rows.length}</span></th>`
+      ).join('')}
+    </tr>
+    <tr style="background:#0e1628;color:#8aa;font-size:10px">
+      <td style="padding:3px 12px;position:sticky;left:0;background:#0e1628;border-right:1px solid #2d3748">
+        🔑 Green &lt;5% · 🟡 5–15% · 🔴 ≥15%
+      </td>
+      <td></td>
+      ${bannerCols.map(() => '<td></td>').join('')}
+    </tr>
+  </thead>
+  <tbody>`;
+
+  let lastGroup = null;
+  for (const sr of stubRows) {
+    // Group header row when entering a new matrix block
+    if (sr.groupLabel && sr.groupLabel !== lastGroup) {
+      lastGroup = sr.groupLabel;
+      html += `<tr style="background:#f0f4ff">
+        <td colspan="${bannerCols.length + 2}"
+            style="padding:5px 12px;font-weight:700;font-size:11px;color:#1a1a2e;
+                   border-bottom:1px solid #dde3ef;position:sticky;left:0">
+          ${h(sr.groupLabel)}
+        </td></tr>`;
+    } else if (!sr.groupLabel) {
+      lastGroup = null;
+    }
+
+    const cells = bannerCols.map(bc => {
+      const n = bc.rows.filter(row => isMissingRow(row, sr.mq)).length;
+      return _missingCell(n, bc.rows.length);
+    });
+    const hasHigh = cells.some(c => c.bg === '#fde8e6');
+    const rowBg   = hasHigh ? '#fff8f8' : '';
+
+    html += `<tr style="border-bottom:1px solid #f0f0f0;${rowBg ? 'background:'+rowBg : ''}">
+      <td style="padding:6px 12px;${sr.indent ? 'padding-left:28px' : ''};
+                 position:sticky;left:0;background:${rowBg||'white'};border-right:1px solid #eee">
+        ${h(sr.label)}
+      </td>
+      <td style="padding:6px 8px;font-size:10px;color:#999;white-space:nowrap;
+                 border-right:1px solid #eee">${sr.type}</td>
+      ${cells.map(c =>
+        `<td style="padding:6px 10px;text-align:center;${c.bg ? 'background:'+c.bg : ''}">${c.html}</td>`
+      ).join('')}
+    </tr>`;
+  }
+
+  html += '</tbody></table></div>';
+  return html;
 }
 
 // ── xlsx export ──────────────────────────────────────
@@ -4502,7 +4682,11 @@ async function doRefresh() {
     const rows = d.n_rows != null ? ` — ${d.n_rows} rows` : '';
     showFetchProgress(`✓ Refresh complete${rows}`, 'Reloading metadata…', null, 'success');
     await apiLoadMeta(currentSurveyId);
-    _setDataCounts(d);
+    // Re-fetch /status for reliable counts, then stamp the refresh time
+    try {
+      const st2 = await fetch(`/api/surveys/${currentSurveyId}/status`).then(r => r.json());
+      _setDataCounts(st2, true);
+    } catch { _setDataCounts(d, true); }
     rawCsv = null; rawHeaders = [];
     document.getElementById('downloadBtn').disabled = false;
     document.getElementById('dlBtn').disabled = false;
