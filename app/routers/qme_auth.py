@@ -326,6 +326,13 @@ async def qme_verify(body: VerifyBody, request: Request):
     await _save_token(token_data, session_id)
     get_storage(session_id).email = email
 
+    # Usage log — record successful login
+    try:
+        from services import usage_log_svc
+        usage_log_svc.append(email, "login")
+    except Exception:
+        pass
+
     resp = JSONResponse({"ok": True})
     resp.set_cookie(
         _COOKIE_NAME,
@@ -345,8 +352,19 @@ async def qme_verify(body: VerifyBody, request: Request):
 @router.delete("/disconnect")
 async def qme_disconnect(request: Request):
     session_id = request.cookies.get(_COOKIE_NAME, "")
+    email: str | None = None
     if session_id:
+        try:
+            email = get_storage(session_id).email
+        except Exception:
+            pass
         get_storage(session_id).clear()
+    # Usage log — record logout
+    try:
+        from services import usage_log_svc
+        usage_log_svc.append(email, "logout")
+    except Exception:
+        pass
     resp = JSONResponse({"status": "disconnected"})
     resp.delete_cookie(_COOKIE_NAME)
     return resp

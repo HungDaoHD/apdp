@@ -580,6 +580,23 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 })();
 
 // ════════════════════════════════════════════════════
+// USAGE LOG — fire-and-forget event tracking
+// ════════════════════════════════════════════════════
+function logEvent(action) {
+  try {
+    fetch('/api/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action,
+        survey_id:   currentSurveyId   || null,
+        survey_name: currentSurveyName || null,
+      }),
+    }).catch(() => {});
+  } catch(e) {}
+}
+
+// ════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════
 const HAS_FS   = typeof window.showOpenFilePicker === 'function';
@@ -738,6 +755,7 @@ function loadDT(text, name) {
     data = p; activeCfg = 0; activeTab = 'layout'; dirty = false;
     document.getElementById('saveBtn').disabled = false;
     setStatus('Opened: '+name, 'saved');
+    logEvent('open_datatable');
     render(); renderQL(); checkRunBtn();
   } catch(e) { setStatus('⚠ Datatable error: '+e.message,''); }
 }
@@ -4131,6 +4149,7 @@ function renderQuotaContent() {
 
 async function showPreview() {
   if (!data.length || !currentSurveyId) return;
+  logEvent('preview');
   const cfg    = data[activeCfg];
   const tables = (cfg.tables||[]).filter(t => t.enabled !== false);
   if (cfg.type !== 'quota' && !tables.length) { setStatus('⚠ No enabled tables', ''); return; }
@@ -4556,6 +4575,7 @@ async function saveFile() {
     if (!res.ok) throw new Error((await res.json()).detail || 'save failed');
     dirty = false;
     setStatus('✓ Data table saved', 'saved');
+    logEvent('save');
   } catch(e) {
     setStatus('⚠ Save error: ' + e.message, '');
   } finally {
@@ -4593,6 +4613,7 @@ async function downloadXlsxDirect() {
     });
     a.click();
     URL.revokeObjectURL(url);
+    logEvent('download');
     showFetchProgress('✓ datatable.xlsx downloaded', currentSurveyName, null, 'success');
     setStatus('✓ Downloaded datatable.xlsx', 'saved');
     setTimeout(hideFetchProgress, 3000);
@@ -4709,6 +4730,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   const title  = params.get('title');
   if (sid) {
     activateSurvey(parseInt(sid), title || `Survey ${sid}`);
+    // Log page load / refresh after survey vars are set
+    setTimeout(() => logEvent('page_load'), 500);
   } else {
     // No survey selected — redirect to projects page
     window.location = '/';
