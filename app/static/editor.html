@@ -2977,8 +2977,10 @@ function dataStatusText() {
 
 function _setDataCounts(counts, stampRefresh) {
   _dataCounts = { n_rows: counts.n_rows||0, n_approved: counts.n_approved||0, n_pending: counts.n_pending||0 };
-  if (stampRefresh) _lastDataRefresh = new Date();           // explicit stamp (e.g. after doRefresh)
-  else if (_dataCounts.n_rows && !_lastDataRefresh) _lastDataRefresh = new Date(); // first load only
+  // Prefer server-side refreshed_at from info.json; fall back to client clock only when needed
+  if (counts.refreshed_at) _lastDataRefresh = new Date(counts.refreshed_at);
+  else if (stampRefresh)   _lastDataRefresh = new Date();
+  else if (_dataCounts.n_rows && !_lastDataRefresh) _lastDataRefresh = new Date();
   const rfBadge = document.getElementById('refreshBadge');
   if (rfBadge) {
     if (_dataCounts.n_rows) {

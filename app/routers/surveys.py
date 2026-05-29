@@ -246,6 +246,11 @@ async def survey_status(survey_id: int):
             stats = storage.read_json(f"{survey_id}/data/stats.json")
         except Exception:
             pass
+    info: dict = {}
+    try:
+        info = storage.read_json(f"{survey_id}/info.json")
+    except Exception:
+        pass
     return {
         "has_mcp":       storage.exists(f"{survey_id}/mcp/definition.json"),
         "has_data":      has_data,
@@ -254,4 +259,5 @@ async def survey_status(survey_id: int):
         "n_rows":        stats.get("n_rows", 0),
         "n_approved":    stats.get("n_approved", 0),
         "n_pending":     stats.get("n_pending", 0),
+        "refreshed_at":  info.get("refreshed_at"),   # ISO string from info.json
     }
