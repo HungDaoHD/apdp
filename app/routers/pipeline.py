@@ -308,6 +308,7 @@ async def generate_xlsx(survey_id: int, request: Request,
         raise HTTPException(400, "No datatable.json found")
 
     statuses = _parse_profile_status(profile_status)
+    t0 = datetime.now(timezone.utc)
     try:
         loop = asyncio.get_running_loop()
         xlsx_bytes = await loop.run_in_executor(
@@ -318,8 +319,12 @@ async def generate_xlsx(survey_id: int, request: Request,
     except FileNotFoundError:
         raise HTTPException(400, "Required data file not found — run Refresh first")
     except Exception as exc:
-        log.exception("generate_xlsx failed for survey %s", survey_id)
-        raise HTTPException(500, "Pipeline error — check server logs")
+        elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
+        log.exception("generate_xlsx failed for survey %s after %.1fs", survey_id, elapsed)
+        raise HTTPException(500, f"Pipeline error after {elapsed:.0f}s — check server logs")
+
+    elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
+    log.info("generate_xlsx done: survey=%s elapsed=%.1fs size=%d bytes", survey_id, elapsed, len(xlsx_bytes))
 
     return Response(
         content=xlsx_bytes,
