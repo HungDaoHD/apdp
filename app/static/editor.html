@@ -765,7 +765,7 @@ function loadDT(text, name) {
       }
       delete item.significance_test;
     });
-    data = p; activeCfg = 0; activeTab = 'layout'; dirty = false;
+    data = p.map(_hoistTotal); activeCfg = 0; activeTab = 'layout'; dirty = false;
     document.getElementById('saveBtn').disabled = false;
     setStatus('Opened: '+name, 'saved');
     logEvent('open_datatable');
@@ -2915,9 +2915,20 @@ function syncRaw() {
     data=p; activeCfg=Math.min(activeCfg,Math.max(0,data.length-1)); ta.classList.remove('err'); markDirty();
   } catch(e) { ta.classList.add('err'); }
 }
+function _hoistTotal(cfg) {
+  // Ensure { label:'Total', filter:null } is always the first banner entry
+  if (!Array.isArray(cfg.banner)) return cfg;
+  const totalIdx = cfg.banner.findIndex(b => b.filter === null && !b.question);
+  if (totalIdx <= 0) return cfg;  // already first (or missing — leave as-is)
+  const banner = [...cfg.banner];
+  const [total] = banner.splice(totalIdx, 1);
+  banner.unshift(total);
+  return { ...cfg, banner };
+}
 function dtPayload() {
-  if(!customDefs.length) return data;
-  return [{ _custom_defs: customDefs }, ...data];
+  const out = data.map(_hoistTotal);
+  if(!customDefs.length) return out;
+  return [{ _custom_defs: customDefs }, ...out];
 }
 
 // ════════════════════════════════════════════════════
