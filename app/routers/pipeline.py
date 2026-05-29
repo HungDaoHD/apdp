@@ -204,13 +204,17 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
     log.info("[refresh:%s] token OK — creating QMeClient (url=%s)", survey_id, settings.QME_MCP_BASE_URL)
 
     started_at = datetime.now(timezone.utc).isoformat()
+    _log_entries: list[str] = []
 
     def _step(msg: str):
-        """Update status file with current step (visible in UI polling)."""
+        """Update status file with current step + accumulated log (visible in UI polling)."""
         log.info("[refresh:%s] %s", survey_id, msg)
+        ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        _log_entries.append(f"[{ts}] {msg}")
         _write_refresh_status(survey_id, {
             "status":     "running",
             "step":       msg,
+            "log":        list(_log_entries),
             "started_at": started_at,
         })
 
@@ -239,22 +243,22 @@ async def _do_refresh(survey_id: int, session_id: str) -> None:
                     log.exception("[refresh:%s] retry failed: %s", survey_id, root)
                     if _is_auth_error(retry_exc):
                         _clear_token(session_id)
-                    _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(str(root))})
+                    _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(str(root)), "log": list(_log_entries)})
                     return
             else:
                 _clear_token(session_id)
-                _write_refresh_status(survey_id, {"status": "error", "detail": "QMe authentication failed — please reconnect"})
+                _write_refresh_status(survey_id, {"status": "error", "detail": "QMe authentication failed — please reconnect", "log": list(_log_entries)})
                 return
         else:
             root = _unwrap_exc(first_exc)
             detail = str(root)
             log.exception("[refresh:%s] pipeline failed: %s", survey_id, detail)
-            _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(detail)})
+            _write_refresh_status(survey_id, {"status": "error", "detail": _sanitize_error(detail), "log": list(_log_entries)})
             return
 
     log.info("[refresh:%s] executor finished — n_rows=%s", survey_id, result.get("n_rows"))
     _upsert_info(survey_id, session_id)
-    _write_refresh_status(survey_id, {"status": "done", **result})
+    _write_refresh_status(survey_id, {"status": "done", "log": list(_log_entries), **result})
     log.info("[refresh:%s] status=done written", survey_id)
 
 

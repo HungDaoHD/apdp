@@ -20,7 +20,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .hdr-logo img{height:24px;display:block}
 .sep{width:1px;height:22px;background:#2d3748;flex-shrink:0}
 .fbadge{font-size:11px;padding:2px 9px;border-radius:4px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#refreshBadge{max-width:none}
 .fbadge.none{background:#252f3f;color:#555}
 .fbadge.ok{background:#1a3a2a;color:#6fcf97;border:1px solid #2a5a3a}
 .fbadge.warn{background:#3a2e10;color:#f6ad55;border:1px solid #6b4c10}
@@ -319,6 +318,10 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 #fpClose:hover{color:#555}
 #fpBar{height:3px;background:#e8eaed;border-radius:3px;overflow:hidden}
 #fpBarFill{height:100%;width:5%;background:#1a73e8;border-radius:3px;transition:width .4s ease}
+#fpLog{max-height:120px;overflow-y:auto;font-family:monospace;font-size:10px;color:#667;
+  background:#f8f9fa;border:1px solid #e8eaed;border-radius:5px;padding:6px 8px;
+  line-height:1.6;display:none;scroll-behavior:smooth}
+#fpLog .fp-log-line{white-space:pre-wrap;word-break:break-all}
 
 /* ── Preview panel ──────────────────────────────── */
 #previewPanel{position:fixed;inset:0;z-index:500;background:#f0f2f5;display:none;flex-direction:column}
@@ -376,6 +379,7 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
       <button id="fpClose" onclick="hideFetchProgress()">✕</button>
     </div>
   </div>
+  <div id="fpLog"></div>
   <div id="fpBar"><div id="fpBarFill"></div></div>
 </div>
 
@@ -481,10 +485,9 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 
 <div class="sbar" id="sbar">
   <div class="dot"></div>
-  <span class="msg">No file open</span>
+  <span class="msg">—</span>
+  <span id="refreshBadge" style="display:none"></span>
   <span style="flex:1"></span>
-  <span class="fbadge none" id="refreshBadge" style="font-size:10px">data: —</span>
-  <span style="color:#e0e4ea">|</span>
   <span style="color:#ccc" id="shortcut">Ctrl+S to save</span>
   <span style="color:#e0e4ea">|</span>
   <span style="color:#ccc;font-size:10px" id="sfVersionBadge">surveyflow …</span>
@@ -2975,40 +2978,42 @@ function dataStatusText() {
   return parts.length ? parts.join(' · ') : `${n_rows} rows`;
 }
 
+function _badgeStatusText() {
+  const { n_rows, n_approved, n_pending } = _dataCounts;
+  if (!n_rows) return 'data: ✓';
+  const parts = [];
+  if (n_approved) parts.push(`${n_approved} approved`);
+  if (n_pending)  parts.push(`${n_pending} pending`);
+  const other = n_rows - n_approved - n_pending;
+  if (other > 0)  parts.push(`${other} other`);
+  let text = parts.length ? parts.join(' · ') : `${n_rows} rows`;
+  if (_lastDataRefresh) {
+    const d = _lastDataRefresh;
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mo = String(d.getMonth()+1).padStart(2,'0');
+    text += `  ·  refreshed ${hh}:${mm}:${ss} ${dd}/${mo}`;
+  }
+  return text;
+}
 function _setDataCounts(counts, stampRefresh) {
   _dataCounts = { n_rows: counts.n_rows||0, n_approved: counts.n_approved||0, n_pending: counts.n_pending||0 };
   // Prefer server-side refreshed_at from info.json; fall back to client clock only when needed
   if (counts.refreshed_at) _lastDataRefresh = new Date(counts.refreshed_at);
   else if (stampRefresh)   _lastDataRefresh = new Date();
   else if (_dataCounts.n_rows && !_lastDataRefresh) _lastDataRefresh = new Date();
-  const rfBadge = document.getElementById('refreshBadge');
-  if (rfBadge) {
-    if (_dataCounts.n_rows) {
-      const ts = _lastDataRefresh ? (() => {
-        const d = _lastDataRefresh;
-        const hh = String(d.getHours()).padStart(2,'0');
-        const mm = String(d.getMinutes()).padStart(2,'0');
-        const ss = String(d.getSeconds()).padStart(2,'0');
-        const dd = String(d.getDate()).padStart(2,'0');
-        const mo = String(d.getMonth()+1).padStart(2,'0');
-        return `${hh}:${mm}:${ss} ${dd}/${mo}`;
-      })() : '';
-      rfBadge.textContent = dataStatusText() + (ts ? `  ·  refreshed ${ts}` : '');
-      rfBadge.className   = 'fbadge ok';
-    }
-  }
+  // Always update status bar — clears any lingering "⏳ refreshing…" message
+  setStatus(_dataCounts.n_rows ? _badgeStatusText() : 'data: —', _dataCounts.n_rows ? 'saved' : '');
   const btnA = document.getElementById('psApproved');
   const btnP = document.getElementById('psPending');
   if (btnA) btnA.textContent = _dataCounts.n_approved ? `Approved (${_dataCounts.n_approved})` : 'Approved';
   if (btnP) btnP.textContent = _dataCounts.n_pending  ? `Pending (${_dataCounts.n_pending})`   : 'Pending';
 }
 
-function _setRefreshProcessing() {
-  const rfBadge = document.getElementById('refreshBadge');
-  if (rfBadge) {
-    rfBadge.textContent = 'refreshing…';
-    rfBadge.className   = 'fbadge warn';
-  }
+function _setRefreshProcessing(step = '') {
+  setStatus(step ? `⏳ ${step}` : '⏳ refreshing…', '');
 }
 
 function loadRd(text, name) {
@@ -4552,6 +4557,7 @@ function showFetchProgress(title, step = '', elapsed = null, type = 'loading') {
   document.getElementById('fpStep').textContent    = step;
   document.getElementById('fpElapsed').textContent = elapsed !== null ? `${elapsed}s elapsed` : '';
 
+  const logEl = document.getElementById('fpLog');
   if (type === 'loading') {
     card.style.borderLeftColor = '#1a73e8';
     icon.innerHTML = '<div class="lov-spin" style="width:18px;height:18px;border-width:2.5px"></div>';
@@ -4559,6 +4565,7 @@ function showFetchProgress(title, step = '', elapsed = null, type = 'loading') {
     cancel.style.display = '';
     close.style.display  = 'none';
     fill.style.background = '#1a73e8';
+    if (logEl) logEl.style.display = '';   // show log during loading
     if (!_fpBarAnim) {
       let pct = 5;
       fill.style.width = pct + '%';
@@ -4575,6 +4582,7 @@ function showFetchProgress(title, step = '', elapsed = null, type = 'loading') {
     fill.style.background = '#1e8449';
     cancel.style.display = 'none';
     close.style.display  = '';
+    // keep log visible on success so user can read final entries
     clearInterval(_fpBarAnim); _fpBarAnim = null;
   } else if (type === 'error') {
     card.style.borderLeftColor = '#c0392b';
@@ -4582,10 +4590,18 @@ function showFetchProgress(title, step = '', elapsed = null, type = 'loading') {
     bar.style.display    = 'none';
     cancel.style.display = 'none';
     close.style.display  = '';
+    if (logEl) logEl.style.display = 'none'; // hide log on error
     clearInterval(_fpBarAnim); _fpBarAnim = null;
   }
 
   card.style.display = 'flex';
+}
+
+function _updateFpLog(lines) {
+  const logEl = document.getElementById('fpLog');
+  if (!logEl || !lines || !lines.length) return;
+  logEl.innerHTML = lines.map(l => `<div class="fp-log-line">${h(l)}</div>`).join('');
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
 function hideFetchProgress() {
@@ -4594,6 +4610,8 @@ function hideFetchProgress() {
   const fill = document.getElementById('fpBarFill');
   fill.style.width = '5%';
   fill.style.background = '#1a73e8';
+  const logEl = document.getElementById('fpLog');
+  if (logEl) { logEl.innerHTML = ''; logEl.style.display = 'none'; }
 }
 
 async function cancelRefresh() {
@@ -4629,104 +4647,122 @@ function dlFile(filename) {
 async function activateSurvey(id, title) {
   currentSurveyId   = id;
   currentSurveyName = title;
-  rawCsv = null; rawHeaders = []; // clear rawdata from previous survey
+  rawCsv = null; rawHeaders = [];
   _dataCounts = { n_rows: 0, n_approved: 0, n_pending: 0 };
 
   _setLoading('Loading survey…', title);
 
-  // title from URL already contains full formatted string e.g. "[723122] VN8947 — Survey name"
   const badge = document.getElementById('surveyBadge');
   badge.textContent = title;
   badge.className = 'fbadge ok';
   document.title = `Q&Me — ${title}`;
 
-  const st = await fetch(`/api/surveys/${id}/status`).then(r => r.json());
+  try {
+    const st = await fetch(`/api/surveys/${id}/status`).then(r => r.json());
 
-  const rfBadge = document.getElementById('refreshBadge');
-  if (st.has_data) {
-    _setDataCounts(st);
-  } else {
-    rfBadge.textContent = 'data: —';
-    rfBadge.className = 'fbadge none';
-  }
-  document.getElementById('refreshBtn').disabled = false;
-  document.getElementById('dlBtn').disabled = !st.has_data;
+    document.getElementById('refreshBtn').disabled = false;
+    document.getElementById('dlBtn').disabled = !st.has_data;
 
-  if (st.has_data) {
-    _setLoading('Loading questions…', title);
-    await apiLoadMeta(id);
+    if (st.has_data) {
+      _setLoading('Loading questions…', title);
+      await apiLoadMeta(id);
+    }
+    if (st.has_datatable) {
+      _setLoading('Loading datatable config…', title);
+      await apiLoadDT(id);
+    }
+    document.getElementById('downloadBtn').disabled = !st.has_data;
+    checkRunBtn();
+    if (st.has_data) {
+      _setDataCounts(st);
+    } else {
+      setStatus('no data — click 🔄 Refresh', '');
+    }
+    // Resume polling if a refresh job is already running (e.g. after page reload)
+    try {
+      const job = await fetch(`/api/surveys/${id}/refresh/status`).then(r => r.json());
+      if (job.status === 'running') {
+        const startedAt = job.started_at ? new Date(job.started_at).getTime() : Date.now();
+        _pollRefreshJob(id, title, startedAt);  // non-blocking
+      }
+    } catch {}
+  } catch(e) {
+    setStatus('⚠ Load error: ' + e.message, '');
+  } finally {
+    _setLoading(null);  // always hide overlay
   }
-  if (st.has_datatable) {
-    _setLoading('Loading datatable config…', title);
-    await apiLoadDT(id);
-  }
-  document.getElementById('downloadBtn').disabled = !st.has_data;
-  _setLoading(null);
-  checkRunBtn();
-  setStatus(`Survey loaded · ${st.has_data ? 'data ✓' : 'no data — click 🔄 Refresh'}`, st.has_data ? 'saved' : '');
 }
 
-// ── Refresh: re-fetch from QMe + re-ingest ────────
-
-async function doRefresh() {
-  if (!currentSurveyId) return;
+// ── Shared poll loop — called by doRefresh AND activateSurvey (resume on reload) ──
+async function _pollRefreshJob(surveyId, surveyName, startedAt) {
   const btn = document.getElementById('refreshBtn');
-  btn.disabled = true;
-  _setRefreshProcessing();
-  _setLoading(`Refreshing ${currentSurveyName}`, 'Starting…', true, true);
-  setStatus('Fetching from QMe…', '');
+  if (btn) btn.disabled = true;
+  showFetchProgress(`Refreshing ${surveyName}`, 'Connecting…', null, 'loading');
+  _setRefreshProcessing('Connecting…');
   try {
-    const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST'});
-    let d = {};
-    try { d = await r.json(); } catch {}
-    if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
-
-    const t0 = Date.now();
+    const t0 = startedAt || Date.now();
     const MAX_WAIT_MS = 12 * 60 * 1000;
+    let d = {};
+    // First poll immediately (may have already progressed if resuming after reload)
     while (true) {
-      await new Promise(res => setTimeout(res, 30000));
       const elapsed = Math.round((Date.now() - t0) / 1000);
       if (Date.now() - t0 > MAX_WAIT_MS)
         throw new Error(`Refresh timed out after ${elapsed}s — please try again.`);
       let job = {};
-      try { job = await fetch(`/api/surveys/${currentSurveyId}/refresh/status`).then(r => r.json()); } catch {}
+      try { job = await fetch(`/api/surveys/${surveyId}/refresh/status`).then(r => r.json()); } catch {}
       if (job.status === 'done') { d = job; break; }
       if (job.status === 'error') throw new Error(job.detail || 'Refresh failed');
-      _setLoading(
-        `Refreshing ${currentSurveyName}`,
-        `${job.step || 'Processing…'}  (${elapsed}s)`,
-        true, true
-      );
-      setStatus(`Fetching from QMe… (${elapsed}s)`, '');
+      const step = job.step || 'Processing…';
+      _setRefreshProcessing(`${step} (${elapsed}s)`);
+      showFetchProgress(`Refreshing ${surveyName}`, `${step} (${elapsed}s)`, null, 'loading');
+      _updateFpLog(job.log);
+      await new Promise(res => setTimeout(res, 10000)); // poll every 10s
     }
-
-    // Success — close overlay, show bottom-right card briefly
-    _setLoading(null);
+    // Success
     const rows = d.n_rows != null ? ` — ${d.n_rows} rows` : '';
-    showFetchProgress(`✓ Refresh complete${rows}`, 'Reloading metadata…', null, 'success');
-    await apiLoadMeta(currentSurveyId);
-    // Re-fetch /status for reliable counts, then stamp the refresh time
+    showFetchProgress(`✓ Refresh complete${rows}`, '', null, 'success');
+    _updateFpLog(d.log);
+    await apiLoadMeta(surveyId);
     try {
-      const st2 = await fetch(`/api/surveys/${currentSurveyId}/status`).then(r => r.json());
+      const st2 = await fetch(`/api/surveys/${surveyId}/status`).then(r => r.json());
       _setDataCounts(st2, true);
     } catch { _setDataCounts(d, true); }
     rawCsv = null; rawHeaders = [];
     document.getElementById('downloadBtn').disabled = false;
     document.getElementById('dlBtn').disabled = false;
     checkRunBtn();
-    setStatus(`✓ Refresh complete — ${dataStatusText()}`, 'saved');
     setTimeout(hideFetchProgress, 3000);
   } catch(e) {
-    _setLoading(null);
     if (/reconnect|token expired|unauthori[sz]ed/i.test(e.message)) {
       document.getElementById('authErrMov').style.display = 'flex';
     } else {
       showFetchProgress('✕ Refresh failed', e.message, null, 'error');
       setStatus('⚠ Refresh error: ' + e.message, '');
     }
+    _setDataCounts(_dataCounts);
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
+}
+
+async function doRefresh() {
+  if (!currentSurveyId) return;
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  _setRefreshProcessing('Starting…');
+  try {
+    const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST'});
+    let d = {};
+    try { d = await r.json(); } catch {}
+    if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
+  } catch(e) {
+    btn.disabled = false;
+    showFetchProgress('✕ Refresh failed', e.message, null, 'error');
+    setStatus('⚠ Refresh error: ' + e.message, '');
+    return;
+  }
+  // Hand off to shared poll loop
+  await _pollRefreshJob(currentSurveyId, currentSurveyName, Date.now());
 }
 
 // ── API loaders ───────────────────────────────────
