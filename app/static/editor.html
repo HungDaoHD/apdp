@@ -753,6 +753,18 @@ function loadDT(text, name) {
     if (!Array.isArray(p)) p = [p];
     if (p[0]?._custom_defs) { customDefs = p[0]._custom_defs; p = p.slice(1); }
     else customDefs = [];
+    // Migrate: top-level significance_test → per-sheet (surveyflow v0.4.16+)
+    p.forEach(item => {
+      if (!item.significance_test) return;
+      const st = item.significance_test;
+      const sigSh = (item.tables||[]).find(t=>t.show_sig===true);
+      if (sigSh) {
+        if (!sigSh.levels)  sigSh.levels = st.levels  || [90, 95];
+        if (!sigSh.method)  sigSh.method = st.method  || 'independent';
+        if (st.enabled === false) sigSh.enabled = false;
+      }
+      delete item.significance_test;
+    });
     data = p; activeCfg = 0; activeTab = 'layout'; dirty = false;
     document.getElementById('saveBtn').disabled = false;
     setStatus('Opened: '+name, 'saved');
@@ -2155,8 +2167,6 @@ function renderSettings(c) {
       <div class="cardb" style="padding:0;overflow:auto;max-height:65vh">${tblBody}</div>
     </div>`;
   }
-  const sig=c.significance_test||{};
-  const sigOn=!!sig.enabled, sigLvl=sig.levels||[], sigM=sig.method||'independent';
   const bm=c.banner_matrix, tables=c.tables||[];
   return `
   <div class="card">
@@ -2167,32 +2177,6 @@ function renderSettings(c) {
           <input type="text" value="${a(c.title||'')}" oninput="setF('title',this.value)" placeholder="VD: VN8932 - Data Table"></div>
         <div class="fg"><label class="fl">Sub Title</label>
           <input type="text" value="${a(c.sub_title||'')}" oninput="setF('sub_title',this.value)" placeholder="VD: General"></div>
-      </div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="cardh"><div class="chl">🔬 Significance Test</div></div>
-    <div class="cardb">
-      <div class="fr" style="align-items:center;margin-bottom:12px">
-        <div class="tw">
-          <label class="tgl"><input type="checkbox" ${sigOn?'checked':''} onchange="setSig('enabled',this.checked)"><span class="tgls"></span></label>
-          <span style="font-size:12px;color:${sigOn?'#1e8449':'#bbb'}">${sigOn?'On':'Off'}</span>
-        </div>
-      </div>
-      <div class="fr">
-        <div class="fg" style="flex:.8"><label class="fl">Method</label>
-          <select onchange="setSig('method',this.value)">
-            <option value="independent" ${sigM==='independent'?'selected':''}>independent</option>
-            <option value="paired" ${sigM==='paired'?'selected':''}>paired</option>
-          </select></div>
-        <div class="fg"><label class="fl">Levels</label>
-          <div style="display:flex;gap:14px;margin-top:5px">
-            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
-              <input type="checkbox" ${sigLvl.includes(90)?'checked':''} onchange="toggleSigLvl(90,this.checked)" style="width:12px;height:12px;accent-color:#1a73e8"> 90%</label>
-            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
-              <input type="checkbox" ${sigLvl.includes(95)?'checked':''} onchange="toggleSigLvl(95,this.checked)" style="width:12px;height:12px;accent-color:#1a73e8"> 95%</label>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -2211,11 +2195,15 @@ function renderSettings(c) {
   </div>
   ${(()=>{
     const countSheet = tables.find(t=>t.cell_content==='count') || {sheet:'Count',cell_content:'count',show_sig:false,enabled:true};
-    const pctSheet   = tables.find(t=>t.cell_content==='percentage') || {sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true,decimal:0};
+    const pctSheet   = tables.find(t=>t.cell_content==='percentage'&&!t.show_sig) || {sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true,decimal:0};
+    const sigSheet   = tables.find(t=>t.show_sig===true) || {sheet:'Sig',cell_content:'percentage',show_sig:true,levels:[90,95],method:'independent',enabled:false};
     const cOn  = countSheet.enabled !== false;
     const pOn  = pctSheet.enabled   !== false;
+    const sOn  = sigSheet.enabled   !== false;
     const dec  = pctSheet.decimal ?? 0;
-    const nOn  = [cOn,pOn].filter(Boolean).length;
+    const sigLvl = sigSheet.levels  || [90, 95];
+    const sigM   = sigSheet.method  || 'independent';
+    const nOn  = [cOn,pOn,sOn].filter(Boolean).length;
     return `
   <div class="card">
     <div class="cardh">
@@ -2236,6 +2224,25 @@ function renderSettings(c) {
         <div class="fg" style="flex:.7"><label class="fl">Decimal</label>
           <input type="number" min="0" max="4" step="1" value="${dec}" style="width:60px" oninput="setSheetByContent('percentage','decimal',+this.value)"></div>
       </div>
+      <div class="shrow ${sOn?'':'dis'}" style="border-top:1px dashed #2a3347;margin-top:6px;padding-top:10px">
+        <div><label class="fl">Enable</label>
+          <label class="tgl"><input type="checkbox" ${sOn?'checked':''} onchange="setSigSheet('enabled',this.checked)"><span class="tgls"></span></label></div>
+        <div class="fg"><label class="fl">Sheet (Sig)</label>
+          <span style="font-size:12px;font-weight:600;color:#444;padding:2px 0;display:block">🔬 Sig</span></div>
+        <div class="fg"><label class="fl">Levels</label>
+          <div style="display:flex;gap:10px;margin-top:5px">
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+              <input type="checkbox" ${sigLvl.includes(90)?'checked':''} onchange="toggleSigSheetLvl(90,this.checked)" style="width:12px;height:12px;accent-color:#1a73e8"> 90%</label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+              <input type="checkbox" ${sigLvl.includes(95)?'checked':''} onchange="toggleSigSheetLvl(95,this.checked)" style="width:12px;height:12px;accent-color:#1a73e8"> 95%</label>
+          </div>
+        </div>
+        <div class="fg" style="flex:.9"><label class="fl">Method</label>
+          <select onchange="setSigSheet('method',this.value)">
+            <option value="independent" ${sigM==='independent'?'selected':''}>independent</option>
+            <option value="paired" ${sigM==='paired'?'selected':''}>paired</option>
+          </select></div>
+      </div>
     </div>
   </div>`; })()}`;
 }
@@ -2252,15 +2259,18 @@ function setF(k,v) {
   const el=document.querySelectorAll('.tbsi')[activeCfg];
   if (el) { el.querySelector('.tbsi-name').textContent=cfg().sub_title||'Table '+(activeCfg+1); el.querySelector('.tbsi-sub').textContent=cfg().title||'—'; }
 }
-function setSig(k,v) {
-  const c=cfg(); if(!c.significance_test) c.significance_test={enabled:false,levels:[90,95],method:'independent'};
-  c.significance_test[k]=v; markDirty(); if(k==='enabled') renderMain();
+function setSigSheet(k,v) {
+  const c=cfg(); if(!c.tables) c.tables=[];
+  let sh=c.tables.find(t=>t.show_sig===true);
+  if(!sh){ sh={sheet:'Sig',cell_content:'percentage',show_sig:true,levels:[90,95],method:'independent',enabled:false}; c.tables.push(sh); }
+  sh[k]=v; markDirty(); if(k==='enabled') renderMain();
 }
-function toggleSigLvl(l,on) {
-  const c=cfg(); if(!c.significance_test) c.significance_test={enabled:false,levels:[90,95],method:'independent'};
-  let ls=[...(c.significance_test.levels||[])];
+function toggleSigSheetLvl(l,on) {
+  const c=cfg(); if(!c.tables) return;
+  const sh=c.tables.find(t=>t.show_sig===true); if(!sh) return;
+  let ls=[...(sh.levels||[])];
   if(on&&!ls.includes(l)) ls.push(l); else if(!on) ls=ls.filter(x=>x!==l);
-  c.significance_test.levels=ls.sort((a,b)=>a-b); markDirty();
+  sh.levels=ls.sort((a,b)=>a-b); markDirty();
 }
 function addBM()    { cfg().banner_matrix={label:'Brand',question:'Q?'}; markDirty(); renderMain(); }
 function removeBM() { delete cfg().banner_matrix; markDirty(); renderMain(); }
@@ -2870,10 +2880,10 @@ function addCfgType(type) {
   if (type === 'quota') {
     newCfg.quota = { targets: {} };
   } else {
-    newCfg.significance_test = {enabled:false,levels:[90,95],method:'independent'};
     newCfg.tables = [
-      {sheet:'Count', cell_content:'count',     show_sig:false, enabled:true},
-      {sheet:'Pct',   cell_content:'percentage', show_sig:false, enabled:true, decimal:0}
+      {sheet:'Count', cell_content:'count',      show_sig:false, enabled:true},
+      {sheet:'Pct',   cell_content:'percentage', show_sig:false, enabled:true,  decimal:0},
+      {sheet:'Sig',   cell_content:'percentage', show_sig:true,  enabled:false, levels:[90,95], method:'independent'},
     ];
   }
   data.push(newCfg);
@@ -3782,8 +3792,8 @@ function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigL
 function computeTable(cfgItem, tableConfig) {
   const roots      = buildBannerTree(cfgItem.banner || []);
   const bannerCols = getLeafs(roots);           // only leaf nodes are data columns
-  const showSig    = tableConfig.show_sig && cfgItem.significance_test?.enabled;
-  const sigLevels  = cfgItem.significance_test?.levels || [90,95];
+  const showSig    = !!tableConfig.show_sig;
+  const sigLevels  = tableConfig.levels || [90, 95];
   const cc         = tableConfig.cell_content; // 'count' | 'percentage'
   const pctDec     = tableConfig.decimal ?? 0;
   const blocks = (cfgItem.stub||[]).map(si => {
