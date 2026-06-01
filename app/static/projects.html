@@ -595,55 +595,22 @@ async function doAddSurvey() {
   if (!dlgSelected) return;
   const btn = document.getElementById('dlgAddBtn');
   btn.disabled = true;
-  btn.textContent = '⏳ Fetching…';
-
-  // Close dialog, show full-screen blocking overlay
+  btn.textContent = '⏳ Opening…';
   closeNewDialog();
-  showLoading(`Fetching [${dlgSelected.id}] ${dlgSelected.title}`, 'Starting…');
 
   try {
-    // Start background job — returns immediately
+    // Start background fetch job — returns immediately
     const r = await apiFetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
     let d = {};
     try { d = await r.json(); } catch {}
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
 
-    // Poll — update overlay with current step + elapsed
-    const t0 = Date.now();
-    while (true) {
-      await new Promise(res => setTimeout(res, 30000));
-      const elapsed = Math.round((Date.now() - t0) / 1000);
-      let job = {};
-      try { job = await fetch(`/api/surveys/${dlgSelected.id}/refresh/status`).then(r => r.json()); } catch {}
-      if (job.status === 'done') { d = job; break; }
-      if (job.status === 'error') throw new Error(job.detail || 'Refresh failed');
-      showLoading(
-        `Fetching [${dlgSelected.id}] ${dlgSelected.title}`,
-        job.step || 'Processing…',
-        elapsed
-      );
-    }
-
-    // Success — overlay → success card → navigate
-    hideLoading();
-    const rows = d.n_rows != null ? ` — ${d.n_rows} rows` : '';
-    showFetchProgress(`✓ Fetch complete${rows}`, 'Opening editor…', null, 'success');
-    loadProjects();
-
-    let displayTitle = `[${dlgSelected.id}] ${dlgSelected.title}`;
-    try {
-      const projects = await fetch('/api/surveys/projects').then(r => r.json());
-      const p = projects.find(x => x.survey_id === dlgSelected.id);
-      if (p) displayTitle = fmtProject(p);
-    } catch(_) {}
-
-    setTimeout(() => {
-      hideFetchProgress();
-      window.location = `/editor?survey_id=${dlgSelected.id}&title=${encodeURIComponent(displayTitle)}`;
-    }, 2000);
+    // Navigate to editor immediately — editor will auto-detect the running job
+    // and resume polling via _pollRefreshJob
+    const displayTitle = encodeURIComponent(`[${dlgSelected.id}] ${dlgSelected.title}`);
+    window.location = `/editor?survey_id=${dlgSelected.id}&title=${displayTitle}`;
 
   } catch(e) {
-    hideLoading();
     if (/reconnect|token expired|unauthori[sz]ed|401/i.test(e.message)) {
       _showAuthExpired();
     } else {

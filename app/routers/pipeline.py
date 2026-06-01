@@ -134,6 +134,9 @@ async def refresh_survey(survey_id: int, background_tasks: BackgroundTasks,
         "started_at":         datetime.now(timezone.utc).isoformat(),
         "started_by_session": session_id,   # H1: ownership tracking
     })
+    # Create info.json immediately so the project appears in the projects list
+    # before the background job completes (important for new surveys)
+    _upsert_info(survey_id, session_id)
     background_tasks.add_task(_do_refresh, survey_id, session_id)
     return {"status": "started"}
 
