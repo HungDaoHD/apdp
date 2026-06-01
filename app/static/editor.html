@@ -4672,12 +4672,12 @@ async function activateSurvey(id, title) {
       await apiLoadDT(id);
     }
     document.getElementById('downloadBtn').disabled = !st.has_data;
-    checkRunBtn();
     if (st.has_data) {
-      _setDataCounts(st);
+      _setDataCounts(st);   // sets _dataCounts.n_rows before checkRunBtn
     } else {
       setStatus('no data — click 🔄 Refresh', '');
     }
+    checkRunBtn();          // now sees correct n_rows
     // Resume polling if a refresh job is already running (e.g. after page reload)
     try {
       const job = await fetch(`/api/surveys/${id}/refresh/status`).then(r => r.json());
