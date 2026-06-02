@@ -338,22 +338,30 @@ async def ingest_zip(survey_id: int, file: UploadFile = File(...),
     except _zipfile.BadZipFile:
         raise HTTPException(400, "Uploaded file is not a valid ZIP archive")
 
-    csv_names = [n for n in zf.namelist() if fnmatch.fnmatch(n, "code_retail_report_*.csv")]
+    import csv as _csv, re as _re
+    from pathlib import PurePosixPath
+
+    # Match by basename so files in subdirectories inside the ZIP also work
+    csv_names = [
+        n for n in zf.namelist()
+        if fnmatch.fnmatch(PurePosixPath(n).name, "code_retail_report_*.csv")
+    ]
     if not csv_names:
-        raise HTTPException(400, "No code_retail_report_*.csv found inside the ZIP")
+        all_files = ", ".join(zf.namelist()) or "(empty)"
+        raise HTTPException(
+            400,
+            f"No code_retail_report_*.csv found inside the ZIP. "
+            f"Files found: {all_files[:300]}"
+        )
 
     csv_bytes = zf.read(csv_names[0])
     log.info("ingest_zip: survey=%s extracted %s (%d bytes)", survey_id, csv_names[0], len(csv_bytes))
 
     # ── 1b. Extract survey code from CSV and validate against definition ──────
-    # CSV row 1 (0-indexed): e.g. ',"Data for task: VN8964 Survey title",...'
-    # We read it as raw text to avoid running the full parse_export_csv yet.
-    import csv as _csv, re as _re
     def _extract_csv_code(raw: bytes) -> str | None:
         try:
             text = raw.decode("utf-8-sig", errors="replace")
             rows = list(_csv.reader(text.splitlines()))
-            # Row index 1: look for "Data for task: CODE ..."
             if len(rows) > 1:
                 for cell in rows[1]:
                     m = _re.search(r"Data for task:\s*(\S+)", cell, _re.IGNORECASE)
@@ -365,6 +373,12 @@ async def ingest_zip(survey_id: int, file: UploadFile = File(...),
 
     csv_code = _extract_csv_code(csv_bytes)
     log.info("ingest_zip: CSV survey code = %s", csv_code)
+    if not csv_code:
+        raise HTTPException(
+            400,
+            f"Cannot identify survey code from CSV (expected 'Data for task: CODE ...' in row 2). "
+            f"Please verify this is a valid QMe export file."
+        )
 
     # ── 2. Get definition — use cached or auto-fetch from QMe ────────────────
     if storage.exists(f"{survey_id}/mcp/definition.json"):
@@ -389,19 +403,25 @@ async def ingest_zip(survey_id: int, file: UploadFile = File(...),
             raise HTTPException(502, f"Failed to fetch survey definition: {_sanitize_mcp_error(exc)}")
 
     # ── 2b. Validate CSV matches definition ──────────────────────────────────
-    if csv_code:
-        sv = definition.get("survey") or {}
-        def_code = (
-            sv.get("code") or sv.get("survey_code") or sv.get("project_code")
-            or sv.get("external_id") or sv.get("reference_code") or sv.get("project_no")
-        )
-        if def_code and csv_code.upper() != str(def_code).upper():
+    sv = definition.get("survey") or {}
+    def_code = (
+        sv.get("code") or sv.get("survey_code") or sv.get("project_code")
+        or sv.get("external_id") or sv.get("reference_code") or sv.get("project_no")
+        # Fallback: first word of title often contains the survey code (e.g. "VN8982 Survey title")
+        or (sv.get("title") or sv.get("english_title") or sv.get("display_title") or "").split()[0]
+    )
+    log.info("ingest_zip: definition code = '%s' (survey_id=%s)", def_code, survey_id)
+
+    if csv_code and def_code:
+        if csv_code.upper() != str(def_code).upper():
             raise HTTPException(
                 400,
                 f"CSV mismatch: file is for survey '{csv_code}' "
                 f"but this project is '{def_code}' (survey_id={survey_id})"
             )
-        log.info("ingest_zip: CSV code '%s' matches definition code '%s'", csv_code, def_code)
+        log.info("ingest_zip: CSV code '%s' matches definition code '%s' ✓", csv_code, def_code)
+    else:
+        log.warning("ingest_zip: skipping code validation — csv_code=%s def_code=%s", csv_code, def_code)
 
     # ── 3. Parse CSV + run ingestion ─────────────────────────────────────────
     t0 = datetime.now(timezone.utc)
@@ -429,6 +449,20 @@ async def ingest_zip(survey_id: int, file: UploadFile = File(...),
     storage.write_bytes(f"{survey_id}/mcp/data_export.csv", csv_bytes)
     _upsert_info(survey_id, session_id)
 
+    # ── 5. Validate data integrity (Option A) ────────────────────────────────
+    integrity = pipeline_svc.validate_data_integrity(survey_id)
+    if not integrity["valid"]:
+        errors = integrity.get("errors", [])
+        log.warning("ingest_zip: integrity check failed — %d question(s) with missing columns", len(errors))
+        raise HTTPException(
+            422,
+            f"Ingestion completed but data integrity check failed — "
+            f"{len(errors)} question(s) have missing rawdata columns: "
+            + "; ".join(errors[:5])
+            + ("…" if len(errors) > 5 else "")
+        )
+    log.info("ingest_zip: integrity check passed — %d questions, %d cols", integrity["n_questions"], integrity["n_cols"])
+
     return result
 
 
@@ -451,6 +485,17 @@ async def generate_xlsx(survey_id: int, request: Request,
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
+
+    # Option B: validate data integrity before generating
+    integrity = pipeline_svc.validate_data_integrity(survey_id)
+    if not integrity["valid"]:
+        errors = integrity.get("errors", [])
+        raise HTTPException(
+            422,
+            f"Data integrity check failed — {len(errors)} question(s) have missing rawdata columns: "
+            + "; ".join(errors[:5])
+            + ("…" if len(errors) > 5 else "")
+        )
 
     body: dict = {}
     try:
@@ -506,6 +551,17 @@ async def preview_table(survey_id: int, request: Request,
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
+
+    # Option B: validate data integrity before preview
+    integrity = pipeline_svc.validate_data_integrity(survey_id)
+    if not integrity["valid"]:
+        errors = integrity.get("errors", [])
+        raise HTTPException(
+            422,
+            f"Data integrity check failed — {len(errors)} question(s) have missing rawdata columns: "
+            + "; ".join(errors[:5])
+            + ("…" if len(errors) > 5 else "")
+        )
 
     body: dict = {}
     try:

@@ -267,6 +267,56 @@ def refresh(survey_id: int, client, step_cb=None) -> dict:
     return result
 
 
+# ── data integrity validation ─────────────────────────────────────────────────
+
+def validate_data_integrity(survey_id: int) -> dict:
+    """Cross-check rawdata.csv columns against metadata.json rawdata_columns.
+
+    Returns:
+        {"valid": True, "n_questions": N, "n_cols": M}
+        {"valid": False, "errors": [...], "n_missing": N}
+    """
+    from services.storage import get_storage
+    storage = get_storage()
+
+    # Load rawdata columns (header only — no need to read all rows)
+    try:
+        raw_bytes = storage.read_bytes(f"{survey_id}/data/rawdata.csv")
+        header_line = raw_bytes.split(b"\n")[0].decode("utf-8-sig", errors="replace")
+        import csv as _csv, io as _io
+        rawdata_cols = set(next(_csv.reader(_io.StringIO(header_line))))
+    except Exception as exc:
+        return {"valid": False, "errors": [f"Cannot read rawdata.csv: {exc}"], "n_missing": -1}
+
+    # Load metadata
+    try:
+        metadata = storage.read_json(f"{survey_id}/data/metadata.json")
+    except Exception as exc:
+        return {"valid": False, "errors": [f"Cannot read metadata.json: {exc}"], "n_missing": -1}
+
+    questions = metadata.get("questions") or {}
+    if isinstance(questions, list):
+        questions = {str(i): q for i, q in enumerate(questions)}
+
+    errors = []
+    for qid, q in questions.items():
+        label   = q.get("label") or qid
+        atype   = q.get("answer_type") or "?"
+        missing = [
+            col for col in (q.get("rawdata_columns") or [])
+            if col not in rawdata_cols
+        ]
+        if missing:
+            errors.append(
+                f"[{atype}] {label}: missing column(s) {missing}"
+            )
+
+    if errors:
+        return {"valid": False, "errors": errors, "n_missing": len(errors)}
+
+    return {"valid": True, "n_questions": len(questions), "n_cols": len(rawdata_cols)}
+
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 _PII_TYPES = frozenset({"user-name", "user-phone"})

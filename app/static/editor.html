@@ -4814,7 +4814,13 @@ async function doIngestZip(input) {
     logEvent('upload_zip');
     setTimeout(hideFetchProgress, 3000);
   } catch(e) {
-    showFetchProgress('✕ Upload failed', e.message, null, 'error');
+    hideFetchProgress();
+    showModal(
+      '✕ Upload Failed',
+      'ZIP ingestion error',
+      `<div style="color:#c0392b;font-size:13px;padding:8px 0;line-height:1.6">${h(e.message)}</div>`,
+      `<button class="btn btn-sec" onclick="closeModal()">Close</button>`
+    );
     setStatus('⚠ Upload error: ' + e.message, '');
     _setDataCounts(_dataCounts);
   } finally {
