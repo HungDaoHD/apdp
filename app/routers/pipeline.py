@@ -471,6 +471,7 @@ async def ingest_zip(survey_id: int, file: UploadFile = File(...),
 @router.post("/{survey_id}/generate")
 async def generate_xlsx(survey_id: int, request: Request,
                         profile_status: str = "approved,pending",
+                        lang: str = "vi",
                         session_id: str = Depends(require_qme)):
     """Render datatable.xlsx — reuses cached compute from /preview when available.
 
@@ -515,7 +516,7 @@ async def generate_xlsx(survey_id: int, request: Request,
         xlsx_bytes = await loop.run_in_executor(
             None,
             lambda: pipeline_svc.generate_xlsx(survey_id, dt_config=dt_config,
-                                                profile_status=statuses),
+                                                profile_status=statuses, lang=lang),
         )
     except FileNotFoundError:
         raise HTTPException(400, "Required data file not found — run Refresh first")
@@ -539,6 +540,7 @@ async def generate_xlsx(survey_id: int, request: Request,
 @router.post("/{survey_id}/preview")
 async def preview_table(survey_id: int, request: Request,
                         profile_status: str = "approved,pending",
+                        lang: str = "vi",
                         session_id: str = Depends(require_qme)):
     """Compute cross-tab server-side → returns JSON table_results.
 
@@ -580,7 +582,7 @@ async def preview_table(survey_id: int, request: Request,
         loop = asyncio.get_running_loop()
         table_results = await loop.run_in_executor(
             None,
-            lambda: pipeline_svc.compute_preview(survey_id, dt_config, table_indices, statuses),
+            lambda: pipeline_svc.compute_preview(survey_id, dt_config, table_indices, statuses, lang),
         )
         return {"table_results": table_results}
     except FileNotFoundError as exc:

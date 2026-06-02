@@ -1365,6 +1365,39 @@ function openBannerModal(idx) {
   );
 }
 
+function openCustomRefStubModal(idx) {
+  const item = cfg().stub[idx];
+  const def  = resolveCustomRef(item);
+  const ALL_STATS = ['base','percent','t2b','b2b','mean','std','se'];
+  const cur  = item.stats || ['base','percent'];
+  const statsHtml = ALL_STATS.map(s =>
+    `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+      <input type="checkbox" value="${s}" ${cur.includes(s)?'checked':''} style="accent-color:#1a73e8"> ${s}</label>`
+  ).join('');
+  const choicesHtml = def
+    ? (def.choices||[]).map(ch=>`<div style="font-size:11px;padding:2px 0;color:#555">• ${h(ch.label||'')}</div>`).join('')
+    : `<div style="color:#aaa;font-size:11px">Def not found: ${h(item.ref)}</div>`;
+  showModal(
+    '📌 Custom Ref Stub',
+    h(item.ref||'?'),
+    `<div style="margin-bottom:12px">
+       <div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px">Choices (from custom def):</div>
+       ${choicesHtml}
+     </div>
+     <div>
+       <div style="font-size:11px;font-weight:600;color:#555;margin-bottom:6px">Stats:</div>
+       <div style="display:flex;flex-wrap:wrap;gap:10px">${statsHtml}</div>
+     </div>`,
+    `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
+     <button class="btn btn-pri" onclick="
+       const cbs=[...document.querySelectorAll('#modal input[type=checkbox]:checked')];
+       cfg().stub[${idx}].stats=cbs.map(cb=>cb.value);
+       markDirty(); closeModal(); renderMain();
+     ">✓ Save</button>`,
+    {noBackdrop:true}
+  );
+}
+
 function openStubModal(idx) {
   const item = cfg().stub[idx];
   if (item.type === 'custom') { openCustomQModal('stub', idx); return; }
@@ -2310,6 +2343,15 @@ function addCustomRefStub(def) {
   c.stub.push({ type:'custom_ref', ref: def.label, stats:['base','percent'] });
   markDirty(); renderMain();
 }
+function addCustomRefStub(def) {
+  const c = cfg(); if (!c) return;
+  if (!c.stub) c.stub = [];
+  // Prevent duplicate ref in stub
+  if (c.stub.some(s => s.type === 'custom_ref' && s.ref === def.label)) return;
+  c.stub.push({ type:'custom_ref', ref: def.label, stats: ['base','percent'] });
+  markDirty(); activeTab = 'layout'; renderMain();
+}
+
 function addCustomRefBanner(def, insertBefore) {
   const c = cfg(); if (!c) return;
   if (!c.banner) c.banner = [{ label:'Total', filter:null }];
@@ -4903,7 +4945,8 @@ async function downloadXlsxDirect() {
   try {
     await saveFile();
     const psParam = getProfileStatuses().join(',');
-    const res = await fetch(`/api/surveys/${currentSurveyId}/generate?profile_status=${encodeURIComponent(psParam)}`, {
+    const langParam = activeLang || 'vi';
+    const res = await fetch(`/api/surveys/${currentSurveyId}/generate?profile_status=${encodeURIComponent(psParam)}&lang=${encodeURIComponent(langParam)}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ datatable_config: dtPayload() }),  // send full config → server bypasses stale cache

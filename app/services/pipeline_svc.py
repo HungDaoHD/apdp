@@ -108,7 +108,8 @@ def run_table(survey_id: int, version: str | None = None,
 
 def generate_xlsx(survey_id: int,
                   dt_config: list[dict] | None = None,
-                  profile_status: list[str] | None = None) -> bytes:
+                  profile_status: list[str] | None = None,
+                  lang: str = "vi") -> bytes:
     """Compute cross-tab and render datatable.xlsx using TableStep.
 
     Always runs a full compute — no cache is used or written.
@@ -140,6 +141,7 @@ def generate_xlsx(survey_id: int,
             "df":               df,
             "metadata":         metadata,
             "datatable_config": dt_config,
+            "lang":             lang,
         })
         ctx["output_dir"] = str(output_dir)
         TableStep().render_xlsx(ctx)
@@ -150,7 +152,8 @@ def generate_xlsx(survey_id: int,
 def compute_preview(survey_id: int,
                     dt_config: list[dict] | None = None,
                     table_indices: list[int] | None = None,
-                    profile_status: list[str] | None = None) -> list[dict]:
+                    profile_status: list[str] | None = None,
+                    lang: str = "vi") -> list[dict]:
     """Compute cross-tab using TableStep.compute() — no xlsx written.
 
     dt_config:     override datatable config; None → use stored datatable.json.
@@ -183,6 +186,7 @@ def compute_preview(survey_id: int,
         "metadata":         metadata,
         "datatable_config": dt_config,
         "table_indices":    table_indices,
+        "lang":             lang,
     })
 
     return ctx["table_results"]
