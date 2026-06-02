@@ -257,7 +257,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
     <div class="mft">
       <div class="mft-status" id="dlgStatus" style="display:none"></div>
       <button class="btn btn-gho" onclick="closeNewDialog()">Cancel</button>
-      <button class="btn btn-suc" id="dlgAddBtn" disabled onclick="doAddSurvey()">🔄 Fetch &amp; Open</button>
+      <button class="btn btn-suc" id="dlgAddBtn" disabled onclick="doAddSurvey()">➕ Create Project</button>
     </div>
   </div>
 </div>
@@ -599,14 +599,14 @@ async function doAddSurvey() {
   closeNewDialog();
 
   try {
-    // Start background fetch job — returns immediately
-    const r = await apiFetch(`/api/surveys/${dlgSelected.id}/refresh`, {method:'POST'});
+    // Fetch only the survey definition — fast, synchronous
+    // Data will be fetched later by user (Refresh or Upload ZIP in editor)
+    const r = await apiFetch(`/api/surveys/${dlgSelected.id}/fetch-definition`, {method:'POST'});
     let d = {};
     try { d = await r.json(); } catch {}
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
 
-    // Navigate to editor immediately — editor will auto-detect the running job
-    // and resume polling via _pollRefreshJob
+    // Navigate to editor — user will choose how to get data (Refresh or Upload ZIP)
     const displayTitle = encodeURIComponent(`[${dlgSelected.id}] ${dlgSelected.title}`);
     window.location = `/editor?survey_id=${dlgSelected.id}&title=${displayTitle}`;
 
@@ -617,7 +617,7 @@ async function doAddSurvey() {
       showFetchProgress(`✕ Fetch failed`, e.message, null, 'error');
     }
     btn.disabled = false;
-    btn.textContent = '🔄 Fetch & Open';
+    btn.textContent = '➕ Create Project';
   }
 }
 

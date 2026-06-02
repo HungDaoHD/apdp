@@ -6,7 +6,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, Response
 
 from config import settings
@@ -117,6 +117,37 @@ def _validate_version(version: str) -> str:
     if not _VERSION_RE.match(version):
         raise HTTPException(400, "Invalid version format")
     return version
+
+
+# ── fetch definition only (used when creating a new project) ─────────────────
+
+@router.post("/{survey_id}/fetch-definition")
+async def fetch_definition(survey_id: int, session_id: str = Depends(require_qme)):
+    """Fetch only the survey definition from QMe and save to mcp/definition.json.
+    Creates info.json so the project appears in the projects list immediately.
+    Does NOT fetch data — user chooses Refresh or Upload ZIP afterwards.
+    """
+    access_token = get_access_token(session_id)
+    if not access_token:
+        raise HTTPException(401, "Not connected to QMe")
+
+    storage = get_storage()
+    try:
+        from surveyflow import QMeClient
+        client  = QMeClient(settings.QME_MCP_BASE_URL, access_token)
+        loop    = asyncio.get_running_loop()
+        definition = await loop.run_in_executor(
+            None, lambda: client._call("get_survey_definition", {"survey_id": survey_id})
+        )
+    except Exception as exc:
+        log.warning("fetch_definition failed for survey %s: %s", survey_id, exc)
+        _raise_if_auth(exc, session_id)
+        raise HTTPException(502, _sanitize_mcp_error(exc))
+
+    storage.write_json(f"{survey_id}/mcp/definition.json", definition)
+    _upsert_info(survey_id, session_id)
+    log.info("fetch_definition done: survey=%s", survey_id)
+    return {"status": "ok"}
 
 
 # ── refresh (fetch + ingest as background job) ────────────────────────────────
@@ -281,6 +312,124 @@ def _upsert_info(survey_id: int, session_id: str) -> None:
     info["refreshed_by"] = email
     info["refreshed_at"] = now
     storage.write_json(key, info)
+
+
+# ── ingest from uploaded ZIP (alternative to refresh) ────────────────────────
+
+@router.post("/{survey_id}/ingest-zip")
+async def ingest_zip(survey_id: int, file: UploadFile = File(...),
+                     session_id: str = Depends(require_qme)):
+    """Upload code_retail_report_*.zip, extract CSV, run ingestion.
+
+    Replaces the data-fetch step of /refresh.
+    - Extracts the first file matching code_retail_report_*.csv from the zip.
+    - If definition.json is not cached, fetches it from QMe automatically.
+    - Runs ingestion to produce rawdata.csv + metadata.json.
+    """
+    import fnmatch, io, pathlib, tempfile, zipfile as _zipfile
+    from surveyflow.steps.ingestion.export_parser import parse_export_csv
+
+    storage = get_storage()
+
+    # ── 1. Read and validate the ZIP ─────────────────────────────────────────
+    zip_bytes = await file.read()
+    try:
+        zf = _zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except _zipfile.BadZipFile:
+        raise HTTPException(400, "Uploaded file is not a valid ZIP archive")
+
+    csv_names = [n for n in zf.namelist() if fnmatch.fnmatch(n, "code_retail_report_*.csv")]
+    if not csv_names:
+        raise HTTPException(400, "No code_retail_report_*.csv found inside the ZIP")
+
+    csv_bytes = zf.read(csv_names[0])
+    log.info("ingest_zip: survey=%s extracted %s (%d bytes)", survey_id, csv_names[0], len(csv_bytes))
+
+    # ── 1b. Extract survey code from CSV and validate against definition ──────
+    # CSV row 1 (0-indexed): e.g. ',"Data for task: VN8964 Survey title",...'
+    # We read it as raw text to avoid running the full parse_export_csv yet.
+    import csv as _csv, re as _re
+    def _extract_csv_code(raw: bytes) -> str | None:
+        try:
+            text = raw.decode("utf-8-sig", errors="replace")
+            rows = list(_csv.reader(text.splitlines()))
+            # Row index 1: look for "Data for task: CODE ..."
+            if len(rows) > 1:
+                for cell in rows[1]:
+                    m = _re.search(r"Data for task:\s*(\S+)", cell, _re.IGNORECASE)
+                    if m:
+                        return m.group(1).strip()
+        except Exception:
+            pass
+        return None
+
+    csv_code = _extract_csv_code(csv_bytes)
+    log.info("ingest_zip: CSV survey code = %s", csv_code)
+
+    # ── 2. Get definition — use cached or auto-fetch from QMe ────────────────
+    if storage.exists(f"{survey_id}/mcp/definition.json"):
+        definition = storage.read_json(f"{survey_id}/mcp/definition.json")
+        log.info("ingest_zip: using cached definition for survey %s", survey_id)
+    else:
+        log.info("ingest_zip: definition not found for survey %s — fetching from QMe", survey_id)
+        access_token = get_access_token(session_id)
+        if not access_token:
+            raise HTTPException(401, "Not connected to QMe — please reconnect")
+        try:
+            from surveyflow import QMeClient
+            client = QMeClient(settings.QME_MCP_BASE_URL, access_token)
+            loop = asyncio.get_running_loop()
+            definition = await loop.run_in_executor(
+                None, lambda: client._call("get_survey_definition", {"survey_id": survey_id})
+            )
+            storage.write_json(f"{survey_id}/mcp/definition.json", definition)
+            log.info("ingest_zip: definition fetched and saved for survey %s", survey_id)
+        except Exception as exc:
+            _raise_if_auth(exc, session_id)
+            raise HTTPException(502, f"Failed to fetch survey definition: {_sanitize_mcp_error(exc)}")
+
+    # ── 2b. Validate CSV matches definition ──────────────────────────────────
+    if csv_code:
+        sv = definition.get("survey") or {}
+        def_code = (
+            sv.get("code") or sv.get("survey_code") or sv.get("project_code")
+            or sv.get("external_id") or sv.get("reference_code") or sv.get("project_no")
+        )
+        if def_code and csv_code.upper() != str(def_code).upper():
+            raise HTTPException(
+                400,
+                f"CSV mismatch: file is for survey '{csv_code}' "
+                f"but this project is '{def_code}' (survey_id={survey_id})"
+            )
+        log.info("ingest_zip: CSV code '%s' matches definition code '%s'", csv_code, def_code)
+
+    # ── 3. Parse CSV + run ingestion ─────────────────────────────────────────
+    t0 = datetime.now(timezone.utc)
+    try:
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            with tempfile.TemporaryDirectory() as tmp:
+                csv_path = pathlib.Path(tmp) / csv_names[0]
+                csv_path.write_bytes(csv_bytes)
+                export_df = parse_export_csv(str(csv_path))
+            log.info("ingest_zip: parsed %d rows from CSV", len(export_df))
+            return pipeline_svc.ingest(survey_id, definition, export_df=export_df)
+
+        result = await loop.run_in_executor(None, _run)
+    except Exception as exc:
+        elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
+        log.exception("ingest_zip failed for survey %s after %.1fs", survey_id, elapsed)
+        raise HTTPException(500, f"Ingestion error after {elapsed:.0f}s — {str(exc)[:200]}")
+
+    elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
+    log.info("ingest_zip done: survey=%s elapsed=%.1fs rows=%s", survey_id, elapsed, result.get("n_rows"))
+
+    # ── 4. Persist CSV to storage for audit + update info.json ───────────────
+    storage.write_bytes(f"{survey_id}/mcp/data_export.csv", csv_bytes)
+    _upsert_info(survey_id, session_id)
+
+    return result
 
 
 # ── generate xlsx (no storage write) ─────────────────────────────────────────

@@ -419,6 +419,8 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
     </div>
   </div>
   <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled title="Refresh data from QMe" style="padding:4px 7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+  <button class="btn btn-gho btn-sm" onclick="document.getElementById('zipFileInput').click()" id="uploadZipBtn" disabled title="Upload code_retail_report ZIP instead of fetching from QMe" style="padding:4px 7px">📂 Upload ZIP</button>
+  <input type="file" id="zipFileInput" accept=".zip" style="display:none" onchange="doIngestZip(this)">
   <div id="langSelectorWrap" style="display:none;align-items:center;gap:5px;margin-left:6px">
     <select id="langSelector" onchange="setLang(this.value)"
       style="font-size:11px;padding:2px 5px;border:1px solid #d0d5dd;border-radius:5px;background:white;color:#333;cursor:pointer;height:24px"></select>
@@ -4620,6 +4622,7 @@ async function cancelRefresh() {
     await fetch(`/api/surveys/${currentSurveyId}/refresh/cancel`, { method: 'POST' });
   } catch {}
   document.getElementById('refreshBtn').disabled = false;
+  document.getElementById('uploadZipBtn').disabled = false;
   _setLoading(null);
   setStatus('Refresh cancelled.', '');
 }
@@ -4661,6 +4664,7 @@ async function activateSurvey(id, title) {
     const st = await fetch(`/api/surveys/${id}/status`).then(r => r.json());
 
     document.getElementById('refreshBtn').disabled = false;
+  document.getElementById('uploadZipBtn').disabled = false;
     document.getElementById('dlBtn').disabled = !st.has_data;
 
     if (st.has_data) {
@@ -4763,6 +4767,59 @@ async function doRefresh() {
   }
   // Hand off to shared poll loop
   await _pollRefreshJob(currentSurveyId, currentSurveyName, Date.now());
+}
+
+// ── Upload ZIP → ingest ───────────────────────────
+async function doIngestZip(input) {
+  const file = input.files[0];
+  input.value = '';   // reset so same file can be re-selected
+  if (!file || !currentSurveyId) return;
+
+  const btn = document.getElementById('uploadZipBtn');
+  btn.disabled = true;
+  showFetchProgress(`Uploading ${file.name}`, 'Parsing ZIP…', null, 'loading');
+  _setRefreshProcessing('Uploading ZIP…');
+
+  try {
+    const form = new FormData();
+    form.append('file', file);
+
+    const res = await fetch(`/api/surveys/${currentSurveyId}/ingest-zip`, {
+      method: 'POST',
+      body: form,
+    });
+
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try {
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) { const d = await res.json(); msg = d.detail || msg; }
+        else { const t = await res.text(); if (!t.includes('<html')) msg = t.slice(0, 200) || msg; }
+      } catch {}
+      throw new Error(msg);
+    }
+
+    const d = await res.json();
+    const rows = d.n_rows != null ? ` — ${d.n_rows} rows` : '';
+    showFetchProgress(`✓ Ingest complete${rows}`, '', null, 'success');
+    await apiLoadMeta(currentSurveyId);
+    try {
+      const st2 = await fetch(`/api/surveys/${currentSurveyId}/status`).then(r => r.json());
+      _setDataCounts(st2, true);
+    } catch { _setDataCounts(d, true); }
+    rawCsv = null; rawHeaders = [];
+    document.getElementById('downloadBtn').disabled = false;
+    document.getElementById('dlBtn').disabled = false;
+    checkRunBtn();
+    logEvent('upload_zip');
+    setTimeout(hideFetchProgress, 3000);
+  } catch(e) {
+    showFetchProgress('✕ Upload failed', e.message, null, 'error');
+    setStatus('⚠ Upload error: ' + e.message, '');
+    _setDataCounts(_dataCounts);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── API loaders ───────────────────────────────────
@@ -4955,6 +5012,7 @@ async function authDoVerify() {
     setStatus('✓ Reconnected to QMe', 'saved');
     // Re-enable refresh button if survey is loaded
     if (currentSurveyId) document.getElementById('refreshBtn').disabled = false;
+  document.getElementById('uploadZipBtn').disabled = false;
   } catch(e) {
     status.style.display = '';
     status.className = 'mft-status err';
