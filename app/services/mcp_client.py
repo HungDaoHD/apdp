@@ -1,14 +1,19 @@
 """QMe MCP client using the official MCP Python SDK."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
 
-_TOKEN_MAX_AGE = 30 * 86400  # 30 days — upper cap; actual TTL comes from QMe's expires_in
+_SESSION_ID_RE = re.compile(r'^[A-Za-z0-9_-]{20,64}$')
+
+_TOKEN_MAX_AGE    = 7 * 86400   # 7 days — upper cap for access token TTL on disk
+_SESSION_MAX_AGE  = 7 * 86400   # 7 days — max session age before forced re-login
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -71,9 +76,13 @@ class MemoryTokenStorage:
         self._refresh_token: str | None = None
         self._scope:         str | None = None
         self._expires_at:    float      = 0.0
+        self._login_at:      float      = 0.0   # time of original login (not refresh)
         self._email:         str | None = None
+        self._refresh_lock               = asyncio.Lock()
 
     def _token_file(self) -> Path:
+        if not _SESSION_ID_RE.match(self._session_id):
+            raise ValueError(f"Invalid session_id format: {self._session_id!r}")
         return _token_dir() / f".qme_token_{self._session_id}.json"
 
     async def get_tokens(self) -> OAuthToken | None:
@@ -96,12 +105,22 @@ class MemoryTokenStorage:
         ttl = int(tokens.expires_in) if tokens.expires_in else _TOKEN_MAX_AGE
         ttl = min(ttl, _TOKEN_MAX_AGE)
         self._expires_at    = time.time() + ttl
+        # Record original login time (do NOT update on refresh calls)
+        if not self._login_at:
+            self._login_at = time.time()
         self._save_to_disk()
         log.info("QMe token stored for session %s… (expires in %ds / %.1fh)",
                  self._session_id[:8], ttl, ttl / 3600)
 
     async def refresh(self) -> bool:
         """Exchange refresh_token for a new access_token. Returns True on success."""
+        async with self._refresh_lock:
+            return await self._do_refresh()
+
+    async def _do_refresh(self) -> bool:
+        """Inner refresh — must be called with _refresh_lock held."""
+        if self.is_connected():
+            return True  # another concurrent caller already refreshed
         if not self._refresh_token:
             log.warning("refresh: no refresh_token for session %s…", self._session_id[:8])
             return False
@@ -154,6 +173,17 @@ class MemoryTokenStorage:
             return False
         return True
 
+    def can_refresh(self) -> bool:
+        """True if a refresh_token is available and session is within 7-day limit."""
+        if not self._refresh_token:
+            return False
+        if not self._login_at or time.time() - self._login_at > _SESSION_MAX_AGE:
+            age_days = (time.time() - self._login_at) / 86400 if self._login_at else 0
+            log.info("session expired/unknown age (%.1fd) — re-login required (session=%s…)",
+                     age_days, self._session_id[:8])
+            return False
+        return True
+
     @property
     def email(self) -> str | None:
         return self._email
@@ -185,6 +215,7 @@ class MemoryTokenStorage:
                 "refresh_token": self._refresh_token,
                 "scope":         self._scope,
                 "expires_at":    self._expires_at,
+                "login_at":      self._login_at,
                 "email":         self._email,
             }).encode()
             fernet = _get_fernet()
@@ -210,14 +241,20 @@ class MemoryTokenStorage:
                 except Exception:
                     pass  # unencrypted legacy file — will be re-saved encrypted on next write
             data = json.loads(raw)
+            # Always restore refresh_token + session metadata (even if access_token expired)
+            self._refresh_token = data.get("refresh_token")
+            self._scope         = data.get("scope")
+            self._login_at      = data.get("login_at", 0.0)
+            self._email         = data.get("email")
+            # Only restore access_token if still valid
             if data.get("access_token") and time.time() < data.get("expires_at", 0) - 60:
                 self._access_token  = data["access_token"]
                 self._token_type    = data.get("token_type", "Bearer")
-                self._refresh_token = data.get("refresh_token")
-                self._scope         = data.get("scope")
                 self._expires_at    = data["expires_at"]
-                self._email         = data.get("email")
-                log.info("QMe token loaded from disk (session=%s… email=%s)",
+                log.info("QMe token loaded from disk (session=%s… email=%s expires_in=%.0fs)",
+                         self._session_id[:8], self._email, self._expires_at - time.time())
+            elif self._refresh_token:
+                log.info("QMe access token expired — refresh_token available (session=%s… email=%s)",
                          self._session_id[:8], self._email)
         except Exception:
             pass
@@ -258,7 +295,8 @@ def init_sessions() -> None:
 
 def cleanup_expired_sessions() -> None:
     """Remove sessions with expired tokens from the in-memory registry and disk."""
-    expired = [sid for sid, s in list(_storages.items()) if not s.is_connected()]
+    expired = [sid for sid, s in list(_storages.items())
+               if not s.is_connected() and not s.can_refresh()]
     for sid in expired:
         storage = _storages.pop(sid, None)
         if storage:
@@ -288,9 +326,9 @@ async def call_tool(name: str, arguments: dict, session_id: str) -> Any:
 
     storage = get_storage(session_id)
 
-    # Pre-emptive refresh: token expired locally but we have a refresh_token
+    # Pre-emptive refresh: token expired locally but session is still within 7-day limit
     if not storage.is_connected():
-        if storage._refresh_token:
+        if storage.can_refresh():
             log.info("call_tool: token expired, refreshing (session=%s…)", session_id[:8])
             ok = await storage.refresh()
             if not ok:

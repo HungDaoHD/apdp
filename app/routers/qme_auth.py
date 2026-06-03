@@ -89,9 +89,16 @@ def _cleanup_sessions() -> None:
     if not data_dir.exists():
         return
     now = time.time()
+    fernet = _get_fernet()
     for f in data_dir.glob(".login_*.json"):
         try:
-            data = json.loads(f.read_text())
+            raw = f.read_bytes()
+            if fernet:
+                try:
+                    raw = fernet.decrypt(raw)
+                except Exception:
+                    pass  # unencrypted legacy file
+            data = json.loads(raw)
             if now - data.get("created_at", 0) > _SESSION_TTL:
                 f.unlink(missing_ok=True)
         except Exception:
