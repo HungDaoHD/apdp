@@ -116,6 +116,9 @@ async def qme_status(request: Request):
     if not session_id:
         return {"connected": False, "email": None}
     storage = get_storage(session_id)
+    # Silent refresh: if access_token expired but refresh_token valid, refresh before reporting status
+    if not storage.is_connected() and storage.can_refresh():
+        await storage.refresh()
     return {"connected": storage.is_connected(), "email": storage.email}
 
 
