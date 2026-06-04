@@ -631,11 +631,42 @@ async def get_metadata(survey_id: int, session_id: str = Depends(require_qme)):
 
 
 _DOWNLOAD_FILES = {
-    "rawdata.csv":      ("data/rawdata.csv",       "text/csv"),
-    "metadata.json":    ("data/metadata.json",     "application/json"),
-    "data_export.csv":  ("mcp/data_export.csv",    "text/csv"),
-    "definition.json":  ("mcp/definition.json",    "application/json"),
+    "rawdata.csv":           ("data/rawdata.csv",                "text/csv"),
+    "metadata.json":         ("data/metadata.json",              "application/json"),
+    "data_export.csv":       ("mcp/data_export.csv",             "text/csv"),
+    "definition.json":       ("mcp/definition.json",             "application/json"),
+    "flagged_profiles.csv":  ("quality/flagged_profiles.csv",    "text/csv"),
 }
+
+_DOWNLOAD_NOT_FOUND_HINT = {
+    "flagged_profiles.csv": "run Quality Check first",
+}
+
+
+# ── quality check ─────────────────────────────────────────────────────────────
+
+@router.post("/{survey_id}/quality")
+async def run_quality_check(survey_id: int, session_id: str = Depends(require_qme)):
+    """Run quality check (show_condition + contradiction validation) on existing rawdata.
+    Returns summary report. Full results saved to quality/flagged_profiles.csv."""
+    storage = get_storage()
+    if not storage.exists(f"{survey_id}/data/rawdata.csv"):
+        raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
+    try:
+        loop   = asyncio.get_running_loop()
+        report = await loop.run_in_executor(
+            None, lambda: pipeline_svc.run_quality(survey_id)
+        )
+    except Exception as exc:
+        log.exception("run_quality failed for survey %s", survey_id)
+        raise HTTPException(500, f"Quality check error — {exc}")
+    s = report.get("summary", {})
+    return {
+        "survey_id":         report.get("survey_id"),
+        "total_respondents": report.get("total_respondents"),
+        "questions_checked": report.get("questions_checked"),
+        "summary":           s,
+    }
 
 
 @router.get("/{survey_id}/download-data/{filename}")
@@ -648,7 +679,8 @@ async def download_data_file(survey_id: int, filename: str,
     storage = get_storage()
     key = f"{survey_id}/{rel_key}"
     if not storage.exists(key):
-        raise HTTPException(404, f"{filename} not found — run Refresh first")
+        hint = _DOWNLOAD_NOT_FOUND_HINT.get(filename, "run Refresh first")
+        raise HTTPException(404, f"{filename} not found — {hint}")
 
     # Strip PII columns (user-name, user-phone) from rawdata.csv before download
     if filename == "rawdata.csv":

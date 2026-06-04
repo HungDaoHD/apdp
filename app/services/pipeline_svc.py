@@ -271,6 +271,43 @@ def refresh(survey_id: int, client, step_cb=None) -> dict:
     return result
 
 
+# ── quality check ─────────────────────────────────────────────────────────────
+
+def run_quality(survey_id: int) -> dict:
+    """Run QualityStep on existing rawdata.csv + metadata.json.
+
+    Saves results to storage under ``{survey_id}/quality/`` and returns the
+    full quality report dict (including ``summary`` and ``violations``).
+    """
+    from surveyflow.steps.quality.quality_step import QualityStep
+    from services.storage import get_storage
+
+    storage = get_storage()
+    df       = pd.read_csv(
+        io.BytesIO(storage.read_bytes(f"{survey_id}/data/rawdata.csv")),
+        encoding="utf-8-sig",
+    )
+    metadata = storage.read_json(f"{survey_id}/data/metadata.json")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = QualityStep().run({
+            "rawdata":         df,
+            "metadata":        metadata,
+            "base_output_dir": tmp,
+        })
+        report       = ctx["quality_report"]
+        report_bytes = Path(ctx["quality_report_path"]).read_bytes()
+        csv_bytes    = Path(ctx["quality_csv_path"]).read_bytes()
+
+    storage.write_bytes(f"{survey_id}/quality/quality_report.json", report_bytes)
+    storage.write_bytes(f"{survey_id}/quality/flagged_profiles.csv", csv_bytes)
+    logger.info(
+        "Quality check saved for survey %s — flagged=%d",
+        survey_id, report.get("summary", {}).get("flagged_count", 0),
+    )
+    return report
+
+
 # ── data integrity validation ─────────────────────────────────────────────────
 
 def validate_data_integrity(survey_id: int) -> dict:
