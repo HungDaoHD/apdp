@@ -262,6 +262,36 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
 ::-webkit-scrollbar-thumb{background:#d0d4dc;border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:#b0b4bc}
 
+/* Quality report modal */
+#qrModal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:1100;padding:20px}
+#qrModal.hidden{display:none}
+.qr-dlg{background:white;border-radius:10px;width:860px;max-width:100%;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.28)}
+.qr-hd{padding:14px 18px;border-bottom:1px solid #e0e4ea;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.qr-hd-left{display:flex;align-items:center;gap:10px}
+.qr-title{font-size:14px;font-weight:700;color:#1a1a2e}
+.qr-sub{font-size:11px;color:#888;margin-top:2px}
+.qr-body{flex:1;overflow-y:auto;padding:16px 18px}
+.qr-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px}
+.qr-stat{background:#f8f9fb;border:1px solid #e8eaed;border-radius:8px;padding:8px 6px;text-align:center}
+.qr-stat-num{font-size:18px;font-weight:700;color:#1a73e8}
+.qr-stat-num.warn{color:#b45309}
+.qr-stat-num.ok{color:#1e7e34}
+.qr-stat-lbl{font-size:9px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:.4px}
+.qr-section-title{font-size:11px;font-weight:700;color:#444;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.qr-table-wrap{border:1px solid #e0e4ea;border-radius:7px;overflow:hidden;max-height:420px;overflow-y:auto}
+.qr-table{width:100%;border-collapse:collapse;font-size:12px}
+.qr-table th{background:#f5f7fa;padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #e0e4ea;position:sticky;top:0}
+.qr-table td{padding:7px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top;line-height:1.4}
+.qr-table tr:last-child td{border-bottom:none}
+.qr-table tr:hover td{background:#fafbff}
+.qr-badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:600}
+.qr-badge.extraneous{background:#fef3c7;color:#92400e}
+.qr-badge.routed-missing{background:#dbeafe;color:#1e40af}
+.qr-badge.missing{background:#f3e8ff;color:#6b21a8}
+.qr-badge.contradiction{background:#fee2e2;color:#991b1b}
+.qr-empty{text-align:center;padding:32px;color:#aaa;font-size:13px}
+.qr-ft{padding:10px 18px;border-top:1px solid #e0e4ea;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+
 /* Modal */
 .mov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
 .mdlg{background:white;border-radius:10px;width:580px;max-width:100%;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}
@@ -417,10 +447,13 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
       <a class="dlitem" onclick="dlFile('metadata.json')">metadata.json</a>
       <a class="dlitem" onclick="dlFile('data_export.csv')">data_export.csv</a>
       <a class="dlitem" onclick="dlFile('definition.json')">definition.json</a>
+      <div style="border-top:1px solid #eee;margin:4px 0"></div>
+      <a class="dlitem" id="dlQuality" onclick="dlFile('flagged_profiles.csv')" style="color:#b45309" title="Run Quality Check first to generate this file">flagged_profiles.csv</a>
     </div>
   </div>
   <button class="btn btn-gho btn-sm" onclick="doRefresh()" id="refreshBtn" disabled title="Refresh data from QMe" style="padding:4px 7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
   <button class="btn btn-gho btn-sm" onclick="document.getElementById('zipFileInput').click()" id="uploadZipBtn" disabled title="Upload code_retail_report ZIP instead of fetching from QMe" style="padding:4px 7px">📂 Upload ZIP</button>
+  <button class="btn btn-gho btn-sm" onclick="doQualityCheck()" id="qualityBtn" disabled title="Run quality check (show_condition + contradiction validation)" style="padding:4px 8px">🔍 Quality</button>
   <input type="file" id="zipFileInput" accept=".zip" style="display:none" onchange="doIngestZip(this)">
   <div id="langSelectorWrap" style="display:none;align-items:center;gap:5px;margin-left:6px">
     <select id="langSelector" onchange="setLang(this.value)"
@@ -494,6 +527,43 @@ input:focus,select:focus,textarea:focus{border-color:#1a73e8;box-shadow:0 0 0 2p
   <span style="color:#ccc" id="shortcut">Ctrl+S to save</span>
   <span style="color:#e0e4ea">|</span>
   <span style="color:#ccc;font-size:10px" id="sfVersionBadge">surveyflow …</span>
+</div>
+
+<!-- Quality Report Modal -->
+<div id="qrModal" class="hidden" onclick="if(event.target===this)closeQR()">
+  <div class="qr-dlg" onclick="event.stopPropagation()">
+    <div class="qr-hd">
+      <div class="qr-hd-left">
+        <span style="font-size:22px">🔍</span>
+        <div>
+          <div class="qr-title">Quality Report</div>
+          <div class="qr-sub" id="qrSub">—</div>
+        </div>
+      </div>
+      <button class="mbtn-close" onclick="closeQR()">✕</button>
+    </div>
+    <div class="qr-body">
+      <div class="qr-stats" id="qrStats"></div>
+      <div class="qr-section-title" id="qrViolTitle" style="display:none">Violations</div>
+      <div class="qr-table-wrap" id="qrTableWrap" style="display:none">
+        <table class="qr-table">
+          <thead><tr>
+            <th>Type</th><th>Question</th><th>Profile ID</th><th>Trigger</th>
+          </tr></thead>
+          <tbody id="qrTbody"></tbody>
+        </table>
+      </div>
+      <div class="qr-empty" id="qrEmpty" style="display:none">✓ No violations found</div>
+    </div>
+    <div class="qr-ft">
+      <span style="font-size:11px;color:#aaa" id="qrFootNote"></span>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-gho btn-sm" id="qrRunBtn" onclick="runQualityCheck()">🔍 Run Quality Check</button>
+        <button class="btn btn-gho btn-sm" onclick="dlFile('flagged_profiles.csv')">⬇ flagged_profiles.csv</button>
+        <button class="btn btn-gho btn-sm" onclick="closeQR()">Close</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Modal -->
@@ -4659,6 +4729,111 @@ function hideFetchProgress() {
   if (logEl) { logEl.innerHTML = ''; logEl.style.display = 'none'; }
 }
 
+const _QR_TYPE_LABEL = {
+  'extraneous':     { label: 'Extraneous',     cls: 'extraneous'    },
+  'routed_missing': { label: 'Routed Missing', cls: 'routed-missing' },
+  'missing':        { label: 'Missing',        cls: 'missing'        },
+  'contradiction':  { label: 'Contradiction',  cls: 'contradiction'  },
+};
+
+function openQR(report) {
+  const s     = report.summary || {};
+  const total = report.total_respondents ?? 0;
+  const flagged = s.flagged_count ?? 0;
+
+  document.getElementById('qrSub').textContent =
+    `Survey ${report.survey_id} · ${total} respondents`;
+
+  // Stats boxes
+  const numCls = (n) => n > 0 ? 'warn' : 'ok';
+  document.getElementById('qrStats').innerHTML = `
+    <div class="qr-stat"><div class="qr-stat-num ${flagged>0?'warn':'ok'}">${flagged}</div><div class="qr-stat-lbl">Flagged</div></div>
+    <div class="qr-stat"><div class="qr-stat-num ${numCls(s.extraneous)}">${s.extraneous??0}</div><div class="qr-stat-lbl">Extraneous</div></div>
+    <div class="qr-stat"><div class="qr-stat-num ${numCls(s.routed_missing)}">${s.routed_missing??0}</div><div class="qr-stat-lbl">Routed Missing</div></div>
+    <div class="qr-stat"><div class="qr-stat-num ${numCls(s.missing)}">${s.missing??0}</div><div class="qr-stat-lbl">Missing</div></div>
+    <div class="qr-stat"><div class="qr-stat-num ${numCls(s.contradiction)}">${s.contradiction??0}</div><div class="qr-stat-lbl">Contradiction</div></div>
+  `;
+
+  // Violations table
+  const violations = report.violations || [];
+  const showTable  = violations.length > 0;
+  document.getElementById('qrViolTitle').style.display = showTable ? '' : 'none';
+  document.getElementById('qrTableWrap').style.display = showTable ? '' : 'none';
+  document.getElementById('qrEmpty').style.display     = showTable ? 'none' : '';
+
+  if (showTable) {
+    document.getElementById('qrTbody').innerHTML = violations.map(v => {
+      const t = _QR_TYPE_LABEL[v.type] || { label: v.type, cls: '' };
+      const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<tr>
+        <td><span class="qr-badge ${t.cls}">${t.label}</span></td>
+        <td style="font-weight:600">${esc(v.question)}</td>
+        <td style="color:#666">${esc(String(v.profile_id))}</td>
+        <td style="color:#555;font-size:11px">${esc(v.condition_trigger || '—')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  const qc = report.questions_checked || {};
+  document.getElementById('qrFootNote').textContent =
+    `Checked: ${qc.show_condition??0} show_condition · ${qc.contradiction_settings??0} contradiction · ${qc.always_shown??0} always shown`;
+
+  document.getElementById('qrModal').classList.remove('hidden');
+}
+
+function closeQR() {
+  document.getElementById('qrModal').classList.add('hidden');
+}
+
+// Open modal: load existing report if available, otherwise show empty state
+async function doQualityCheck() {
+  if (!currentSurveyId) return;
+  _openQREmpty();
+  try {
+    const r = await fetch(`/api/surveys/${currentSurveyId}/quality`);
+    if (r.ok) openQR(await r.json());
+  } catch(e) { /* keep empty state */ }
+}
+
+// Run the actual quality check (called from button inside modal)
+async function runQualityCheck() {
+  if (!currentSurveyId) return;
+  const btn = document.getElementById('qrRunBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  try {
+    const r    = await fetch(`/api/surveys/${currentSurveyId}/quality`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) { setStatus(`⚠ Quality check failed: ${data.detail || r.status}`, ''); return; }
+    const flagged = (data.summary || {}).flagged_count ?? 0;
+    const total   = data.total_respondents ?? 0;
+    setStatus(
+      flagged === 0 ? `✓ Quality clean — ${total} respondents` : `⚠ Quality: ${flagged}/${total} flagged`,
+      flagged === 0 ? 'saved' : ''
+    );
+    const topBtn = document.getElementById('qualityBtn');
+    if (topBtn) topBtn.textContent = flagged === 0 ? '✓ Quality' : `⚠ ${flagged} flagged`;
+    openQR(data);
+  } catch (e) {
+    setStatus(`⚠ Quality check error: ${e.message}`, '');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 Run Quality Check';
+  }
+}
+
+// Show modal in empty state (no report loaded)
+function _openQREmpty() {
+  document.getElementById('qrSub').textContent = 'No report — click "Run Quality Check" to start';
+  document.getElementById('qrStats').innerHTML = '';
+  document.getElementById('qrViolTitle').style.display  = 'none';
+  document.getElementById('qrTableWrap').style.display  = 'none';
+  document.getElementById('qrEmpty').style.display      = '';
+  document.getElementById('qrEmpty').textContent        = 'No data yet.';
+  document.getElementById('qrFootNote').textContent     = '';
+  document.getElementById('qrModal').classList.remove('hidden');
+}
+
 async function cancelRefresh() {
   if (!currentSurveyId) { _setLoading(null); return; }
   try {
@@ -4709,6 +4884,7 @@ async function activateSurvey(id, title) {
     document.getElementById('refreshBtn').disabled = false;
   document.getElementById('uploadZipBtn').disabled = false;
     document.getElementById('dlBtn').disabled = !st.has_data;
+    document.getElementById('qualityBtn').disabled = !st.has_data;
 
     if (st.has_data) {
       _setLoading('Loading questions…', title);
@@ -4777,6 +4953,7 @@ async function _pollRefreshJob(surveyId, surveyName, startedAt) {
     rawCsv = null; rawHeaders = [];
     document.getElementById('downloadBtn').disabled = false;
     document.getElementById('dlBtn').disabled = false;
+    document.getElementById('qualityBtn').disabled = false;
     checkRunBtn();
     setTimeout(hideFetchProgress, 3000);
   } catch(e) {
@@ -4853,6 +5030,7 @@ async function doIngestZip(input) {
     rawCsv = null; rawHeaders = [];
     document.getElementById('downloadBtn').disabled = false;
     document.getElementById('dlBtn').disabled = false;
+    document.getElementById('qualityBtn').disabled = false;
     checkRunBtn();
     logEvent('upload_zip');
     setTimeout(hideFetchProgress, 3000);

@@ -648,7 +648,7 @@ _DOWNLOAD_NOT_FOUND_HINT = {
 @router.post("/{survey_id}/quality")
 async def run_quality_check(survey_id: int, session_id: str = Depends(require_qme)):
     """Run quality check (show_condition + contradiction validation) on existing rawdata.
-    Returns summary report. Full results saved to quality/flagged_profiles.csv."""
+    Returns full report including violations."""
     storage = get_storage()
     if not storage.exists(f"{survey_id}/data/rawdata.csv"):
         raise HTTPException(400, "Run Refresh first — rawdata.csv not found")
@@ -660,13 +660,17 @@ async def run_quality_check(survey_id: int, session_id: str = Depends(require_qm
     except Exception as exc:
         log.exception("run_quality failed for survey %s", survey_id)
         raise HTTPException(500, f"Quality check error — {exc}")
-    s = report.get("summary", {})
-    return {
-        "survey_id":         report.get("survey_id"),
-        "total_respondents": report.get("total_respondents"),
-        "questions_checked": report.get("questions_checked"),
-        "summary":           s,
-    }
+    return report
+
+
+@router.get("/{survey_id}/quality")
+async def get_quality_report(survey_id: int, session_id: str = Depends(require_qme)):
+    """Return stored quality_report.json (run POST /quality first)."""
+    storage = get_storage()
+    key = f"{survey_id}/quality/quality_report.json"
+    if not storage.exists(key):
+        raise HTTPException(404, "No quality report — run Quality Check first")
+    return storage.read_json(key)
 
 
 @router.get("/{survey_id}/download-data/{filename}")
