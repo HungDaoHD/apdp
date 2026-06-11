@@ -4243,6 +4243,22 @@ function buildGroupRows(stats, choices, colData, stubGroups, cellContent, pctDec
   if (stats.includes('se'))   rows.push({ label:'SE',   type:'summary', cells: colData.map(cd=>({ display:fmtNum(cd.std/Math.sqrt(cd.base||1)), raw:cd.std }))});
   if (stats.includes('min'))  rows.push({ label:'Min',  type:'summary', cells: colData.map(cd=>{ const v=isMAtype?cd.ma_min:0; return { display:fmtNum(v), raw:v }; })});
   if (stats.includes('max'))  rows.push({ label:'Max',  type:'summary', cells: colData.map(cd=>{ const v=isMAtype?cd.ma_max:0; return { display:fmtNum(v), raw:v }; })});
+  if (stats.includes('nps')) {
+    const proGrp = stubGroups.find(g => g.type === 'promoters');
+    const detGrp = stubGroups.find(g => g.type === 'detractors');
+    if (proGrp && detGrp) {
+      const proCodes = (proGrp.codes||[]).map(Number).filter(c => allChMap[c]);
+      const detCodes = (detGrp.codes||[]).map(Number).filter(c => allChMap[c]);
+      const npsCells = (bannerCols||[]).map((bc, ci) => {
+        const base   = colData[ci]?.base ?? 0;
+        const proPct = base > 0 ? countOr(bc.rows, proCodes)/base*100 : 0;
+        const detPct = base > 0 ? countOr(bc.rows, detCodes)/base*100 : 0;
+        const v      = proPct - detPct;
+        return { display: fmtNum(v), raw: v };
+      });
+      rows.push({ label: 'NPS', type: 'summary', cells: npsCells });
+    }
+  }
   return rows;
 }
 
