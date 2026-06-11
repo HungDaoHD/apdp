@@ -3,7 +3,7 @@
 <meta charset="UTF-8">
 <link rel="shortcut icon" href="/static/favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Q&Me — datatable.json Editor</title>
+<title>Q&Me | datatable.json Editor</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"
         integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs"
         crossorigin="anonymous"></script>
@@ -103,9 +103,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .tbs{width:160px;min-width:160px;background:white;border-right:1px solid #e0e4ea;display:flex;flex-direction:column}
 .tbsh{padding:9px 11px 6px;font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #f0f2f5}
 .tbsl{flex:1;overflow-y:auto}
-.tbsi{padding:8px 11px;cursor:pointer;border-left:3px solid transparent;transition:background .1s}
+.tbsi{display:flex;align-items:center;gap:6px;padding:8px 11px;cursor:pointer;border-left:3px solid transparent;transition:background .1s}
 .tbsi:hover{background:#f5f7fa}
 .tbsi.on{background:#eef4ff;border-left-color:#1a73e8}
+.tbsi.dov{outline:2px dashed #1a73e8;outline-offset:-2px;background:#eef4ff!important;border-radius:2px}
+.tbsi-drag{color:#ccc;cursor:grab;flex-shrink:0;font-size:13px;line-height:1;user-select:none}
+.tbsi-drag:hover{color:#999}
+.tbsi-content{min-width:0;flex:1}
 .tbsi-name{font-size:12px;font-weight:600;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tbsi.on .tbsi-name{color:#1a73e8}
 .tbsi-sub{font-size:10px;color:#bbb;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -184,9 +188,9 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .bgcol.dragging{opacity:.4}
 .bgcol.dov{outline:2px dashed #1a73e8;outline-offset:-2px;background:#eef4ff !important}
 /* Cells inside a column */
-.bgcell{min-height:52px;padding:6px 8px;display:flex;flex-direction:column;gap:3px;cursor:pointer;transition:background .1s;position:relative;justify-content:center}
+.bgcell{min-height:28px;padding:3px 6px;display:flex;flex-direction:column;gap:1px;cursor:pointer;transition:background .1s;position:relative;justify-content:center}
 .bgcell:hover{background:#f0f6ff}
-.bgcell.is-empty{align-items:center;justify-content:center;background:#fafbfc;min-height:52px;cursor:pointer}
+.bgcell.is-empty{align-items:center;justify-content:center;background:#fafbfc;min-height:28px;cursor:pointer}
 .bgcell.is-empty:hover{background:#e8f0fe}
 /* Content inside cells */
 .bgqid{font-size:9px;font-weight:700;color:#1a73e8;background:#e8f0fe;padding:1px 6px;border-radius:4px;align-self:flex-start;line-height:1.6}
@@ -194,11 +198,11 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .bgqg{display:flex;flex-wrap:wrap;gap:2px;margin-top:2px}
 .bgqgc{font-size:9px;background:#f1f3f4;color:#555;padding:1px 5px;border-radius:3px;white-space:nowrap}
 .bgqgc.more{background:#f3e5f5;color:#7b1fa2}
-.bgqacts{display:flex;gap:2px;margin-top:auto;padding-top:4px}
+.bgqacts{display:flex;gap:2px;margin-top:2px}
 /* Add column (rightmost) */
 .bgaddcol{width:68px;min-width:68px;background:#f0f6ff;border-left:2px dashed #a8c7fa !important;cursor:pointer;vertical-align:middle !important;text-align:center;transition:background .12s;padding:0}
 .bgaddcol:hover,.bgaddcol.dov{background:#c5d8fb}
-.bgaddmain{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:16px 6px;height:100%;min-height:260px;color:#1a73e8}
+.bgaddmain{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 6px;height:100%;color:#1a73e8}
 /* Choices list in stub modal */
 .choices-sect{margin-top:14px}
 .choices-list{max-height:190px;overflow-y:auto;background:#f8f9fb;border:1px solid #e0e4ea;border-radius:6px;padding:5px 10px;margin-top:5px}
@@ -247,6 +251,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .bgr.dov{border-color:#1a73e8;border-style:dashed;box-shadow:0 0 0 2px #c5d8fb;background:#f0f6ff}
 [id^="msi_"].dov{outline:2px dashed #1a73e8;outline-offset:-1px;background:#eef4ff!important;border-radius:4px}
 [id^="msri_"].dov{outline:2px dashed #1a73e8;outline-offset:-1px;background:#eef4ff!important;border-radius:4px}
+[id^="mgr_"].dov{outline:2px dashed #1a73e8;outline-offset:-1px;background:#dce8ff!important;border-radius:4px}
 
 /* Misc */
 .divider{height:1px;background:#e8eaed;margin:10px 0}
@@ -382,22 +387,27 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .pvtabs{display:flex;gap:2px;flex:1;overflow-x:auto}
 .pvtab{padding:4px 14px;border-radius:4px 4px 0 0;border:none;background:#2d3748;color:#aaa;cursor:pointer;font-size:11px;font-weight:600;transition:all .12s}
 .pvtab.on{background:#1a73e8;color:white}
-.pvbody{flex:1;overflow:hidden;padding:0;display:flex;flex-direction:column}
+.pvbody{flex:1;overflow:hidden;padding:0;display:flex;flex-direction:row}
+.pvnav{width:190px;min-width:190px;overflow-y:auto;background:#1a1a2e;border-right:1px solid #2a3550;flex-shrink:0}
+.pvnav-hd{font-size:10px;font-weight:700;color:#4a6080;padding:8px 10px 4px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #22304a}
+.pvnav-item{padding:5px 10px;font-size:11px;color:#7ea3cc;cursor:pointer;border-bottom:1px solid #1e2a40;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pvnav-item:hover{background:#253045;color:#cde0f8}
+.pvnav-item.on{background:#1a3358;color:#a8c7fa;border-left:2px solid #f36a17;padding-left:8px}
 /* Datatable HTML */
 .dt-wrap{overflow:auto;flex:1;padding:14px}
 .dt-tbl{border-collapse:collapse;font-size:11px;white-space:nowrap;min-width:600px}
 .dt-tbl th,.dt-tbl td{border:1px solid #d8dde6;padding:3px 8px}
 .dt-tbl thead th{position:sticky;top:0;z-index:5}
-.dt-stub-hdr{background:#1a1a2e;color:white;width:30vw;min-width:30vw;max-width:30vw;position:sticky;left:0;z-index:2;white-space:normal;word-break:break-word}
+.dt-stub-hdr{background:#b84b0c;color:#fff;width:30vw;min-width:30vw;max-width:30vw;position:sticky;left:0;z-index:2;white-space:normal;word-break:break-word}
 .dt-tbl thead .dt-stub-hdr{z-index:20}
-.dt-bh{background:#16213e;color:#dde;text-align:center;font-size:10px;font-weight:700;white-space:normal;word-break:break-word}
-.dt-bh1{background:#1a3050;color:#a8c7fa;border-bottom:2px solid #4285f4;white-space:normal;word-break:break-word}
-.dt-bh2{background:#16213e;color:#c5d8f5;white-space:normal;word-break:break-word}
-.dt-bh3{background:#0f172a;color:#9ab;font-weight:400;font-size:10px;white-space:normal;word-break:break-word}
+.dt-bh{background:#b84b0c;color:#fff;text-align:center;font-size:10px;font-weight:700;white-space:normal;word-break:break-word}
+.dt-bh1{background:#f36a17;color:#fff;border-bottom:2px solid #ff8c45;white-space:normal;word-break:break-word}
+.dt-bh2{background:#d05c12;color:#ffe4cc;white-space:normal;word-break:break-word}
+.dt-bh3{background:#a84610;color:#ffd0a8;font-weight:400;font-size:10px;white-space:normal;word-break:break-word}
 .dt-qhdr{background:#1a3050;color:#cce4ff;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-qcode{color:#93b4d9;font-weight:400;font-size:10px;margin-right:2px}
 .dt-subhdr{background:#253045;color:#93b4d9;font-size:10px;padding:3px 10px 3px 18px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
-.dt-sqhdr{background:#1e3a5f;color:#afd0f5;font-weight:600;font-size:11px;padding:4px 10px 4px 22px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word;border-left:3px solid #4a90d9}
+.dt-sqhdr{background:#0e4f4f;color:#a7f3d0;font-weight:600;font-size:11px;padding:4px 10px 4px 22px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word;border-left:3px solid #34d399}
 .dt-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-rlbl-base{font-weight:700;color:#333;background:#f0f2f5}
 .dt-rlbl-summ{font-weight:700;color:#7b1fa2;background:#f9f0ff;font-style:italic}
@@ -678,6 +688,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
     <button class="btn btn-sec btn-sm" onclick="closePreview()" style="flex-shrink:0">✕ Close</button>
   </div>
   <div class="pvbody">
+    <div class="pvnav" id="pvNav"></div>
     <div class="dt-wrap" id="pvContent"></div>
   </div>
 </div>
@@ -764,7 +775,7 @@ const TYPE_STATS = {
 const TYPE_STATS_AVAILABLE = {
   'SA'         : ['base','percent','mean','std','se','nps'],
   'MA'         : ['base','percent','mean','min','max'],
-  'Matrix_SA'  : ['base','percent','mean','std','se'],
+  'Matrix_SA'  : ['base','percent','mean','std','se','nps'],
   'Matrix_MA'  : ['base','percent','mean','min','max'],
   'Matrix_NUM' : ['base','mean','std','se'],
   'NUM'        : ['base','mean','std','se','min','max'],
@@ -1275,7 +1286,7 @@ function _insertBannerFromQ(q, beforeIdx) {
   if (!cfg().banner) cfg().banner = [{label:'Total',filter:null}];
   const ch = qChoices(q);
   const groups = ch.map(c=>({label:i18nStr(c.label),value:typeof c.code==='number'?c.code:parseInt(c.code)||c.code}));
-  const item = { label: qTitle(q)||q.label||'?', question: q.label||'?', groups };
+  const item = { label: null, question: q.label||'?', groups };
   cfg().banner.splice(beforeIdx, 0, item);
   markDirty(); activeTab='layout'; renderMain();
 }
@@ -1286,7 +1297,7 @@ function _setBannerLevelFromQ(ci, lvIdx, q) {
   if (!col.levels) col.levels = [];
   const ch = qChoices(q);
   const groups = ch.map(c=>({label:i18nStr(c.label),value:typeof c.code==='number'?c.code:parseInt(c.code)||c.code}));
-  col.levels[lvIdx] = { label: qTitle(q)||q.label||'?', question: q.label||'?', groups };
+  col.levels[lvIdx] = { label: null, question: q.label||'?', groups };
   markDirty(); activeTab='layout'; renderMain();
 }
 function _setCustomRefLevel(ci, lvIdx, def) {
@@ -1387,14 +1398,14 @@ function addBannerFromQ(q) {
   if (!cfg().banner) cfg().banner = [{label:'Total',filter:null}];
   const ch = qChoices(q);
   const groups = ch.map(c => ({ label:c.label, value:typeof c.code==='number'?c.code:parseInt(c.code)||c.code }));
-  cfg().banner.push({ label: qTitle(q)||q.label||'?', question: q.label||'?', groups });
+  cfg().banner.push({ label: null, question: q.label||'?', groups });
   markDirty(); activeTab='layout'; renderMain();
 }
 function addStubFromQ(q) {
   if (!data.length) return;
   if (!cfg().stub) cfg().stub = [];
   const t = qType(q);
-  cfg().stub.push({ question:q.label||'?', label:qTitle(q)||q.label||'?', stats:defaultStats(t) });
+  cfg().stub.push({ question:q.label||'?', label:null, stats:defaultStats(t)});
   markDirty(); activeTab='layout'; renderMain();
 }
 
@@ -1466,7 +1477,7 @@ function qInfoAddStub() {
   const checked = [...document.querySelectorAll('#qiStats input:checked')].map(cb=>cb.value);
   const q = modalSt.q;
   if (!cfg().stub) cfg().stub = [];
-  cfg().stub.push({ question:q.label||'?', label:qTitle(q)||q.label||'?', stats:checked.length?checked:defaultStats(qType(q)) });
+  cfg().stub.push({ question:q.label||'?', label:null, stats:checked.length?checked:defaultStats(qType(q)) });
   markDirty(); activeTab='layout'; renderMain();
   closeModal();
 }
@@ -1481,16 +1492,18 @@ function openBannerModal(idx) {
   if (item.type === 'custom') { openCustomQModal('banner', idx); return; }
   if (item.type === 'custom_ref') { openCustomRefBannerModal(idx); return; }
   // Lookup metadata for info
-  const mq = findMetaQ(item.question);
-  const t  = mq ? qType(mq) : '';
+  const mq    = findMetaQ(item.question);
+  const t     = mq ? qType(mq) : '';
+  const title = mq ? qTitle(mq) : '';
   modalSt  = { type:'banner', idx, item: JSON.parse(JSON.stringify(item)), mq };
+  const subHtml = mq ? `<span class="tb ${typeBadgeClass(t)}" style="font-size:9px">${t}</span>${title ? ` ${h(title)}` : ''}` : '';
   showModal(
-    '📊 Banner Column',
-    item.label || item.question || '',
+    item.question || 'Banner Column',
+    subHtml,
     renderBannerModalBody(modalSt.item, mq),
     `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
      <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
-    {noBackdrop:true}
+    {noBackdrop:true, icon:'📊'}
   );
 }
 
@@ -1535,14 +1548,17 @@ function openStubModal(idx) {
   const itemCopy = JSON.parse(JSON.stringify(item));
   _initStubChoicesState(itemCopy, mq);
   modalSt    = { type:'stub', idx, item: itemCopy, mq };
-  const icon = item.row_group ? '🔵' : '📋';
+  const icon    = item.row_group ? '🔵' : '📋';
+  const t2      = mq ? qType(mq) : '';
+  const title2  = mq ? qTitle(mq) : '';
+  const subHtml = mq ? `<span class="tb ${typeBadgeClass(t2)}" style="font-size:9px">${t2}</span>${title2 ? ` ${h(title2)}` : ''}` : '';
   showModal(
-    icon + ' ' + (item.row_group ? 'Row Group' : 'Stub Row'),
-    item.question || '',
+    item.question || 'Stub Row',
+    subHtml,
     renderStubModalBody(modalSt.item, mq),
     `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
      <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
-    {noBackdrop:true}
+    {noBackdrop:true, icon}
   );
 }
 
@@ -1551,13 +1567,16 @@ function openBannerLevelModal(colIdx, lvIdx) {
   const item = (col.levels||[])[lvIdx] || { question:'', label:'', groups:[] };
   const mq   = findMetaQ(item.question);
   modalSt    = { type:'banner-level', colIdx, lvIdx, item: JSON.parse(JSON.stringify(item)), mq };
+  const _t   = mq ? qType(mq) : '';
+  const _ttl = mq ? qTitle(mq) : '';
+  const _sub = mq ? `<span class="tb ${typeBadgeClass(_t)}" style="font-size:9px">${_t}</span>${_ttl ? ` ${h(_ttl)}` : ''}` : '';
   showModal(
-    `📊 Level ${lvIdx+2} — ${h(col.label||col.question||'?')}`,
-    `nested under Lv ${lvIdx+1}`,
+    item.question || `Lv${lvIdx+2}`,
+    _sub,
     renderBannerModalBody(modalSt.item, mq),
     `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
      <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
-    {noBackdrop:true}
+    {noBackdrop:true, icon:'📊'}
   );
 }
 function addBannerLevel(colIdx, lvIdx) {
@@ -1583,14 +1602,7 @@ function renderBannerModalBody(item, mq) {
   const ch    = mq ? qChoices(mq) : [];
   const groups = item.groups||[];
 
-  const infoHtml = mq ? `
-    <div class="qinfo-box">
-      <div class="qinfo-row"><span class="qinfo-label">Type</span>
-        <span class="qinfo-val"><span class="tb ${typeBadgeClass(t)}">${t}</span></span></div>
-      ${title?`<div class="qinfo-row"><span class="qinfo-label">Question</span><span class="qinfo-val">${h(title)}</span></div>`:''}
-    </div>` : '';
-
-  return `${infoHtml}
+  return `
   <div class="fr" style="margin-bottom:12px">
     <div class="fg"><label class="fl">Question label</label>
       <div style="display:flex;gap:4px;align-items:center">
@@ -1598,15 +1610,14 @@ function renderBannerModalBody(item, mq) {
         <button class="btn btn-sec btn-xs" onclick="mPickBannerQ()" title="Browse questions">🔍</button>
       </div></div>
     <div class="fg"><label class="fl">Column label</label>
-      <input id="mb_l" type="text" value="${a(item.label||'')}" placeholder="Gender"></div>
+      <input id="mb_l" type="text" value="${a(item.label||'')}" placeholder="${a(title||'auto')}"></div>
   </div>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <span class="slabel">Groups (${groups.length})</span>
-    <button class="btn btn-sec btn-xs" onclick="mAddGroup()">+ Group</button>
-  </div>
-  <div id="mb_groups">
-    ${groups.map((g,i)=>renderModalGroup(g,i)).join('')}
-    ${!groups.length?'<div style="font-size:11px;color:#bbb;padding:6px 0">No groups — all respondents used as 1 column</div>':''}
+  <div style="margin-top:2px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span class="slabel">Choices &amp; Groups</span>
+      <button class="btn btn-sec btn-xs" onclick="mAddGroup()">+ Group</button>
+    </div>
+    <div id="mb_unified">${renderBannerChoices(ch, groups, mq)}</div>
   </div>`;
 }
 
@@ -1626,15 +1637,6 @@ function renderStubModalBody(item, mq) {
   const rows  = mq ? qRows(mq) : [];
   const stats = item.stats||[];
   const recommended = defaultStats(t);
-
-  const infoHtml = mq ? `
-    <div class="qinfo-box">
-      <div class="qinfo-row"><span class="qinfo-label">Type</span>
-        <span class="qinfo-val"><span class="tb ${typeBadgeClass(t)}">${t}</span></span></div>
-      ${title?`<div class="qinfo-row"><span class="qinfo-label">Question</span><span class="qinfo-val">${h(title)}</span></div>`:''}
-      ${rows.length?`<div class="qinfo-row"><span class="qinfo-label">Rows</span><span class="qinfo-val">${rows.length} rows</span></div>`:''}
-    </div>` : '';
-
 
   // ── Ranking-specific options ──
   const rankingHtml = (t === 'ranking') ? `
@@ -1659,7 +1661,7 @@ function renderStubModalBody(item, mq) {
     <div id="rankOptExtra">${_rankOptExtra_for(item)}</div>
   </div>` : '';
 
-  return `${infoHtml}
+  return `
   <div class="fr" style="margin-bottom:14px">
     <div class="fg" style="flex:.7"><label class="fl">Question</label>
       <div style="display:flex;gap:4px;align-items:center">
@@ -1667,7 +1669,7 @@ function renderStubModalBody(item, mq) {
         <button class="btn btn-sec btn-xs" onclick="mPickStubQ()" title="Browse questions">🔍</button>
       </div></div>
     <div class="fg" style="flex:1.5"><label class="fl">Label</label>
-      <input id="ms_l" type="text" value="${a(item.label||'')}" placeholder="Gender"></div>
+      <input id="ms_l" type="text" value="${a(item.label||'')}" placeholder="${a(title||'auto')}"></div>
   </div>
   <label class="fl">Stats ${recommended.length?`<span style="color:#1a73e8;font-weight:normal;text-transform:none">— recommended for ${t}: ${recommended.join(', ')}</span>`:''}
   </label>
@@ -1700,28 +1702,49 @@ function _rankOptExtra_for(item) {
 }
 function _rankOptExtra() { return _rankOptExtra_for(modalSt.item); }
 
-function renderModalGroup(g, i) {
+function renderBannerChoices(ch, groups, mq) {
+  let inner = groups.length
+    ? groups.map((g,i) => renderModalGroup(g,i,mq)).join('')
+    : '<div style="font-size:11px;color:#bbb;padding:6px 0">No groups — all respondents used as 1 column</div>';
+  return `<div id="mb_groups">${inner}</div>`;
+}
+
+function autoGroupLabel(bq, g) {
+  if (!bq) return '';
+  const choices = qChoices(bq);
+  if (g.value != null) {
+    const ch = choices.find(c => Number(c.code) === Number(g.value));
+    return ch ? (i18nStr(ch.label)||'') : '';
+  }
+  if (g.values?.length) {
+    return g.values.map(v => {
+      const ch = choices.find(c => Number(c.code) === Number(v));
+      return ch ? (i18nStr(ch.label)||String(v)) : String(v);
+    }).join(', ');
+  }
+  return '';
+}
+
+function renderModalGroup(g, i, bq) {
   const isMulti = Array.isArray(g.values);
-  const val = isMulti ? (g.values||[]).join(', ') : String(g.value??'');
-  const lbl = isMulti ? `Value${(g.values||[]).length>1?'s':''} (auto)` : 'Value (auto)';
-  return `<div class="bgr" id="mgr_${i}"
-    ondragover="mGrpDragOver(event,${i})"
-    ondrop="mGrpDrop(event,${i})">
-    <div class="sdh" draggable="true"
-      ondragstart="mGrpDragStart(event,${i})"
-      ondragend="mGrpDragEnd(event)"
-      style="cursor:grab;padding:0 4px;font-size:15px;color:#ccc;align-self:flex-end;padding-bottom:6px" title="Drag to reorder">⠿</div>
-    <div class="fg" style="flex:1.5"><label class="fl">Label</label>
-      <input type="text" value="${a(g.label||'')}" oninput="mGrpF(${i},'label',this.value)" placeholder="Male"></div>
-    <div class="fg"><label class="fl">${lbl}</label>
-      <div style="display:flex;gap:4px;align-items:center">
-        <input type="text" value="${a(val)}" oninput="mGrpV(${i},this.value)"
-          placeholder="1  or  1, 2, 3" style="flex:1"
-          title="1 value → single (value:N)  ·  2+ values → multiple (values:[…])">
-        <button class="btn btn-sec btn-xs" onclick="mGrpPickCodes(${i})" title="Browse and select codes">🔍</button>
-      </div></div>
-    <div><label class="fl">&nbsp;</label>
-      <button class="btn btn-dan btn-xs" onclick="mGrpRm(${i})">✕</button></div>
+  const val     = isMulti ? (g.values||[]).join(', ') : String(g.value??'');
+  const autoLbl = bq ? autoGroupLabel(bq, g) : '';
+  return `<div id="mgr_${i}" style="display:grid;grid-template-columns:28px 1fr 110px 28px;align-items:center;padding:4px 8px;margin:2px 0;background:#f0f4ff;border-left:3px solid #888;border-radius:4px;gap:4px"
+    ondragover="mGrpDragOver(event,${i})" ondrop="mGrpDrop(event,${i})">
+    <div class="sdh" draggable="true" ondragstart="mGrpDragStart(event,${i})" ondragend="mGrpDragEnd(event)"
+      style="cursor:grab;font-size:15px;color:#ccc;text-align:center" title="Drag to reorder">⠿</div>
+    <input type="text" value="${a(g.label||'')}" oninput="mGrpF(${i},'label',this.value)"
+      placeholder="${a(autoLbl||'label')}" style="font-size:11px;width:100%;box-sizing:border-box">
+    <div style="display:flex;gap:2px;align-items:center">
+      <input type="text" value="${a(val)}" oninput="mGrpV(${i},this.value)"
+        placeholder="1  or  1,2,3" style="flex:1;font-size:11px;min-width:0;padding:2px 4px"
+        title="1 value → single · 2+ values → multiple">
+      <button style="flex-shrink:0;padding:2px 5px;border:1px solid #d0d5dd;border-radius:3px;background:#f9fafb;cursor:pointer;font-size:12px;line-height:1"
+        onclick="mGrpPickCodes(${i})" title="Browse codes">🔍</button>
+    </div>
+    <div style="text-align:center">
+      <button class="btn btn-dan btn-xs" onclick="mGrpRm(${i})">✕</button>
+    </div>
   </div>`;
 }
 
@@ -1729,7 +1752,13 @@ function renderModalGroup(g, i) {
 function mAddGroup() {
   if (!modalSt?.item) return;
   if (!modalSt.item.groups) modalSt.item.groups=[];
-  modalSt.item.groups.push({label:'New',value:0});
+  modalSt.item.groups.push({label:null,value:0});
+  _refreshGroups();
+}
+function mGrpAddFromChoice(code) {
+  if (!modalSt?.item) return;
+  if (!modalSt.item.groups) modalSt.item.groups=[];
+  modalSt.item.groups.push({label:null, value: typeof code==='number'?code:code});
   _refreshGroups();
 }
 function mGrpF(i,k,v) { if (modalSt?.item?.groups?.[i]) modalSt.item.groups[i][k]=v; }
@@ -1868,9 +1897,17 @@ function _refreshGroups() {
   const isStub = modalSt?.type === 'stub';
   const el = document.getElementById(isStub ? 'ms_groups' : 'mb_groups');
   if (!el) return;
-  const renderFn = isStub ? renderStubGroup : renderModalGroup;
-  el.innerHTML = grps.map((g,i) => renderFn(g,i)).join('') ||
-    '<div style="font-size:11px;color:#bbb;padding:6px 0">No groups</div>';
+  if (isStub) {
+    el.innerHTML = grps.map((g,i) => renderStubGroup(g,i)).join('') ||
+      '<div style="font-size:11px;color:#bbb;padding:6px 0">No groups</div>';
+  } else {
+    const bq  = modalSt?.item?.question ? findMetaQ(modalSt.item.question) : null;
+    const ch  = bq ? qChoices(bq) : [];
+    const uni = document.getElementById('mb_unified');
+    if (uni) { uni.innerHTML = renderBannerChoices(ch, grps, bq); return; }
+    el.innerHTML = grps.map((g,i) => renderModalGroup(g,i,bq)).join('') ||
+      '<div style="font-size:11px;color:#bbb;padding:6px 0">No groups</div>';
+  }
 }
 
 // ── Stub group helpers (codes:[4,5], type:"netted"|"combine"|"promoters"|"detractors") ──
@@ -1887,7 +1924,7 @@ function renderUnifiedItems(item, ch, mq) {
   const COLS_GRP = '40px 1fr 110px 92px 28px';
   const hdrFactor = isMA ? '' : `<span style="text-align:center">Factor</span>`;
   let html = `<div style="display:grid;grid-template-columns:${COLS};font-size:10px;font-weight:700;color:#888;padding:3px 8px;border-bottom:1px solid #e8eaed;text-transform:uppercase;letter-spacing:.3px">
-    <span>Code</span><span>Label</span>${hdrFactor}<span style="text-align:center">Hidden</span><span></span>
+    <span>Code</span><span>Label</span>${hdrFactor}<span style="text-align:center;line-height:1.3">Hidden<br><span style="display:inline-flex;gap:2px;margin-top:2px"><button style="font-size:8px;padding:0 5px;line-height:15px;border:1px solid #c0c8ff;border-radius:3px;background:#eef0ff;color:#3d5afe;cursor:pointer;font-weight:700" onclick="msHiddenAll()">All</button><button style="font-size:8px;padding:0 5px;line-height:15px;border:1px solid #ffd0d0;border-radius:3px;background:#fff0f0;color:#c62828;cursor:pointer;font-weight:700" onclick="msHiddenClear()">Clear</button></span></span><span></span>
   </div>`;
   const sentinelIdx = items.length;
   items.forEach((it, idx) => {
@@ -2162,7 +2199,7 @@ function renderMatrixRowItems(item) {
   const rows = item._rowItems || [];
   if (!rows.length) return '<div style="font-size:11px;color:#bbb;padding:6px 0">No rows</div>';
   let html = `<div style="display:grid;grid-template-columns:28px 1fr 40px;font-size:10px;font-weight:700;color:#888;padding:3px 8px;border-bottom:1px solid #e8eaed;text-transform:uppercase;letter-spacing:.3px">
-    <span></span><span>Label</span><span style="text-align:center">Hidden</span></div>`;
+    <span></span><span>Label</span><span style="text-align:center;line-height:1.3">Hidden<br><span style="display:inline-flex;gap:2px;margin-top:2px"><button style="font-size:8px;padding:0 5px;line-height:15px;border:1px solid #c0c8ff;border-radius:3px;background:#eef0ff;color:#3d5afe;cursor:pointer;font-weight:700" onclick="msRowHiddenAll()">All</button><button style="font-size:8px;padding:0 5px;line-height:15px;border:1px solid #ffd0d0;border-radius:3px;background:#fff0f0;color:#c62828;cursor:pointer;font-weight:700" onclick="msRowHiddenClear()">Clear</button></span></span></div>`;
   rows.forEach((row, idx) => {
     const hid = row.hidden || false;
     html += `<div id="msri_${idx}" style="display:grid;grid-template-columns:28px 1fr 40px;align-items:center;padding:3px 8px;border-bottom:1px solid #f5f5f5;${hid?'opacity:.4':''}"
@@ -2207,6 +2244,14 @@ function msRowHidden(idx, val) {
   const rows = modalSt?.item?._rowItems; if (!rows) return;
   rows[idx].hidden = val;
 }
+function msRowHiddenAll()   { _msRowHiddenBatch(true);  }
+function msRowHiddenClear() { _msRowHiddenBatch(false); }
+function _msRowHiddenBatch(val) {
+  const item = modalSt?.item; if (!item) return;
+  (item._rowItems||[]).forEach(r => { r.hidden = val || undefined; if (!val) delete r.hidden; });
+  const el = document.getElementById('ms_rows');
+  if (el) el.innerHTML = renderMatrixRowItems(item);
+}
 
 /** Set factor for an individual code in the stub modal. */
 function msCodeFactor(code, value) {
@@ -2230,6 +2275,27 @@ function msCodeHidden(code, hidden) {
     delete item._codeSettings[code].hidden;
     if (item._codeSettings[code].factor == null) delete item._codeSettings[code];
   }
+}
+
+function msHiddenAll()   { _msHiddenBatch(true);  }
+function msHiddenClear() { _msHiddenBatch(false); }
+function _msHiddenBatch(val) {
+  const item = modalSt?.item; if (!item) return;
+  (item._items||[]).forEach(it => {
+    if (it.kind !== 'code') return;
+    const cs = String(it.code);
+    if (!item._codeSettings)       item._codeSettings = {};
+    if (!item._codeSettings[cs])   item._codeSettings[cs] = {};
+    if (val) {
+      item._codeSettings[cs].hidden = true;
+    } else {
+      delete item._codeSettings[cs].hidden;
+      if (item._codeSettings[cs].factor == null) delete item._codeSettings[cs];
+    }
+  });
+  const mq = modalSt?.mq;
+  const el = document.getElementById('ms_unified');
+  if (el) el.innerHTML = renderUnifiedItems(item, mq ? qChoices(mq) : [], mq);
 }
 
 function mChoiceToggle(codeStr, on) {
@@ -2272,7 +2338,7 @@ function mPickBannerQ() {
     item.question = q.label || '';
     // Update column label only if it was blank or matched old question code
     if (!item.label || item.label === oldQ) {
-      item.label = qTitle(q) || q.label || '';
+      item.label = null;
     }
     // Rebuild groups from new question choices
     const ch = qChoices(q);
@@ -2280,24 +2346,25 @@ function mPickBannerQ() {
       item.groups = ch.map(c => ({ label: c.label, value: typeof c.code==='number' ? c.code : (parseInt(c.code)||c.code) }));
     }
     modalSt = { ...st, item, mq: q };
+    const _qt = qType(q), _qtl = qTitle(q);
+    const _qs = `<span class="tb ${typeBadgeClass(_qt)}" style="font-size:9px">${_qt}</span>${_qtl ? ` ${h(_qtl)}` : ''}`;
     if (isBannerLevel) {
-      const col = cfg().banner[st.colIdx];
       showModal(
-        `📊 Level ${st.lvIdx+2} — ${h(col.label||col.question||'?')}`,
-        `nested under Lv ${st.lvIdx+1}`,
+        item.question || `Lv${st.lvIdx+2}`,
+        _qs,
         renderBannerModalBody(modalSt.item, q),
         `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
          <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
-        {noBackdrop:true}
+        {noBackdrop:true, icon:'📊'}
       );
     } else {
       showModal(
-        '📊 Banner Column',
-        item.label || item.question || '',
+        item.question || 'Banner Column',
+        _qs,
         renderBannerModalBody(modalSt.item, q),
         `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
          <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
-        {noBackdrop:true}
+        {noBackdrop:true, icon:'📊'}
       );
     }
   });
@@ -2311,7 +2378,7 @@ function mPickStubQ() {
     const oldQ = item.question;
     item.question = q.label || '';
     if (!item.label || item.label === oldQ) {
-      item.label = qTitle(q) || q.label || '';
+      item.label = null;
     }
     // Update stats to recommended for the new type
     const t = qType(q);
@@ -2320,12 +2387,16 @@ function mPickStubQ() {
     delete item.choices; delete item._codeSettings; delete item._items; delete item.choice_codes;
     _initStubChoicesState(item, q);
     modalSt = { ...st, item, mq: q };
+    const _qt2 = qType(q), _qtl2 = qTitle(q);
+    const _qs2 = `<span class="tb ${typeBadgeClass(_qt2)}" style="font-size:9px">${_qt2}</span>${_qtl2 ? ` ${h(_qtl2)}` : ''}`;
+    const _icon2 = item.row_group ? '🔵' : '📋';
     showModal(
-      '📋 Stub Row',
-      item.question || '',
+      item.question || 'Stub Row',
+      _qs2,
       renderStubModalBody(modalSt.item, q),
       `<button class="btn btn-sec" onclick="closeModal()">Cancel</button>
-       <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`
+       <button class="btn btn-pri" onclick="saveModal()">✓ Save</button>`,
+      {noBackdrop:true, icon:_icon2}
     );
   });
 }
@@ -2335,13 +2406,13 @@ function saveModal() {
   if (modalSt.type==='banner') {
     const q=document.getElementById('mb_q'), l=document.getElementById('mb_l');
     if(q) modalSt.item.question=q.value;
-    if(l) modalSt.item.label=l.value;
+    if(l) modalSt.item.label=l.value.trim()||null;
     cfg().banner[modalSt.idx]=modalSt.item;
   }
   if (modalSt.type==='banner-level') {
     const q=document.getElementById('mb_q'), l=document.getElementById('mb_l');
     if(q) modalSt.item.question=q.value;
-    if(l) modalSt.item.label=l.value;
+    if(l) modalSt.item.label=l.value.trim()||null;
     const col = cfg().banner[modalSt.colIdx];
     if (!col.levels) col.levels = [];
     col.levels[modalSt.lvIdx] = modalSt.item;
@@ -2349,7 +2420,7 @@ function saveModal() {
   if (modalSt.type==='stub' && !modalSt.item.row_group) {
     const q=document.getElementById('ms_q'), l=document.getElementById('ms_l');
     if(q) modalSt.item.question=q.value;
-    if(l) modalSt.item.label=l.value;
+    if(l) modalSt.item.label=l.value.trim()||null;
     // Ranking options — read directly from DOM in case onchange didn't fire
     const modeEl = document.querySelector('input[name="ranking_mode"]:checked');
     if (modeEl) modalSt.item.ranking_mode = modeEl.value;
@@ -2390,8 +2461,9 @@ function saveModal() {
 let _modalNoBackdrop = false;
 function showModal(title, sub, bodyHtml, ftHtml, opts={}) {
   _modalNoBackdrop = !!opts.noBackdrop;
+  if (opts.icon) document.getElementById('mIcon').textContent = opts.icon;
   document.getElementById('mTitle').textContent = title;
-  document.getElementById('mSub').textContent   = sub||'';
+  document.getElementById('mSub').innerHTML      = sub||'';
   document.getElementById('mBody').innerHTML    = bodyHtml;
   document.getElementById('mFt').innerHTML      = ftHtml;
   document.getElementById('modal').style.display = 'flex';
@@ -2411,10 +2483,19 @@ function renderSidebar() {
   const el=document.getElementById('tbsList');
   if (!data.length) { el.innerHTML='<div style="padding:10px 11px;color:#bbb;font-size:11px">No table config</div>'; return; }
   el.innerHTML = data.map((c,i)=>`
-    <div class="tbsi ${i===activeCfg?'on':''}" onclick="selCfg(${i})">
-      <div class="tbsi-name">${h(c.sub_title||'Table '+(i+1))}${c.type==='quota'?'<span style="font-size:9px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:8px;padding:1px 5px;margin-left:5px;font-weight:700">QUOTA</span>':''}</div>
-      <div class="tbsi-sub">${h(c.title||'—')}</div>
-    </div>`).join('');
+    <div class="tbsi ${i===activeCfg?'on':''}" id="tbsi_${i}" draggable="true"
+      ondragstart="tblDragStart(event,${i})" ondragend="tblDragEnd(event)"
+      ondragover="tblDragOver(event,${i})" ondrop="tblDrop(event,${i})"
+      onclick="selCfg(${i})">
+      <span class="tbsi-drag" onclick="event.stopPropagation()">⠿</span>
+      <div class="tbsi-content">
+        <div class="tbsi-name">${h(c.sub_title||'Table '+(i+1))}${c.type==='quota'?'<span style="font-size:9px;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:8px;padding:1px 5px;margin-left:5px;font-weight:700">QUOTA</span>':''}</div>
+        <div class="tbsi-sub">${h(c.title||'—')}</div>
+      </div>
+    </div>`).join('') +
+    `<div id="tbsi_${data.length}"
+      ondragover="tblDragOver(event,${data.length})" ondrop="tblDrop(event,${data.length})"
+      style="height:12px;border:2px dashed transparent;border-radius:4px;margin:2px 4px;transition:border-color .15s"></div>`;
 }
 
 function renderMain() {
@@ -2473,22 +2554,34 @@ function renderBannerGrid(banner) {
     </div>`;
   }
 
+  const nonTotal = banner.filter(b => !(b.filter === null && !b.question));
+  function lvRowVisible(lv) {
+    if (lv === 0) return true;
+    if (lv === 1) return nonTotal.length > 0;
+    return nonTotal.some(item => {
+      const prev = (item.levels||[])[lv - 2];
+      return !!(prev && (prev.question || prev.type === 'custom_ref'));
+    });
+  }
+  const visibleRowCount = Array.from({length: MAX_LV}, (_,i) => i).filter(lvRowVisible).length;
+
   let rows = '';
   for (let lv = 0; lv < MAX_LV; lv++) {
+    if (!lvRowVisible(lv)) continue;
     let cells = '';
     cells += `<td class="bg-lvcol">Lv ${lv+1}</td>`;
 
     banner.forEach((item, ci) => {
       const isTotal = item.filter===null && !item.question;
-      if (isTotal) return; // hidden from grid — always kept in data but not shown
+      if (isTotal) return;
 
       if (item.type === 'custom' || item.type === 'custom_ref') {
         if (lv === 0) {
-          const isRef = item.type === 'custom_ref';
-          const def   = isRef ? resolveCustomRef(item) : null;
-          const nc    = isRef ? (def ? (def.choices||[]).length : 0) : (item.choices||[]).length;
-          const lbl   = isRef ? (def ? def.label : (item.ref||'?')) : (item.label||'Custom');
-          const badge = isRef ? 'REF' : 'CUSTOM';
+          const isRef  = item.type === 'custom_ref';
+          const def    = isRef ? resolveCustomRef(item) : null;
+          const nc     = isRef ? (def ? (def.choices||[]).length : 0) : (item.choices||[]).length;
+          const lbl    = isRef ? (def ? def.label : (item.ref||'?')) : (item.label||'Custom');
+          const badge  = isRef ? 'REF' : 'CUSTOM';
           const cellBg = isRef ? 'background:#f3e5f5;' : '';
           cells += `<td class="bgcol" data-bcol="${ci}"
             draggable="true" ondragstart="onBChipDragStart(event,${ci})" ondragend="onBChipDragEnd(event)"
@@ -2505,16 +2598,14 @@ function renderBannerGrid(banner) {
               </div>` : ''}
             </div>
           </td>`;
-          return; // only skip lv=0 — lv>=1 falls through to regular level rendering
+          return;
         }
-        // lv >= 1: fall through to regular rendering (supports addBannerLevel)
       }
 
       let lvItem = lv === 0
         ? { question: item.question, label: item.label, groups: item.groups }
         : ((item.levels||[])[lv-1] || null);
 
-      // custom_ref level item at lv≥1 — render REF cell with remove button
       if (lv > 0 && lvItem && lvItem.type === 'custom_ref') {
         const rmFn = `removeBannerLevel(${ci},${lv-1})`;
         cells += `<td class="bgcol" data-bcol="${ci}">
@@ -2532,22 +2623,17 @@ function renderBannerGrid(banner) {
       }
 
       const hasQ = lvItem && lvItem.question;
-
       if (hasQ) {
         const mq       = findMetaQ(lvItem.question);
         const t        = mq ? qType(mq) : '';
         const isMatrix = t.startsWith('Matrix');
         const clickFn  = lv===0 ? `openBannerModal(${ci})` : `openBannerLevelModal(${ci},${lv-1})`;
         const rmFn     = lv===0 ? `removeBanner(${ci})`    : `removeBannerLevel(${ci},${lv-1})`;
-        const placeClick = placing&&lv===0
+        const placeClick = placing && lv===0
           ? `_insertBannerFromQ(pendingBannerQ,${ci});pendingBannerQ=null;renderMain()`
           : clickFn;
-
-        // show_total lives on `item` for lv0, on `lvItem` for lv1+
-        const stVal    = lv===0 ? !!item.show_total : !!lvItem.show_total;
-        const stFn     = lv===0
-          ? `setBannerTotal(${ci},this.checked)`
-          : `setBannerLevelTotal(${ci},${lv-1},this.checked)`;
+        const stVal  = lv===0 ? !!item.show_total : !!lvItem.show_total;
+        const stFn   = lv===0 ? `setBannerTotal(${ci},this.checked)` : `setBannerLevelTotal(${ci},${lv-1},this.checked)`;
         const totalChk = !placing ? `
           <label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:3px;cursor:pointer;font-size:9px;color:${stVal?'#c8a840':'#bbb'};margin-top:3px;user-select:none">
             <input type="checkbox" ${stVal?'checked':''} onchange="${stFn}" onclick="event.stopPropagation()" style="width:10px;height:10px;accent-color:#c8a840;cursor:pointer">
@@ -2563,35 +2649,39 @@ function renderBannerGrid(banner) {
               ${stVal?`<span style="font-size:8px;background:#fef9e7;color:#c8a840;border:1px solid #f0d060;padding:0 4px;border-radius:3px;font-weight:700">TOTAL</span>`:''}
             </div>
             ${!placing ? `<div class="bgqacts" style="justify-content:center">
-              <button class="btn btn-sec btn-xs" onclick="event.stopPropagation();${clickFn}" title="Edit">✎</button>
-              <button class="btn btn-dan btn-xs" onclick="event.stopPropagation();${rmFn}" title="Remove">✕</button>
+              <button class="btn btn-sec btn-xs" onclick="event.stopPropagation();${clickFn}">✎</button>
+              <button class="btn btn-dan btn-xs" onclick="event.stopPropagation();${rmFn}">✕</button>
             </div>${totalChk}` : `<div style="font-size:9px;color:#1a73e8;text-align:center;margin-top:2px">insert here</div>`}
           </div>
         </td>`;
       } else {
-        // Empty cell
-        const placeFn  = `placeBannerQ(${ci},${lv===0?'\'new\'':lv-1})`;
-        const addFn    = lv===0 ? `addBannerItem()` : `addBannerLevel(${ci},${lv-1})`;
-        const cellCls  = placing ? 'bgcell is-empty place-target' : 'bgcell is-empty';
-        const onclick  = placing ? placeFn : addFn;
-        cells += `<td class="bgcol" data-bcol="${ci}"
-          ondragover="onBCellDragOver(event,${ci},${lv===0?-1:lv-1})"
-          ondragleave="onBCellDragLeave(event)"
-          ondrop="onBCellDrop(event,${ci},${lv===0?-1:lv-1})">
-          <div class="${cellCls}" onclick="${onclick}">
-            ${placing
-              ? `<span style="font-size:10px;color:#1a73e8;font-weight:600">Place here</span>`
-              : `<button class="btn btn-sec btn-xs">+ add</button>`}
-          </div>
-        </td>`;
+        const prevFilled = lv === 0 ? true
+          : lv === 1 ? !!(item.question || item.type === 'custom' || item.type === 'custom_ref')
+          : !!(item.levels && item.levels[lv-2] && (item.levels[lv-2].question || item.levels[lv-2].type === 'custom_ref'));
+        if (!prevFilled && !placing) {
+          cells += `<td class="bgcol" style="background:#fafbfc"></td>`;
+        } else {
+          const placeFn = `placeBannerQ(${ci},${lv===0?'\'new\'':lv-1})`;
+          const addFn   = lv===0 ? `addBannerItem()` : `addBannerLevel(${ci},${lv-1})`;
+          const cellCls = placing ? 'bgcell is-empty place-target' : 'bgcell is-empty';
+          const onclick = placing ? placeFn : addFn;
+          cells += `<td class="bgcol" data-bcol="${ci}"
+            ondragover="onBCellDragOver(event,${ci},${lv===0?-1:lv-1})"
+            ondragleave="onBCellDragLeave(event)"
+            ondrop="onBCellDrop(event,${ci},${lv===0?-1:lv-1})">
+            <div class="${cellCls}" onclick="${onclick}">
+              ${placing ? `<span style="font-size:10px;color:#1a73e8;font-weight:600">Place here</span>`
+                        : `<button class="btn btn-sec btn-xs">+ add</button>`}
+            </div>
+          </td>`;
+        }
       }
     });
 
-    // "Add column" cell (Lv1 row only, rowspan=5)
     if (lv === 0) {
       const addColCls = placing ? 'bgaddcol place-target' : 'bgaddcol';
       const addColFn  = placing ? `placeBannerQ(-1,'new')` : `addBannerItem()`;
-      cells += `<td class="${addColCls}" rowspan="${MAX_LV}"
+      cells += `<td class="${addColCls}" rowspan="${visibleRowCount}"
         ondragover="onBCellDragOver(event,-1,-1)"
         ondragleave="onBCellDragLeave(event)"
         ondrop="onBCellDrop(event,-1,-1)"
@@ -2671,6 +2761,7 @@ function renderLayout(c) {
     const mq    = findMetaQ(item.question);
     const t     = mq ? qType(mq) : '';
     const extra = (item.stats||[]).filter(s=>s!=='base'&&s!=='percent');
+    const dispLbl = item.label || (mq ? qTitle(mq) : '') || '';
     return `<div class="srow" draggable="true"
       ondragstart="onSRowDragStart(event,${i})"
       ondragend="onSRowDragEnd(event)"
@@ -2679,7 +2770,7 @@ function renderLayout(c) {
       onclick="openStubModal(${i})">
       <span class="sdh">⠿</span>
       <span class="slbl">${h(item.question||'?')}</span>
-      <span class="sname">${h(item.label||'')}</span>
+      <span class="sname">${h(dispLbl)}</span>
       ${t?`<span class="tb ${typeBadgeClass(t)}" style="font-size:9px">${t}</span>`:''}
       ${[...(item.groups||[]),...(item.choices||[]).filter(c=>c.codes)].some(g=>!g.type||g.type==='netted')?`<span class="tb tb-net" style="font-size:9px">NET</span>`:''}
       ${[...(item.groups||[]),...(item.choices||[]).filter(c=>c.codes)].some(g=>g.type==='combine')?`<span class="tb tb-comb" style="font-size:9px">COMB</span>`:''}
@@ -2753,19 +2844,6 @@ function renderSettings(c) {
       </div>
     </div>
   </div>
-  <div class="card">
-    <div class="cardh">
-      <div class="chl">🏷 Banner Matrix ${bm?`<span style="font-size:10px;background:#e8f0fe;color:#1565c0;padding:2px 8px;border-radius:10px">${h(bm.question||'?')} — ${h(bm.label||'')}</span>`:''}</div>
-      ${bm?`<button class="btn btn-dan btn-xs" onclick="removeBM()">Remove</button>`:`<button class="btn btn-sec btn-xs" onclick="addBM()">+ Add</button>`}
-    </div>
-    ${bm?`<div class="cardb">
-      <div class="fr">
-        <div class="fg"><label class="fl">Label</label><input type="text" value="${a(bm.label||'')}" oninput="setBM('label',this.value)"></div>
-        <div class="fg"><label class="fl">Question</label><input type="text" value="${a(bm.question||'')}" oninput="setBM('question',this.value)" placeholder="Q17"></div>
-      </div>
-      <div style="font-size:11px;color:#888">${bm.groups?`${bm.groups.length} groups (edit in Raw JSON)`:'Auto-load all rows from metadata'}</div>
-    </div>`:`<div class="cardb" style="color:#bbb;font-size:12px">No banner_matrix</div>`}
-  </div>
   ${(()=>{
     const countSheet = tables.find(t=>t.cell_content==='count') || {sheet:'Count',cell_content:'count',show_sig:false,enabled:true};
     const pctSheet   = tables.find(t=>t.cell_content==='percentage'&&!t.show_sig) || {sheet:'Pct',cell_content:'percentage',show_sig:false,enabled:true,decimal:0};
@@ -2826,6 +2904,21 @@ function renderSettings(c) {
 function selCfg(i) { activeCfg=i; renderSidebar(); renderMain(); }
 function setTab(t) { activeTab=t; renderMain(); }
 function cfg()     { return data[activeCfg]; }
+
+// ── Table list drag reorder ──
+let _tblDragFrom = null;
+function tblDragStart(e, i) { _tblDragFrom = i; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); }
+function tblDragEnd(e)      { _tblDragFrom = null; document.querySelectorAll('.tbsi,[id^="tbsi_"]').forEach(el => el.classList.remove('dov')); }
+function tblDragOver(e, i)  { e.preventDefault(); document.querySelectorAll('.tbsi,[id^="tbsi_"]').forEach(el => el.classList.remove('dov')); if (_tblDragFrom !== null && _tblDragFrom !== i) document.getElementById(`tbsi_${i}`)?.classList.add('dov'); }
+function tblDrop(e, i) {
+  e.preventDefault();
+  const from = _tblDragFrom;
+  if (from === null || from === i) return;
+  const [moved] = data.splice(from, 1);
+  data.splice(from < i ? i - 1 : i, 0, moved);
+  activeCfg = from < i ? i - 1 : i;
+  markDirty(); renderSidebar(); renderMain();
+}
 
 function setF(k,v) {
   cfg()[k]=v; markDirty();
@@ -3412,7 +3505,7 @@ function addAllToStub() {
     .sort((a,b) => (a.position||0) - (b.position||0));
   if (!toAdd.length) { setStatus('All codeable questions already in stub.', ''); return; }
   toAdd.forEach(q => {
-    cfg().stub.push({ question: q.label||'?', label: qTitle(q)||q.label||'?', stats: defaultStats(qType(q)) });
+    cfg().stub.push({ question: q.label||'?', label: null, stats: defaultStats(qType(q)) });
   });
   markDirty(); activeTab='layout'; renderMain();
   setStatus(`Added ${toAdd.length} question(s) to stub.`, 'saved');
@@ -3822,7 +3915,7 @@ function buildBannerTree(banner) {
     const col         = _bq ? qRawCol(_bq) : qToCol(item.question);
     const groups      = item.groups  || [];
     const levels      = item.levels  || [];   // [lv2Item, lv3Item, ...]
-    const bannerLabel = item.label   || item.question;
+    const bannerLabel = item.label || (_bq ? qTitle(_bq) : null) || item.question;
 
     // Completely flat (no groups, no sub-levels, no sub-total) → single leaf
     if (!groups.length && !levels.length && !item.show_total) {
@@ -3859,7 +3952,7 @@ function buildBannerTree(banner) {
         const rows = (_bq && isMAbinary(_bq))
           ? filterRowsByGroupMABinary(allRows, _bq, g)
           : filterRowsByGroup(allRows, col, g);
-        const node = { label: g.label, rows, children: [] };
+        const node = { label: g.label || autoGroupLabel(_bq, g) || String(g.value??''), rows, children: [] };
         if (levels.length)
           node.children = buildLevelChildren(rows, levels[0], levels.slice(1));
         lv1Children.push(node);
@@ -4271,9 +4364,9 @@ function computeBlock(stubItem, bannerCols, cellContent, showSig, sigLevels, pct
     const merged = Object.assign({}, def, { stats: stubItem.stats || def.stats || ['base','percent'] });
     return computeCustomBlock(merged, bannerCols, cellContent, showSig, sigLevels, pctDec);
   }
-  const qLabel = stubItem.question;
   const stats  = stubItem.stats || ['base','percent'];
-  const mq = findMetaQ(qLabel);
+  const mq = findMetaQ(stubItem.question);
+  const qLabel = (mq ? qTitle(mq) : null) || stubItem.question;
 
   if (mq) {
     const t = qType(mq);
@@ -4472,7 +4565,7 @@ function computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sig
       const counts    = tally(validRows, codesAnyRank);
       return { base, counts, t2b:0, b2b:0, mean:0, std:0, ma_mean:0, ma_std:0, ma_min:0, ma_max:0 };
     });
-    return { type:'flat', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType:'ranking (any)',
+    return { type:'flat', qCode: mq.label, qLabel: stubItem.label||qTitle(mq)||mq.label, answerType:'ranking (any)',
       rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false, pctDec) };
   }
 
@@ -4490,7 +4583,7 @@ function computeRankingBlock(stubItem, mq, bannerCols, cellContent, showSig, sig
     });
     subBlocks.push({ rowLabel: `Rank ${n}`, rows: buildRows(stats, ch, colData, cellContent, showSig, sigLevels, false, pctDec) });
   }
-  return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType:'ranking', subBlocks };
+  return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||qTitle(mq)||mq.label, answerType:'ranking', subBlocks };
 }
 
 function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigLevels, pctDec=0) {
@@ -4533,7 +4626,7 @@ function computeMatrixBlock(stubItem, mq, bannerCols, cellContent, showSig, sigL
       : buildRows(stats, filtCh, colData, cellContent, showSig, sigLevels, isMA, pctDec);
     return { rowLabel: sq.row_label||sq.label, rows };
   }).filter(Boolean);
-  return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||mq.label, answerType: qType(mq), subBlocks };
+  return { type:'matrix', qCode: mq.label, qLabel: stubItem.label||qTitle(mq)||mq.label, answerType: qType(mq), subBlocks };
 }
 
 // ── Full table computation ───────────────────────────
@@ -4563,26 +4656,41 @@ function renderTableHTML(tableData) {
   // Multi-row header from tree
   const { headerHtml } = buildBannerHeader(roots);
 
-  let body = '';
-  for (const block of blocks) {
-    const qHead = block.qCode && block.qCode !== block.qLabel
-      ? `<span class="dt-qcode">${h(block.qCode)}</span> - ${h(block.qLabel)}`
-      : h(block.qLabel);
-    if (block.type === 'matrix') {
-      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${qHead}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
-      for (const sub of block.subBlocks) {
-        body += `<tr><td class="dt-sqhdr" colspan="${nCols+1}">${h(sub.rowLabel)}</td></tr>`;
-        body += sub.rows.map(row => renderRow(row, nCols)).join('');
+  function blockSection(blk) {
+    const qH = blk.qCode && blk.qCode !== blk.qLabel
+      ? `<span class="dt-qcode">${h(blk.qCode)}</span> - ${h(blk.qLabel||'')}`
+      : h(blk.qLabel||'');
+    const qc = h(blk.qCode || blk.qLabel || '');
+    const at = h(blk.answerType || '');
+    let s = '';
+    if (blk.type === 'matrix') {
+      s += `<tr><td class="dt-qhdr" colspan="${nCols+1}" data-qc="${qc}" data-at="${at}">${qH}<span class="dt-type">${at}</span></td></tr>`;
+      for (const sub of (blk.subBlocks||[])) {
+        s += `<tr><td class="dt-sqhdr" colspan="${nCols+1}">${h(sub.rowLabel||'')}</td></tr>`;
+        s += (sub.rows||[]).map(row => renderRow(row, nCols)).join('');
       }
     } else {
-      body += `<tr><td class="dt-qhdr" colspan="${nCols+1}">${qHead}<span class="dt-type">${h(block.answerType)}</span></td></tr>`;
-      body += block.rows.map(row => renderRow(row, nCols)).join('');
+      s += `<tr><td class="dt-qhdr" colspan="${nCols+1}" data-qc="${qc}" data-at="${at}">${qH}<span class="dt-type">${at}</span></td></tr>`;
+      s += (blk.rows||[]).map(row => renderRow(row, nCols)).join('');
+    }
+    return s;
+  }
+
+  let bodies = '';
+  let _bi = 0;
+  for (const block of blocks) {
+    if (block.type === 'rowgroup') {
+      for (const sub of (block.subBlocks||[])) {
+        if (sub) bodies += `<tbody data-bi="${_bi++}">${blockSection(sub)}</tbody>`;
+      }
+    } else {
+      bodies += `<tbody data-bi="${_bi++}">${blockSection(block)}</tbody>`;
     }
   }
 
   return `<table class="dt-tbl">
     <thead>${headerHtml}</thead>
-    <tbody>${body}</tbody>
+    ${bodies}
   </table>`;
 }
 
@@ -4919,8 +5027,13 @@ async function showPreview() {
   const tables = (cfg.tables||[]).filter(t => t.enabled !== false);
   if (cfg.type !== 'quota' && !tables.length) { setStatus('⚠ No enabled tables', ''); return; }
 
+  // Button loading state
+  const runBtn = document.getElementById('runBtn');
+  if (runBtn) { runBtn.innerHTML = '<span class="pv-spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:-2px;margin-right:4px"></span>Loading…'; runBtn.style.opacity='1'; }
+
   // Show panel immediately with loading spinner
   document.getElementById('pvTabs').innerHTML = '';
+  document.getElementById('pvNav').innerHTML  = '';
   document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Loading data…</span></div>';
   document.getElementById('previewPanel').style.display = 'flex';
 
@@ -4930,6 +5043,7 @@ async function showPreview() {
       await apiLoadRd(currentSurveyId);
     } catch(e) {
       document.getElementById('pvContent').innerHTML = `<div class="pv-loading"><span>⚠ Failed to load data: ${h(e.message)}</span></div>`;
+      if (runBtn) { runBtn.innerHTML = '▶ Preview'; runBtn.style.opacity = ''; }
       return;
     }
   }
@@ -4938,24 +5052,29 @@ async function showPreview() {
   if (cfg.type === 'quota') {
     _pvQuotaMode = true;
     renderQuotaContent();
+    if (runBtn) { runBtn.innerHTML = '▶ Preview'; runBtn.style.opacity = ''; }
     return;
   }
 
-  try {
-    _pvResults   = tables.map(t => computeTable(cfg, t));
-    _pvActiveTab = 0;
-    _pvQuotaMode = false;
-    document.getElementById('pvTabs').innerHTML =
-      tables.map((t,i) =>
-        `<button class="pvtab ${i===0?'on':''}" data-tab="${i}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
-      ).join('');
-    document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Loading…</span></div>';
-    requestAnimationFrame(() => requestAnimationFrame(renderPvContent));
-  } catch(err) {
-    setStatus('⚠ Preview error: '+err.message, '');
-    console.error(err);
-    closePreview();
-  }
+  _pvActiveTab = 0;
+  _pvQuotaMode = false;
+  document.getElementById('pvTabs').innerHTML =
+    tables.map((t,i) =>
+      `<button class="pvtab ${i===0?'on':''}" data-tab="${i}" onclick="switchPvTab(${i})">${h(t.sheet)}</button>`
+    ).join('');
+  document.getElementById('pvContent').innerHTML = '<div class="pv-loading"><div class="pv-spinner"></div><span>Building table…</span></div>';
+  // Double-RAF so spinner paints before heavy computation
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    try {
+      _pvResults = tables.map(t => computeTable(cfg, t));
+      renderPvContent();
+    } catch(err) {
+      setStatus('⚠ Preview error: '+err.message, '');
+      console.error(err);
+      closePreview();
+      if (runBtn) { runBtn.innerHTML = '▶ Preview'; runBtn.style.opacity = ''; }
+    }
+  }));
 }
 function closePreview() { document.getElementById('previewPanel').style.display='none'; }
 function switchPvTab(i) {
@@ -4972,16 +5091,64 @@ function renderPvContent() {
   const el = document.getElementById('pvContent');
   el.style.cssText = '';   // reset any quota-mode overrides
   el.innerHTML = renderTableHTML(r);
+
+  // Restore run button
+  const runBtn = document.getElementById('runBtn');
+  if (runBtn) { runBtn.innerHTML = '▶ Preview'; runBtn.style.opacity = ''; }
+
   const tbl = document.querySelector('#pvContent .dt-tbl');
   if (tbl) {
-    let top = 0;
+    let theadH = 0;
     tbl.querySelectorAll('thead tr').forEach(tr => {
-      tr.querySelectorAll('th').forEach(th => { th.style.top = top + 'px'; });
-      top += tr.offsetHeight;
+      tr.querySelectorAll('th').forEach(th => { th.style.top = theadH + 'px'; });
+      theadH += tr.offsetHeight;
     });
+    // Freeze question label + matrix sub-question labels per tbody
+    tbl.querySelectorAll('tbody').forEach(tbody => {
+      const qhdrTd = tbody.querySelector('td.dt-qhdr');
+      if (!qhdrTd) return;
+      qhdrTd.style.top    = theadH + 'px';
+      qhdrTd.style.zIndex = '4';
+      const qhdrH = qhdrTd.closest('tr').offsetHeight;
+      tbody.querySelectorAll('td.dt-sqhdr').forEach(td => {
+        td.style.top    = (theadH + qhdrH) + 'px';
+        td.style.zIndex = '3';
+      });
+    });
+  }
+
+  // Build question navigation sidebar
+  const nav = document.getElementById('pvNav');
+  if (nav) {
+    let navHtml = '<div class="pvnav-hd">Questions</div>';
+    document.querySelectorAll('#pvContent .dt-tbl tbody').forEach((tb, i) => {
+      const qhdr = tb.querySelector('.dt-qhdr');
+      if (!qhdr) return;
+      const code = qhdr.dataset.qc || qhdr.querySelector('.dt-qcode')?.textContent.trim() || qhdr.textContent.split(' ')[0];
+      const type = qhdr.dataset.at || '';
+      const typeBadge = type ? `<span style="font-size:9px;background:#253870;color:#a8c7fa;padding:1px 4px;border-radius:3px;margin-left:4px;font-weight:400;flex-shrink:0">${h(type)}</span>` : '';
+      navHtml += `<div class="pvnav-item" data-navi="${i}" onclick="pvNavJump(${i})" style="display:flex;align-items:center;gap:0;justify-content:space-between"><span style="overflow:hidden;text-overflow:ellipsis">${h(code)}</span>${typeBadge}</div>`;
+    });
+    nav.innerHTML = navHtml;
   }
 }
 
+
+function pvNavJump(idx) {
+  const tbodies = document.querySelectorAll('#pvContent .dt-tbl tbody');
+  const tb = tbodies[idx];
+  if (tb) {
+    const wrap = document.getElementById('pvContent');
+    if (wrap) {
+      const wrapRect = wrap.getBoundingClientRect();
+      const tbRect   = tb.getBoundingClientRect();
+      wrap.scrollTop += tbRect.top - wrapRect.top - 8;
+    }
+  }
+  document.querySelectorAll('#pvNav .pvnav-item').forEach((el,i) =>
+    el.classList.toggle('on', i === idx)
+  );
+}
 
 // ── xlsx export ──────────────────────────────────────
 
@@ -5319,7 +5486,7 @@ async function activateSurvey(id, title) {
   const badge = document.getElementById('surveyBadge');
   badge.textContent = title;
   badge.className = 'fbadge ok';
-  document.title = `Q&Me — ${title}`;
+  document.title = `Q&Me | ${title}`;
 
   try {
     const st = await fetch(`/api/surveys/${id}/status`).then(r => r.json());
@@ -5710,7 +5877,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     const v = await fetch('/api/version').then(r => r.json());
     const el = document.getElementById('sfVersionBadge');
-    if (el) el.textContent = `surveyflow v${v.surveyflow} · apdp v${v.apdp}`;
+    if (el) el.textContent = `apdp v${v.apdp} · surveyflow v${v.surveyflow}`;
   } catch(e) {}
 
   // Show admin-only buttons for specific email
