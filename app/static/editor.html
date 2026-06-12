@@ -7,9 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"
         integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs"
         crossorigin="anonymous"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
-        integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
-        crossorigin="anonymous"></script>
+<script src="/static/xlsx-js-style.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#1a1a2e;background:#f0f2f5;height:100vh;overflow:hidden;display:flex;flex-direction:column}
@@ -5109,11 +5107,6 @@ function renderPvContent() {
       if (!qhdrTd) return;
       qhdrTd.style.top    = theadH + 'px';
       qhdrTd.style.zIndex = '4';
-      const qhdrH = qhdrTd.closest('tr').offsetHeight;
-      tbody.querySelectorAll('td.dt-sqhdr').forEach(td => {
-        td.style.top    = (theadH + qhdrH) + 'px';
-        td.style.zIndex = '3';
-      });
     });
   }
 
@@ -5156,35 +5149,89 @@ function pvNavJump(idx) {
 function buildXlsxHeader(roots) {
   const maxDepth   = getMaxDepth(roots);
   const nLabelRows = maxDepth + 1;
-
-  // rowData[depth] = array of {label, colspan, rowspan}
+  // rowEntries[depth] = [{label, colspan, rowspan, col}]
   const rowEntries = Array.from({ length: nLabelRows }, () => []);
+  const merges     = [];
 
-  function traverse(node, depth) {
+  // Stub col 0 spans all header rows
+  if (nLabelRows > 1) merges.push({ s:{r:0,c:0}, e:{r:nLabelRows-1,c:0} });
+
+  function traverse(node, depth, col) {
     if (!node.children || !node.children.length) {
       const rowspan = maxDepth - depth + 1;
-      rowEntries[depth].push({ label: node.label, colspan: 1, rowspan });
+      rowEntries[depth].push({ label: node.label, colspan: 1, rowspan, col });
+      if (rowspan > 1) merges.push({ s:{r:depth,c:col}, e:{r:depth+rowspan-1,c:col} });
+      return 1;
     } else {
       const cs = countLeafs(node);
-      rowEntries[depth].push({ label: node.label, colspan: cs, rowspan: 1 });
-      node.children.forEach(c => traverse(c, depth + 1));
+      rowEntries[depth].push({ label: node.label, colspan: cs, rowspan: 1, col });
+      if (cs > 1) merges.push({ s:{r:depth,c:col}, e:{r:depth,c:col+cs-1} });
+      let c = col;
+      node.children.forEach(child => { c += traverse(child, depth+1, c); });
+      return cs;
     }
   }
-  roots.forEach(r => traverse(r, 0));
+  let startCol = 1;
+  roots.forEach(r => { startCol += traverse(r, 0, startCol); });
+  const totalCols = startCol; // 1 (stub) + all banner cols
 
   const leafs = getLeafs(roots);
 
+  // Build AOA using absolute col positions so rowspan gaps are filled correctly
   const aoa = [];
   for (let d = 0; d < nLabelRows; d++) {
-    const row = [''];  // stub column
+    const row = new Array(totalCols).fill('');
+    row[0] = '';  // stub
     for (const e of rowEntries[d]) {
-      row.push(e.label);
-      for (let i = 1; i < e.colspan; i++) row.push('');
+      row[e.col] = e.label;
     }
     aoa.push(row);
   }
+  return { aoa, leafs, nLabelRows, merges };
+}
 
-  return { aoa, leafs };
+function _xlsxStyle(meta, col) {
+  const th = (rgb) => ({ style: 'thin', color: { rgb } });
+  const border = { top: th('D8DDE6'), bottom: th('D8DDE6'), left: th('D8DDE6'), right: th('D8DDE6') };
+  const fill   = (rgb) => ({ patternType: 'solid', fgColor: { rgb } });
+  const font   = (rgb, bold, italic, sz) => ({ color: { rgb }, bold: !!bold, italic: !!italic, sz: sz||11, name: 'Calibri' });
+
+  if (meta.type === 'hdr') {
+    const lvl   = meta.level;
+    const bgMap = ['B84B0C','F36A17','D05C12','A84610'];
+    const txMap = ['FFFFFF','FFFFFF','FFE4CC','FFD0A8'];
+    const isStub = col === 0;
+    const bg = isStub ? 'B84B0C' : bgMap[Math.min(lvl, bgMap.length-1)];
+    const tx = isStub ? 'FFFFFF' : txMap[Math.min(lvl, txMap.length-1)];
+    return { font: font(tx, true, false, 10), fill: fill(bg), alignment: { horizontal: isStub?'left':'center', vertical:'center', wrapText:true }, border };
+  }
+  if (meta.type === 'qhdr') {
+    return { font: font(col===0?'CCE4FF':'CCE4FF', true, false, 11), fill: fill('1A3050'), alignment: { horizontal:'left', vertical:'center', wrapText:true }, border };
+  }
+  if (meta.type === 'sqhdr') {
+    return { font: font('A7F3D0', true, false, 10), fill: fill('0E4F4F'), alignment: { horizontal:'left', vertical:'center', indent: col===0?1:0 }, border };
+  }
+  // Data rows
+  const isStub = col === 0;
+  const ri = meta.choiceIdx || 0;
+  const rowBg = {
+    base:    'F0F2F5', summary: 'F9F0FF', group:   'DBEAFE',
+    netted:  'F8F9FB', choice:  ri%2===0 ? 'FFFFFF' : 'FAFBFC',
+  };
+  const rowTx = { base:'444444', summary:'7B1FA2', group:'1565C0', netted:'555555', choice:'222222' };
+  const t = ['base','summary','group','netted'].includes(meta.type) ? meta.type : 'choice';
+  const bg = rowBg[t];
+  const tx = rowTx[t];
+  const bold   = t === 'base' || t === 'group';
+  const italic = t === 'summary';
+  const indent = isStub ? (t==='netted'?2 : t==='group'?0 : 1) : 0;
+  const rightBorder = isStub ? { style:'medium', color:{ rgb:'E0E4EA' } } : th('D8DDE6');
+  return {
+    font: font(tx, bold, italic, 11),
+    fill: fill(bg),
+    alignment: { horizontal: isStub?'left':'right', vertical:'center', wrapText: isStub, indent },
+    border: { ...border, right: rightBorder },
+  };
 }
 
 function downloadXlsx() {
@@ -5198,33 +5245,62 @@ function downloadXlsx() {
     const { roots, bannerCols, blocks } = tableData;
     const t      = tables[idx];
     const shName = `${cfg.sub_title||'Table'} - ${t.sheet}`.slice(0,31);
-    const aoa    = [];
+    const aoa     = [];
+    const rowMeta = [];
 
-    // Multi-level banner header
-    const { aoa: hdrAoa, leafs } = buildXlsxHeader(roots);
-    aoa.push(...hdrAoa);
+    const { aoa: hdrAoa, leafs, nLabelRows, merges } = buildXlsxHeader(roots);
+    hdrAoa.forEach((row, i) => { aoa.push(row); rowMeta.push({ type:'hdr', level:i }); });
 
     const pushBlock = (block) => {
+      aoa.push([block.qLabel]); rowMeta.push({ type:'qhdr' });
       if (block.type === 'matrix') {
-        aoa.push([block.qLabel]);
-        for (const sub of block.subBlocks) {
-          aoa.push([`  ↳ ${sub.rowLabel}`]);
-          sub.rows.forEach(row => aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : c.raw)]));
+        for (const sub of (block.subBlocks||[])) {
+          aoa.push([`  ${sub.rowLabel}`]); rowMeta.push({ type:'sqhdr' });
+          (sub.rows||[]).forEach((row, ri) => {
+            aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : Number(c.raw))]);
+            rowMeta.push({ type: row.type||'choice', choiceIdx: ri });
+          });
         }
       } else {
-        aoa.push([block.qLabel]);
-        block.rows.forEach(row => aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : c.raw)]));
+        (block.rows||[]).forEach((row, ri) => {
+          aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : Number(c.raw))]);
+          rowMeta.push({ type: row.type||'choice', choiceIdx: ri });
+        });
       }
     };
-    blocks.forEach(pushBlock);
+    blocks.forEach(blk => {
+      if (blk.type === 'rowgroup') (blk.subBlocks||[]).forEach(pushBlock);
+      else pushBlock(blk);
+    });
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    // Auto col width
+
+    // Merges
+    ws['!merges'] = merges;
+
+    // Cell styles (requires xlsx-js-style; silently skipped if unavailable)
+    try {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        const meta = rowMeta[r] || { type:'choice' };
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          if (!ws[addr]) ws[addr] = { v:'', t:'s' };
+          ws[addr].s = _xlsxStyle(meta, c);
+        }
+      }
+    } catch(e) { console.warn('xlsx style error:', e); }
+
+    // Col widths
     const colWidths = aoa.reduce((acc, row) => {
-      row.forEach((v, i) => { acc[i] = Math.max(acc[i] || 0, String(v || '').length + 2); });
+      row.forEach((v, i) => { acc[i] = Math.max(acc[i]||0, String(v??'').length + 2); });
       return acc;
     }, []);
-    ws['!cols'] = colWidths.map(w => ({ wch: Math.min(w, 40) }));
+    ws['!cols'] = colWidths.map((w, i) => ({ wch: i===0 ? Math.min(w,42) : Math.min(Math.max(w,8),18) }));
+
+    // Freeze header rows + stub col
+    ws['!views'] = [{ state:'frozen', xSplit:1, ySplit:nLabelRows }];
+
     XLSX.utils.book_append_sheet(wb, ws, shName);
   });
 
