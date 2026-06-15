@@ -112,7 +112,7 @@ function renderPage(sum, rec) {
   const page = document.getElementById('page');
 
   // ── Summary card
-  const EXCLUDE_ACTIONS = new Set(['download', 'upload_zip']);
+  const EXCLUDE_ACTIONS = new Set(['upload_zip']);
   const allActions = new Set();
   sum.users.forEach(u => Object.keys(u.actions).forEach(a => allActions.add(a)));
   const actionCols = [...allActions].filter(a => !EXCLUDE_ACTIONS.has(a)).sort();
