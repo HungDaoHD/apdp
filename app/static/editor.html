@@ -399,9 +399,9 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .dt-stub-hdr{background:#b84b0c;color:#fff;width:30vw;min-width:30vw;max-width:30vw;position:sticky;left:0;z-index:2;white-space:normal;word-break:break-word}
 .dt-tbl thead .dt-stub-hdr{z-index:20}
 .dt-bh{background:#b84b0c;color:#fff;text-align:center;font-size:10px;font-weight:700;white-space:normal;word-break:break-word}
-.dt-bh1{background:#f36a17;color:#fff;border-bottom:2px solid #ff8c45;white-space:normal;word-break:break-word}
-.dt-bh2{background:#d05c12;color:#ffe4cc;white-space:normal;word-break:break-word}
-.dt-bh3{background:#a84610;color:#ffd0a8;font-weight:400;font-size:10px;white-space:normal;word-break:break-word}
+.dt-bh1{background:#f36a17;color:#fff;border-bottom:2px solid #ff8c45;white-space:normal;word-break:break-word;min-width:72px}
+.dt-bh2{background:#d05c12;color:#ffe4cc;white-space:normal;word-break:break-word;min-width:72px}
+.dt-bh3{background:#a84610;color:#ffd0a8;font-weight:400;font-size:10px;white-space:normal;word-break:break-word;min-width:72px}
 .dt-qhdr{background:#1a3050;color:#cce4ff;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-qcode{color:#93b4d9;font-weight:400;font-size:10px;margin-right:2px}
 .dt-subhdr{background:#253045;color:#93b4d9;font-size:10px;padding:3px 10px 3px 18px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
@@ -411,7 +411,7 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .dt-rlbl-summ{font-weight:700;color:#7b1fa2;background:#f9f0ff;font-style:italic}
 .dt-rlbl-grp{font-weight:700;color:#1565c0;background:#dbeafe;padding-left:8px}
 .dt-rlbl-netted{padding-left:28px;color:#555;background:#f8f9fb}
-.dt-cell{text-align:right;padding:3px 8px;color:#222;background:white}
+.dt-cell{text-align:right;padding:3px 8px;color:#222;background:white;min-width:72px}
 .dt-base{background:#f0f2f5;font-weight:700;color:#444}
 .dt-summ{background:#f9f0ff;color:#6a1b9a;font-style:italic}
 .dt-grp{background:#dbeafe;font-weight:700;color:#1565c0}
@@ -5251,19 +5251,28 @@ function downloadXlsx() {
     const { aoa: hdrAoa, leafs, nLabelRows, merges } = buildXlsxHeader(roots);
     hdrAoa.forEach((row, i) => { aoa.push(row); rowMeta.push({ type:'hdr', level:i }); });
 
+    const isPct    = t.cell_content === 'percentage';
+    const pctFmt   = (t.decimal ?? 0) === 0 ? '0%' : '0.' + '0'.repeat(t.decimal ?? 0) + '%';
+    const cellVal = (c, rowType) => {
+      if (isPct && rowType !== 'base') {
+        const v = Number(c.raw);
+        return isNaN(v) ? (c.display || '-') : v / 100; // store as Excel fraction
+      }
+      return isNaN(Number(c.raw)) ? c.display : Number(c.raw);
+    };
     const pushBlock = (block) => {
       aoa.push([block.qLabel]); rowMeta.push({ type:'qhdr' });
       if (block.type === 'matrix') {
         for (const sub of (block.subBlocks||[])) {
           aoa.push([`  ${sub.rowLabel}`]); rowMeta.push({ type:'sqhdr' });
           (sub.rows||[]).forEach((row, ri) => {
-            aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : Number(c.raw))]);
+            aoa.push([row.label, ...row.cells.map(c => cellVal(c, row.type))]);
             rowMeta.push({ type: row.type||'choice', choiceIdx: ri });
           });
         }
       } else {
         (block.rows||[]).forEach((row, ri) => {
-          aoa.push([row.label, ...row.cells.map(c => isNaN(Number(c.raw)) ? c.display : Number(c.raw))]);
+          aoa.push([row.label, ...row.cells.map(c => cellVal(c, row.type))]);
           rowMeta.push({ type: row.type||'choice', choiceIdx: ri });
         });
       }
@@ -5287,6 +5296,10 @@ function downloadXlsx() {
           const addr = XLSX.utils.encode_cell({ r, c });
           if (!ws[addr]) ws[addr] = { v:'', t:'s' };
           ws[addr].s = _xlsxStyle(meta, c);
+          // Apply % number format to pct-sheet data cells (col>0, non-base, non-header)
+          if (isPct && c > 0 && !['hdr','qhdr','sqhdr'].includes(meta.type) && meta.type !== 'base') {
+            ws[addr].z = pctFmt;
+          }
         }
       }
     } catch(e) { console.warn('xlsx style error:', e); }
