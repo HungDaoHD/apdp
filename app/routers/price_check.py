@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from dependencies import require_qme
 
@@ -14,6 +14,8 @@ router = APIRouter(prefix="/api", tags=["price-check"])
 @router.post("/price-check")
 async def price_check(
     file: UploadFile = File(...),
+    curr_week: int | None = Form(default=None),
+    prev_week: int | None = Form(default=None),
     session_id: str = Depends(require_qme),
 ):
     if not (file.filename or '').lower().endswith('.xlsx'):
@@ -28,7 +30,9 @@ async def price_check(
         import asyncio
         from services.price_check_svc import process
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, lambda: process(xlsx_bytes))
+        result = await loop.run_in_executor(
+            None, lambda: process(xlsx_bytes, curr_week, prev_week)
+        )
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     except Exception as exc:

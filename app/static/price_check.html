@@ -8,51 +8,91 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#222;font-size:13px;min-height:100vh;display:flex;flex-direction:column}
+
 .hdr{background:#16213e;color:white;padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.25)}
-.hdr-logo{display:flex;align-items:center}
 .hdr-logo img{height:30px;display:block}
-.hdr-sep{width:1px;height:22px;background:#2d3748;flex-shrink:0}
-.hdr-title{font-size:13px;font-weight:700;color:#e0e6ef;white-space:nowrap}
-.hdr-sub{font-size:11px;color:#6b7a99;white-space:nowrap}
-.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px}
-.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .12s;display:inline-flex;align-items:center;gap:5px}
+.hdr-sep{width:1px;height:22px;background:#2d3748}
+.hdr-title{font-size:13px;font-weight:700;color:#e0e6ef}
+.hdr-sub{font-size:11px;color:#6b7a99}
+.hdr-right{margin-left:auto}
+
+.btn{padding:5px 12px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:600;transition:background .12s;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.btn-pri{background:#f36a17;color:white}.btn-pri:not(:disabled):hover{background:#d45a0f}
 .btn-gho{background:transparent;color:#9ab;border:1px solid #3d4757}.btn-gho:hover{background:#3d4757;color:#e0e6ef}
-.page{max-width:960px;width:100%;margin:0 auto;padding:28px 24px;display:flex;flex-direction:column;gap:20px}
-.card{background:#fff;border-radius:10px;border:1px solid #e0e0e0;overflow:hidden}
-.card-hdr{padding:12px 18px;border-bottom:1px solid #e8e8e8;font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px}
-.card-body{padding:20px 18px}
+.btn-pri{background:#f36a17;color:#fff}.btn-pri:not(:disabled):hover{background:#d45a0f}
+.btn-dl{background:#1e8449;color:#fff}.btn-dl:not(:disabled):hover{background:#166138}
+.btn-filter{background:#fff;color:#c0392b;border:1px solid #e5a8a8}.btn-filter:hover{background:#fce8e6}
+.btn-filter.active{background:#c0392b;color:#fff;border-color:#c0392b}
 
-/* Upload zone */
-.drop-zone{border:2px dashed #c0cfe8;border-radius:10px;padding:48px 24px;text-align:center;cursor:pointer;transition:all .15s;background:#f8faff}
-.drop-zone:hover,.drop-zone.drag{border-color:#f36a17;background:#fff8f5}
-.drop-icon{font-size:40px;margin-bottom:12px}
-.drop-label{font-size:14px;font-weight:600;color:#444;margin-bottom:4px}
-.drop-hint{font-size:12px;color:#999}
-.drop-filename{margin-top:10px;font-size:12px;font-weight:600;color:#f36a17}
+.page{width:100%;padding:12px 20px;display:flex;flex-direction:column;gap:12px}
+
+/* Compact upload bar */
+.upload-bar{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:8px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.file-label{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:6px;border:1px solid #c0cfe8;background:#f8faff;cursor:pointer;font-size:11px;font-weight:600;color:#1a73e8;white-space:nowrap}
+.file-label:hover{background:#e8f0fe}
 #fileInput{display:none}
+.fname{font-size:11px;color:#aaa;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fname.set{color:#f36a17;font-weight:600}
+.vline{width:1px;height:18px;background:#e0e0e0;flex-shrink:0}
+.status-msg{font-size:11px;color:#888}
+.msg-err{background:#fce8e6;color:#c62828;padding:8px 12px;border-radius:6px;font-size:11px;width:100%}
 
-/* Stats row */
-.stats-row{display:flex;gap:14px;flex-wrap:wrap}
-.stat-box{flex:1;min-width:140px;background:#f8faff;border:1px solid #d0dff5;border-radius:8px;padding:14px 16px}
-.stat-box.err{background:#fff5f5;border-color:#fdd}
-.stat-label{font-size:11px;color:#888;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
-.stat-val{font-size:22px;font-weight:800;color:#1a1a2e}
-.stat-val.red{color:#c0392b}
+/* Stats strip */
+.stats-strip{display:flex;align-items:center;gap:6px}
+.chip{background:#fff;border:1px solid #e0e0e0;border-radius:20px;padding:3px 10px;font-size:11px}
+.chip b{color:#1a1a2e}
+.chip.err b{color:#c0392b}
 
-/* Error table */
-table{width:100%;border-collapse:collapse}
-th{background:#fafafa;font-weight:600;text-align:left;padding:8px 12px;border-bottom:1px solid #e8e8e8;font-size:11px;color:#555;white-space:nowrap}
-td{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;vertical-align:top}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:#fafcff}
-.pill-err{background:#fce8e6;color:#c62828;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+/* Table card */
+.card{background:#fff;border-radius:8px;border:1px solid #e0e0e0;overflow:hidden}
+.card-hdr{padding:8px 14px;border-bottom:1px solid #e8e8e8;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}
+.card-hdr .spacer{flex:1}
 
-/* State messages */
-.msg-loading{text-align:center;padding:32px;color:#888;font-size:13px}
-.msg-err{background:#fce8e6;color:#c62828;padding:14px 16px;border-radius:8px;font-size:13px}
+/* Table — fixed layout to fit viewport */
+.tbl-wrap{overflow-y:auto;max-height:75vh}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:11px}
+
+thead th{
+  position:sticky;top:0;z-index:2;
+  padding:6px 5px;text-align:center;font-size:10px;font-weight:700;
+  border:1px solid rgba(0,0,0,.15);line-height:1.2;
+}
+/* column group colors matching Excel */
+th.c-base {background:#4a4a4a;color:#fff}
+th.c-w24  {background:#e97320;color:#fff}
+th.c-date {background:#b8790e;color:#fff}
+th.c-rem  {background:#2471a3;color:#fff}
+th.c-w23  {background:#1760a0;color:#fff}
+th.c-err  {background:#c0392b;color:#fff}
+
+tbody tr.ok  td{background:#eafaf1}
+tbody tr.ok:hover td{background:#d0f0de}
+tbody tr.bad td{background:#fce8e6}
+tbody tr.bad:hover td{background:#f5cec9}
+
+td{
+  padding:4px 5px;border:1px solid #e0e0e0;
+  vertical-align:middle;overflow:hidden;
+}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.ctr{text-align:center;white-space:nowrap}
+td.desc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+td.err-cell{color:#c0392b;font-weight:700;word-break:break-word;white-space:normal;line-height:1.3}
+
+.wk-sel{padding:4px 6px;border:1px solid #c0cfe8;border-radius:6px;font-size:11px;background:#f8faff;color:#1a1a2e;cursor:pointer;min-width:64px}
+.wk-sel:disabled{opacity:.45;cursor:default}
 .hidden{display:none}
+
+/* Column widths (% of table) */
+col.w-stt  {width:3%}
+col.w-desc {width:20%}
+col.w-p    {width:6%}
+col.w-r    {width:6.5%}
+col.w-pct  {width:5.5%}
+col.w-date {width:5.5%}
+col.w-rem  {width:6.5%}
+col.w-ag   {width:5%}
+col.w-err  {width:11%}
 </style>
 </head>
 <body>
@@ -69,181 +109,195 @@ tr:hover td{background:#fafcff}
 
 <div class="page">
 
-  <!-- Upload card -->
-  <div class="card">
-    <div class="card-hdr">📤 Upload rawdata file</div>
-    <div class="card-body">
-      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
-        <div class="drop-icon">📊</div>
-        <div class="drop-label">Click or drag Guardian.xlsx here</div>
-        <div class="drop-hint">Excel file exported from QMe — Price check task</div>
-        <div class="drop-filename hidden" id="dropFilename"></div>
-      </div>
-      <input type="file" id="fileInput" accept=".xlsx">
-      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
-        <button class="btn btn-pri" id="runBtn" disabled onclick="runCheck()">▶ Run Price Check</button>
-        <span id="statusMsg" style="font-size:12px;color:#888"></span>
-      </div>
-      <div id="errMsg" class="msg-err hidden" style="margin-top:12px"></div>
-    </div>
+  <!-- Upload bar -->
+  <div class="upload-bar">
+    <label class="file-label" for="fileInput">📎 Choose file</label>
+    <input type="file" id="fileInput" accept=".xlsx">
+    <span class="fname" id="fname">No file selected</span>
+    <div class="vline"></div>
+    <span style="font-size:11px;color:#888;white-space:nowrap">Current week:</span>
+    <select id="selCurr" class="wk-sel" disabled>
+      <option value="">Auto</option>
+    </select>
+    <div class="vline"></div>
+    <button class="btn btn-pri" id="runBtn" disabled onclick="runCheck()">▶ Run</button>
+    <button class="btn btn-dl hidden" id="dlBtn" onclick="downloadFile()">⬇ Download xlsx</button>
+    <span class="status-msg" id="statusMsg"></span>
+    <div id="errMsg" class="msg-err hidden"></div>
   </div>
 
-  <!-- Result card -->
-  <div class="card hidden" id="resultCard">
+  <!-- Stats strip -->
+  <div class="stats-strip hidden" id="statsStrip"></div>
+
+  <!-- SKU table -->
+  <div class="card hidden" id="tableCard">
     <div class="card-hdr">
-      ✅ Result
-      <span style="font-size:11px;font-weight:400;color:#888;margin-left:4px" id="resultMeta"></span>
-      <span style="margin-left:auto">
-        <button class="btn btn-pri" id="downloadBtn" onclick="downloadFile()">⬇ Download xlsx</button>
-      </span>
+      <span id="tableTitle">📋 SKU List</span>
+      <div class="spacer"></div>
+      <input type="text" id="searchBox" placeholder="🔍 Search SKU name…"
+        oninput="applyFilters()"
+        style="padding:4px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:11px;width:200px;outline:none">
+      <button class="btn btn-filter" id="filterBtn" onclick="toggleFilter()">🔴 Errors only</button>
     </div>
-    <div class="card-body" style="display:flex;flex-direction:column;gap:18px">
-      <div class="stats-row" id="statsRow"></div>
-      <div id="errorTableWrap" class="hidden">
-        <div style="font-weight:700;font-size:12px;color:#c62828;margin-bottom:8px">⚠ Price differences detected</div>
-        <div style="overflow:auto;max-height:40vh">
-          <table>
-            <thead>
-              <tr><th>#</th><th>Barcode</th><th>Description</th><th>Error</th></tr>
-            </thead>
-            <tbody id="errorTableBody"></tbody>
-          </table>
-        </div>
-      </div>
+    <div class="tbl-wrap">
+      <table id="skuTable">
+        <colgroup>
+          <col class="w-stt"><col class="w-desc">
+          <col class="w-p"><col class="w-r"><col class="w-pct">
+          <col class="w-date"><col class="w-date">
+          <col class="w-rem"><col class="w-ag">
+          <col class="w-p"><col class="w-r"><col class="w-pct">
+          <col class="w-err">
+        </colgroup>
+        <thead id="skuThead"></thead>
+        <tbody id="skuTbody"></tbody>
+      </table>
     </div>
   </div>
 
 </div>
 
 <script>
-let _file = null;
-let _b64  = null;
-let _filename = null;
+let _file = null, _b64 = null, _filename = null, _errOnly = false;
 
-// ── File picker + drag-drop ───────────────────────────────────────────────────
-const dropZone  = document.getElementById('dropZone');
-const fileInput = document.getElementById('fileInput');
-
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) setFile(fileInput.files[0]);
-});
-
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag');
-  const f = e.dataTransfer.files[0];
-  if (f) setFile(f);
-});
-
-function setFile(f) {
+document.getElementById('fileInput').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
   _file = f;
-  document.getElementById('dropFilename').textContent = '📎 ' + f.name;
-  document.getElementById('dropFilename').classList.remove('hidden');
+  const el = document.getElementById('fname');
+  el.textContent = '📎 ' + f.name; el.classList.add('set');
   document.getElementById('runBtn').disabled = false;
+  // Reset week selector when new file chosen
+  const sc = document.getElementById('selCurr');
+  sc.innerHTML = '<option value="">Auto</option>';
+  sc.disabled = true;
   clearResult();
-}
+});
 
 function clearResult() {
-  document.getElementById('resultCard').classList.add('hidden');
-  document.getElementById('errMsg').classList.add('hidden');
+  ['errMsg','statsStrip','tableCard'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById('dlBtn').classList.add('hidden');
   document.getElementById('statusMsg').textContent = '';
-  _b64 = null; _filename = null;
+  _b64 = null; _filename = null; _errOnly = false;
+  document.getElementById('filterBtn').classList.remove('active');
 }
 
-// ── Run ───────────────────────────────────────────────────────────────────────
+function populateWeekSelectors(availableWeeks, currWeek) {
+  const s = document.getElementById('selCurr');
+  s.innerHTML = availableWeeks.map(w =>
+    `<option value="${w.replace('W','')}" ${w===currWeek?'selected':''}>${w}</option>`
+  ).join('');
+  s.disabled = false;
+}
+
 async function runCheck() {
   if (!_file) return;
   clearResult();
-
   const btn = document.getElementById('runBtn');
-  const status = document.getElementById('statusMsg');
   btn.disabled = true;
-  status.textContent = '⏳ Processing…';
-
-  const fd = new FormData();
-  fd.append('file', _file);
-
+  document.getElementById('statusMsg').textContent = '⏳ Processing…';
   try {
-    const res = await fetch('/api/price-check', { method: 'POST', body: fd });
+    const fd = new FormData();
+    fd.append('file', _file);
+    const cv = document.getElementById('selCurr').value;
+    if (cv) fd.append('curr_week', cv);
+    const res = await fetch('/api/price-check', {method:'POST', body:fd});
     const data = await res.json();
-    if (!res.ok) {
-      showErr(data.detail || `Error ${res.status}`);
-    } else {
-      showResult(data);
-    }
-  } catch (e) {
-    showErr('Network error — ' + e.message);
-  } finally {
-    btn.disabled = false;
-    status.textContent = '';
-  }
+    if (!res.ok) { showErr(data.detail || `Error ${res.status}`); return; }
+    showResult(data);
+  } catch(e) { showErr('Network error — ' + e.message); }
+  finally { btn.disabled = false; document.getElementById('statusMsg').textContent = ''; }
 }
 
 function showErr(msg) {
-  const el = document.getElementById('errMsg');
-  el.textContent = '⚠ ' + msg;
-  el.classList.remove('hidden');
+  const el = document.getElementById('errMsg'); el.textContent = '⚠ ' + msg; el.classList.remove('hidden');
 }
 
 function showResult(d) {
-  _b64 = d.base64;
-  _filename = d.filename;
+  _b64 = d.base64; _filename = d.filename;
 
-  document.getElementById('resultMeta').textContent =
-    `${d.week_current} vs ${d.week_prev}  ·  ${d.n_skus} SKUs`;
-
-  // Stats
-  const sr = document.getElementById('statsRow');
-  sr.innerHTML = `
-    <div class="stat-box">
-      <div class="stat-label">Current week</div>
-      <div class="stat-val">${d.week_current}</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-label">Previous week</div>
-      <div class="stat-val">${d.week_prev}</div>
-    </div>
-    <div class="stat-box">
-      <div class="stat-label">SKUs</div>
-      <div class="stat-val">${d.n_skus}</div>
-    </div>
-    <div class="stat-box ${d.n_errors ? 'err' : ''}">
-      <div class="stat-label">Errors</div>
-      <div class="stat-val ${d.n_errors ? 'red' : ''}">${d.n_errors}</div>
-    </div>`;
-
-  // Error table
-  const wrap = document.getElementById('errorTableWrap');
-  if (d.errors && d.errors.length) {
-    const tbody = document.getElementById('errorTableBody');
-    tbody.innerHTML = d.errors.map(e => `
-      <tr>
-        <td>${e.stt}</td>
-        <td style="font-family:monospace">${e.barcode}</td>
-        <td>${e.description || '—'}</td>
-        <td><span class="pill-err">${e.error}</span></td>
-      </tr>`).join('');
-    wrap.classList.remove('hidden');
-  } else {
-    wrap.classList.add('hidden');
+  // Populate week selectors with available weeks from file
+  if (d.available_weeks?.length) {
+    populateWeekSelectors(d.available_weeks, d.week_current);
   }
 
-  document.getElementById('resultCard').classList.remove('hidden');
+  // Stats
+  const strip = document.getElementById('statsStrip');
+  strip.innerHTML = `
+    <span class="chip">Week <b>${d.week_current} vs ${d.week_prev}</b></span>
+    <span class="chip">SKUs <b>${d.n_skus}</b></span>
+    <span class="chip ${d.n_errors ? 'err':''}">Errors <b>${d.n_errors}</b></span>`;
+  strip.classList.remove('hidden');
+  document.getElementById('dlBtn').classList.remove('hidden');
+
+  // Header
+  const wc = d.week_current, wp = d.week_prev;
+  document.getElementById('skuThead').innerHTML = '<tr>' + [
+    ['STT',                        'c-base'],
+    ['Product Description Detail', 'c-base'],
+    [`Price ${wc}`,                'c-w24' ],
+    [`Regular price ${wc}`,        'c-w24' ],
+    [`Promo OFF ${wc}`,            'c-w24' ],
+    ['Promo Start Date',           'c-date'],
+    ['Promo End Date',             'c-date'],
+    ['Others Remarks',             'c-rem' ],
+    ["Agency's comment",           'c-rem' ],
+    [`Price ${wp}`,                'c-w23' ],
+    [`Regular price ${wp}`,        'c-w23' ],
+    [`Promo OFF ${wp}`,            'c-w23' ],
+    ['ERRORS',                     'c-err' ],
+  ].map(([l,c]) => `<th class="${c}">${l}</th>`).join('') + '</tr>';
+
+  // Body
+  document.getElementById('skuTbody').innerHTML = d.skus.map(s => {
+    const cls = s.error ? 'bad' : 'ok';
+    return `<tr class="${cls}" data-err="${s.error?1:0}" data-name="${(s.product_name||'').toLowerCase().replace(/"/g,'')}">
+      <td class="ctr">${s.stt}</td>
+      <td class="desc" title="${(s.product_name||'').replace(/"/g,'&quot;')}">${s.product_name||'—'}</td>
+      <td class="num">${s.curr_price||'—'}</td>
+      <td class="num">${s.curr_regular||'—'}</td>
+      <td class="ctr">${s.curr_promo_off||'—'}</td>
+      <td class="ctr">${s.promo_start||'—'}</td>
+      <td class="ctr">${s.promo_end||'—'}</td>
+      <td class="ctr">${s.remarks||'—'}</td>
+      <td class="ctr">${s.agency_comment||''}</td>
+      <td class="num">${s.prev_price||'—'}</td>
+      <td class="num">${s.prev_regular||'—'}</td>
+      <td class="ctr">${s.prev_promo_off||'—'}</td>
+      <td class="err-cell">${s.error||''}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('tableTitle').textContent = `📋 SKU List — ${d.n_skus} items`;
+  document.getElementById('tableCard').classList.remove('hidden');
+}
+
+function toggleFilter() {
+  _errOnly = !_errOnly;
+  const btn = document.getElementById('filterBtn');
+  btn.classList.toggle('active', _errOnly);
+  btn.textContent = _errOnly ? '📋 Show all' : '🔴 Errors only';
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = (document.getElementById('searchBox')?.value || '').toLowerCase().trim();
+  document.querySelectorAll('#skuTbody tr').forEach(tr => {
+    const matchErr  = !_errOnly || tr.dataset.err === '1';
+    const matchText = !q || (tr.dataset.name || '').includes(q);
+    tr.style.display = (matchErr && matchText) ? '' : 'none';
+  });
 }
 
 function downloadFile() {
   if (!_b64 || !_filename) return;
-  const bin = atob(_b64);
-  const arr = new Uint8Array(bin.length);
+  const bin = atob(_b64), arr = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  const blob = new Blob([arr], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = _filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([arr],
+      {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})),
+    download: _filename,
+  });
+  a.click(); URL.revokeObjectURL(a.href);
 }
 </script>
 </body>
