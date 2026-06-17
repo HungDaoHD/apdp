@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from routers import surveys, pipeline, qme_auth, usage_log
+from routers import surveys, pipeline, qme_auth, usage_log, price_check
 from config import Settings
 from dependencies import require_qme
 
@@ -53,7 +53,8 @@ _STATIC = Path(__file__).parent / "static"
 app.include_router(surveys.router,    dependencies=[Depends(require_qme)])
 app.include_router(pipeline.router,   dependencies=[Depends(require_qme)])
 app.include_router(qme_auth.router)   # auth routes are always public
-app.include_router(usage_log.router)  # per-endpoint auth via require_qme
+app.include_router(usage_log.router)   # per-endpoint auth via require_qme
+app.include_router(price_check.router) # standalone, per-endpoint auth via require_qme
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
@@ -98,6 +99,11 @@ async def editor():
 @app.get("/log", response_class=HTMLResponse)
 async def log_page():
     return HTMLResponse((_STATIC / "log.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
+
+
+@app.get("/price-check", response_class=HTMLResponse)
+async def price_check_page():
+    return HTMLResponse((_STATIC / "price_check.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
 
 
 if __name__ == "__main__":

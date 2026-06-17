@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="shortcut icon" href="/static/favicon.png">
+<title>Price Check | Q&Me</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#222;font-size:13px;min-height:100vh;display:flex;flex-direction:column}
+.hdr{background:#16213e;color:white;padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.hdr-logo{display:flex;align-items:center}
+.hdr-logo img{height:30px;display:block}
+.hdr-sep{width:1px;height:22px;background:#2d3748;flex-shrink:0}
+.hdr-title{font-size:13px;font-weight:700;color:#e0e6ef;white-space:nowrap}
+.hdr-sub{font-size:11px;color:#6b7a99;white-space:nowrap}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .12s;display:inline-flex;align-items:center;gap:5px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-pri{background:#f36a17;color:white}.btn-pri:not(:disabled):hover{background:#d45a0f}
+.btn-gho{background:transparent;color:#9ab;border:1px solid #3d4757}.btn-gho:hover{background:#3d4757;color:#e0e6ef}
+.page{max-width:960px;width:100%;margin:0 auto;padding:28px 24px;display:flex;flex-direction:column;gap:20px}
+.card{background:#fff;border-radius:10px;border:1px solid #e0e0e0;overflow:hidden}
+.card-hdr{padding:12px 18px;border-bottom:1px solid #e8e8e8;font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px}
+.card-body{padding:20px 18px}
+
+/* Upload zone */
+.drop-zone{border:2px dashed #c0cfe8;border-radius:10px;padding:48px 24px;text-align:center;cursor:pointer;transition:all .15s;background:#f8faff}
+.drop-zone:hover,.drop-zone.drag{border-color:#f36a17;background:#fff8f5}
+.drop-icon{font-size:40px;margin-bottom:12px}
+.drop-label{font-size:14px;font-weight:600;color:#444;margin-bottom:4px}
+.drop-hint{font-size:12px;color:#999}
+.drop-filename{margin-top:10px;font-size:12px;font-weight:600;color:#f36a17}
+#fileInput{display:none}
+
+/* Stats row */
+.stats-row{display:flex;gap:14px;flex-wrap:wrap}
+.stat-box{flex:1;min-width:140px;background:#f8faff;border:1px solid #d0dff5;border-radius:8px;padding:14px 16px}
+.stat-box.err{background:#fff5f5;border-color:#fdd}
+.stat-label{font-size:11px;color:#888;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.stat-val{font-size:22px;font-weight:800;color:#1a1a2e}
+.stat-val.red{color:#c0392b}
+
+/* Error table */
+table{width:100%;border-collapse:collapse}
+th{background:#fafafa;font-weight:600;text-align:left;padding:8px 12px;border-bottom:1px solid #e8e8e8;font-size:11px;color:#555;white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafcff}
+.pill-err{background:#fce8e6;color:#c62828;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600}
+
+/* State messages */
+.msg-loading{text-align:center;padding:32px;color:#888;font-size:13px}
+.msg-err{background:#fce8e6;color:#c62828;padding:14px 16px;border-radius:8px;font-size:13px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-logo"><img src="/static/logo.png" alt="Q&Me"></div>
+  <div class="hdr-sep"></div>
+  <span class="hdr-title">Price Check</span>
+  <span class="hdr-sub">Guardian — Weekly price comparison</span>
+  <div class="hdr-right">
+    <a href="/"><button class="btn btn-gho">← Projects</button></a>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- Upload card -->
+  <div class="card">
+    <div class="card-hdr">📤 Upload rawdata file</div>
+    <div class="card-body">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="drop-icon">📊</div>
+        <div class="drop-label">Click or drag Guardian.xlsx here</div>
+        <div class="drop-hint">Excel file exported from QMe — Price check task</div>
+        <div class="drop-filename hidden" id="dropFilename"></div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx">
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+        <button class="btn btn-pri" id="runBtn" disabled onclick="runCheck()">▶ Run Price Check</button>
+        <span id="statusMsg" style="font-size:12px;color:#888"></span>
+      </div>
+      <div id="errMsg" class="msg-err hidden" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Result card -->
+  <div class="card hidden" id="resultCard">
+    <div class="card-hdr">
+      ✅ Result
+      <span style="font-size:11px;font-weight:400;color:#888;margin-left:4px" id="resultMeta"></span>
+      <span style="margin-left:auto">
+        <button class="btn btn-pri" id="downloadBtn" onclick="downloadFile()">⬇ Download xlsx</button>
+      </span>
+    </div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:18px">
+      <div class="stats-row" id="statsRow"></div>
+      <div id="errorTableWrap" class="hidden">
+        <div style="font-weight:700;font-size:12px;color:#c62828;margin-bottom:8px">⚠ Price differences detected</div>
+        <div style="overflow:auto;max-height:40vh">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Barcode</th><th>Description</th><th>Error</th></tr>
+            </thead>
+            <tbody id="errorTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let _file = null;
+let _b64  = null;
+let _filename = null;
+
+// ── File picker + drag-drop ───────────────────────────────────────────────────
+const dropZone  = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) setFile(fileInput.files[0]);
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+function setFile(f) {
+  _file = f;
+  document.getElementById('dropFilename').textContent = '📎 ' + f.name;
+  document.getElementById('dropFilename').classList.remove('hidden');
+  document.getElementById('runBtn').disabled = false;
+  clearResult();
+}
+
+function clearResult() {
+  document.getElementById('resultCard').classList.add('hidden');
+  document.getElementById('errMsg').classList.add('hidden');
+  document.getElementById('statusMsg').textContent = '';
+  _b64 = null; _filename = null;
+}
+
+// ── Run ───────────────────────────────────────────────────────────────────────
+async function runCheck() {
+  if (!_file) return;
+  clearResult();
+
+  const btn = document.getElementById('runBtn');
+  const status = document.getElementById('statusMsg');
+  btn.disabled = true;
+  status.textContent = '⏳ Processing…';
+
+  const fd = new FormData();
+  fd.append('file', _file);
+
+  try {
+    const res = await fetch('/api/price-check', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) {
+      showErr(data.detail || `Error ${res.status}`);
+    } else {
+      showResult(data);
+    }
+  } catch (e) {
+    showErr('Network error — ' + e.message);
+  } finally {
+    btn.disabled = false;
+    status.textContent = '';
+  }
+}
+
+function showErr(msg) {
+  const el = document.getElementById('errMsg');
+  el.textContent = '⚠ ' + msg;
+  el.classList.remove('hidden');
+}
+
+function showResult(d) {
+  _b64 = d.base64;
+  _filename = d.filename;
+
+  document.getElementById('resultMeta').textContent =
+    `${d.week_current} vs ${d.week_prev}  ·  ${d.n_skus} SKUs`;
+
+  // Stats
+  const sr = document.getElementById('statsRow');
+  sr.innerHTML = `
+    <div class="stat-box">
+      <div class="stat-label">Current week</div>
+      <div class="stat-val">${d.week_current}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Previous week</div>
+      <div class="stat-val">${d.week_prev}</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">SKUs</div>
+      <div class="stat-val">${d.n_skus}</div>
+    </div>
+    <div class="stat-box ${d.n_errors ? 'err' : ''}">
+      <div class="stat-label">Errors</div>
+      <div class="stat-val ${d.n_errors ? 'red' : ''}">${d.n_errors}</div>
+    </div>`;
+
+  // Error table
+  const wrap = document.getElementById('errorTableWrap');
+  if (d.errors && d.errors.length) {
+    const tbody = document.getElementById('errorTableBody');
+    tbody.innerHTML = d.errors.map(e => `
+      <tr>
+        <td>${e.stt}</td>
+        <td style="font-family:monospace">${e.barcode}</td>
+        <td>${e.description || '—'}</td>
+        <td><span class="pill-err">${e.error}</span></td>
+      </tr>`).join('');
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
+
+  document.getElementById('resultCard').classList.remove('hidden');
+}
+
+function downloadFile() {
+  if (!_b64 || !_filename) return;
+  const bin = atob(_b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  const blob = new Blob([arr], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = _filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+</script>
+</body>
+</html>
