@@ -5260,8 +5260,15 @@ function downloadXlsx() {
       }
       return isNaN(Number(c.raw)) ? c.display : Number(c.raw);
     };
+    const _qHdr = (block) => {
+      const parts = [];
+      if (block.qCode && block.qCode !== block.qLabel) parts.push(block.qCode);
+      parts.push(block.qLabel || '');
+      if (block.answerType) parts.push(block.answerType);
+      return parts.join(' - ');
+    };
     const pushBlock = (block) => {
-      aoa.push([block.qLabel]); rowMeta.push({ type:'qhdr' });
+      aoa.push([_qHdr(block)]); rowMeta.push({ type:'qhdr' });
       if (block.type === 'matrix') {
         for (const sub of (block.subBlocks||[])) {
           aoa.push([`  ${sub.rowLabel}`]); rowMeta.push({ type:'sqhdr' });
