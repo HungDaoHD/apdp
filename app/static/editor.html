@@ -403,9 +403,13 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .dt-bh2{background:#d05c12;color:#ffe4cc;white-space:normal;word-break:break-word;min-width:72px}
 .dt-bh3{background:#a84610;color:#ffd0a8;font-weight:400;font-size:10px;white-space:normal;word-break:break-word;min-width:72px}
 .dt-qhdr{background:#1a3050;color:#cce4ff;font-weight:700;font-size:11px;padding:5px 10px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
+.dt-qhdr::after{content:'';position:absolute;top:0;left:100%;height:100%;width:var(--fillw,0);background:#1a3050}
+.dt-qhdr-fill{background:#1a3050}
 .dt-qcode{color:#93b4d9;font-weight:400;font-size:10px;margin-right:2px}
 .dt-subhdr{background:#253045;color:#93b4d9;font-size:10px;padding:3px 10px 3px 18px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-sqhdr{background:#0e4f4f;color:#a7f3d0;font-weight:600;font-size:11px;padding:4px 10px 4px 22px;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word;border-left:3px solid #34d399}
+.dt-sqhdr::after{content:'';position:absolute;top:0;left:100%;height:100%;width:var(--fillw,0);background:#0e4f4f}
+.dt-sqhdr-fill{background:#0e4f4f}
 .dt-rlbl{background:#f8f9fb;font-size:11px;padding:3px 8px 3px 16px;border-right:2px solid #e0e4ea;position:sticky;left:0;width:30vw;min-width:30vw;max-width:30vw;white-space:normal;word-break:break-word}
 .dt-rlbl-base{font-weight:700;color:#333;background:#f0f2f5}
 .dt-rlbl-summ{font-weight:700;color:#7b1fa2;background:#f9f0ff;font-style:italic}
@@ -4662,13 +4666,13 @@ function renderTableHTML(tableData) {
     const at = h(blk.answerType || '');
     let s = '';
     if (blk.type === 'matrix') {
-      s += `<tr><td class="dt-qhdr" colspan="${nCols+1}" data-qc="${qc}" data-at="${at}">${qH}<span class="dt-type">${at}</span></td></tr>`;
+      s += `<tr><td class="dt-qhdr" data-qc="${qc}" data-at="${at}">${qH}<span class="dt-type">${at}</span></td><td class="dt-qhdr-fill" colspan="${nCols}"></td></tr>`;
       for (const sub of (blk.subBlocks||[])) {
-        s += `<tr><td class="dt-sqhdr" colspan="${nCols+1}">${h(sub.rowLabel||'')}</td></tr>`;
+        s += `<tr><td class="dt-sqhdr">${h(sub.rowLabel||'')}</td><td class="dt-sqhdr-fill" colspan="${nCols}"></td></tr>`;
         s += (sub.rows||[]).map(row => renderRow(row, nCols)).join('');
       }
     } else {
-      s += `<tr><td class="dt-qhdr" colspan="${nCols+1}" data-qc="${qc}" data-at="${at}">${qH}<span class="dt-type">${at}</span></td></tr>`;
+      s += `<tr><td class="dt-qhdr" data-qc="${qc}" data-at="${at}">${qH}<span class="dt-type">${at}</span></td><td class="dt-qhdr-fill" colspan="${nCols}"></td></tr>`;
       s += (blk.rows||[]).map(row => renderRow(row, nCols)).join('');
     }
     return s;
@@ -5102,11 +5106,24 @@ function renderPvContent() {
       theadH += tr.offsetHeight;
     });
     // Freeze question label + matrix sub-question labels per tbody
+    // --fillw: width of the ::after band that extends the label's color across
+    // the remaining (non-sticky) banner columns — must equal actual table width
+    // minus the label's own width, or it either falls short or overflows past
+    // the table when the banner has few columns.
+    const fillW = Math.max(0, tbl.offsetWidth - (tbl.querySelector('td.dt-qhdr')?.offsetWidth || 0)) + 'px';
     tbl.querySelectorAll('tbody').forEach(tbody => {
       const qhdrTd = tbody.querySelector('td.dt-qhdr');
       if (!qhdrTd) return;
       qhdrTd.style.top    = theadH + 'px';
       qhdrTd.style.zIndex = '4';
+      qhdrTd.style.setProperty('--fillw', fillW);
+      const qhdrH = qhdrTd.closest('tr').offsetHeight;
+      // Freeze row-group brand labels (e.g. "FE Credit") right below the question label
+      tbody.querySelectorAll('td.dt-sqhdr').forEach(sqTd => {
+        sqTd.style.top    = (theadH + qhdrH) + 'px';
+        sqTd.style.zIndex = '3';
+        sqTd.style.setProperty('--fillw', fillW);
+      });
     });
   }
 
