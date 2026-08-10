@@ -43,16 +43,16 @@ async def on_startup() -> None:
     # H-4: warn if SECURE_COOKIES is off (risky on non-localhost deployments)
     if not settings.SECURE_COOKIES:
         logging.getLogger(__name__).warning(
-            "SECURE_COOKIES=False — session cookies sent over HTTP. "
+            "SECURE_COOKIES=False — session cookies sent over HTTP."
             "Set SECURE_COOKIES=True when deploying behind HTTPS."
         )
 
 
 _STATIC = Path(__file__).parent / "static"
 
-app.include_router(surveys.router,    dependencies=[Depends(require_qme)])
-app.include_router(pipeline.router,   dependencies=[Depends(require_qme)])
-app.include_router(qme_auth.router)   # auth routes are always public
+app.include_router(surveys.router, dependencies=[Depends(require_qme)])
+app.include_router(pipeline.router, dependencies=[Depends(require_qme)])
+app.include_router(qme_auth.router)    # auth routes are always public
 app.include_router(usage_log.router)   # per-endpoint auth via require_qme
 app.include_router(price_check.router) # standalone, per-endpoint auth via require_qme
 
