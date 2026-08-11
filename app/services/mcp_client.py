@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -268,22 +269,51 @@ class MemoryTokenStorage:
 
 # ── Session registry ──────────────────────────────────────────────────────────
 
-_storages: dict[str, MemoryTokenStorage] = {}
+# OrderedDict (not plain dict) so get_storage() can track recency and evict the
+# least-recently-used entry once _MAX_STORAGES is hit — a well-formed but
+# never-issued session id (any random 20-64 char token) still passes
+# _SESSION_ID_RE, so format validation alone does not bound memory use; this
+# cap is the actual bound.
+_storages: "OrderedDict[str, MemoryTokenStorage]" = OrderedDict()
+_MAX_STORAGES = 2000   # generous multiple of real team size; caps worst-case RAM
+
+
+class InvalidSessionId(Exception):
+    """Raised when a caller-supplied session id does not match the format
+    this app ever issues — used to reject it before it can be cached."""
 
 
 def get_storage(session_id: str) -> MemoryTokenStorage:
-    """Return (or create) token storage for this session."""
-    if session_id not in _storages:
-        from config import settings
-        storage = MemoryTokenStorage(
-            session_id=session_id,
-            client_id=settings.QME_CLIENT_ID,
-            client_secret=settings.QME_CLIENT_SECRET,
-            redirect_uri=settings.QME_REDIRECT_URI,
-        )
-        storage._load_from_disk()
-        _storages[session_id] = storage
-    return _storages[session_id]
+    """Return (or create) token storage for this session.
+
+    Real session ids are `secrets.token_urlsafe(32)` from qme_auth.py, which
+    always match `_SESSION_ID_RE`. A public endpoint (/api/qme/status) calls
+    this with whatever cookie value a client sends, so an unrecognised format
+    is rejected *before* an entry is cached — otherwise a client sending a
+    fresh garbage cookie on every request grows `_storages` without bound.
+    """
+    if session_id in _storages:
+        _storages.move_to_end(session_id)   # mark as most-recently-used
+        return _storages[session_id]
+
+    if not _SESSION_ID_RE.match(session_id):
+        raise InvalidSessionId(session_id)
+
+    from config import settings
+    storage = MemoryTokenStorage(
+        session_id=session_id,
+        client_id=settings.QME_CLIENT_ID,
+        client_secret=settings.QME_CLIENT_SECRET,
+        redirect_uri=settings.QME_REDIRECT_URI,
+    )
+    storage._load_from_disk()
+
+    if len(_storages) >= _MAX_STORAGES:
+        evicted_id, _ = _storages.popitem(last=False)   # drop least-recently-used
+        log.warning("Session registry at cap (%d) — evicted %s…", _MAX_STORAGES, evicted_id[:8])
+
+    _storages[session_id] = storage
+    return storage
 
 
 def init_sessions() -> None:

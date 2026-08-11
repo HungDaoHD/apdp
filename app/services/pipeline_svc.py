@@ -363,6 +363,17 @@ def validate_data_integrity(survey_id: int) -> dict:
 _PII_TYPES = frozenset({"user-name", "user-phone"})
 
 
+class PiiStripError(Exception):
+    """Raised when PII columns could not be confirmed removed from a CSV.
+
+    Callers must treat this as fail-closed: refuse the response rather than
+    fall back to serving the unmodified (PII-bearing) CSV. Previously this
+    function itself caught every exception and returned the original text —
+    a metadata read/parse hiccup silently served un-stripped names and phone
+    numbers instead of blocking the response (SEC-007).
+    """
+
+
 def strip_pii_columns(csv_text: str, metadata: "dict | list") -> str:
     """Remove user-name and user-phone columns from rawdata before serving to browser.
 
@@ -372,6 +383,10 @@ def strip_pii_columns(csv_text: str, metadata: "dict | list") -> str:
     Accepts both metadata formats:
     - New dict format: {"questions": {"1": {...}, "2": {...}}, "system_columns": {...}}
     - Old list format: [{"label": ..., "answer_type": ...}, ...]
+
+    Raises PiiStripError on any failure — never falls back to returning
+    csv_text unmodified, since that would silently defeat the whole point
+    of calling this function.
     """
     try:
         if isinstance(metadata, dict):
@@ -395,8 +410,42 @@ def strip_pii_columns(csv_text: str, metadata: "dict | list") -> str:
         logger.info("strip_pii: dropping columns %s", cols_to_drop)
         return df.drop(columns=cols_to_drop).to_csv(index=False)
     except Exception as exc:
-        logger.warning("strip_pii failed — serving unmodified rawdata: %s", exc)
-        return csv_text
+        raise PiiStripError(str(exc)) from exc
+
+
+def strip_system_pii_columns(csv_bytes: bytes) -> str:
+    """Remove QMe system-level PII columns from a raw data_export.csv.
+
+    data_export.csv uses QMe's native column headers (e.g. "Contact person",
+    "Panel Phone"), not the question labels metadata.json uses — the
+    metadata-driven strip_pii_columns() above cannot match anything in it.
+    This instead drops surveyflow's own PERSONAL_COLS list, the same system
+    columns already excluded from rawdata.csv during ingestion.
+
+    Deliberately out of scope: a survey-specific free-text question that
+    happens to ask for a name/phone number (not a QMe system column) is not
+    caught by this — that would need the metadata-driven approach instead,
+    and metadata.json does not apply to this file's column layout anyway.
+
+    Takes raw bytes (not str): data_export.csv is QMe's own export and
+    reliably starts with a UTF-8 BOM (for Excel compatibility). Decoding with
+    "utf-8-sig" here strips it; a plain "utf-8" decode upstream would leave
+    it as a stray character glued onto the first column name instead.
+
+    Raises PiiStripError on any failure — fail-closed, matching
+    strip_pii_columns().
+    """
+    try:
+        from surveyflow.steps.ingestion.export_parser import PERSONAL_COLS
+        csv_text = csv_bytes.decode("utf-8-sig")
+        df = pd.read_csv(io.StringIO(csv_text), low_memory=False)
+        cols_to_drop = [c for c in df.columns if c in PERSONAL_COLS]
+        if not cols_to_drop:
+            return csv_text
+        logger.info("strip_system_pii: dropping columns %s", cols_to_drop)
+        return df.drop(columns=cols_to_drop).to_csv(index=False)
+    except Exception as exc:
+        raise PiiStripError(str(exc)) from exc
 
 
 def _filter_rawdata(raw_bytes: bytes, profile_status: list[str]) -> bytes:

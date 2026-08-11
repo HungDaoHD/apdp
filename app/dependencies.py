@@ -21,12 +21,15 @@ async def require_qme(request: Request) -> str:
 
     Returns session_id so route handlers can pass it to MCP calls.
     """
-    from services.mcp_client import get_storage
+    from services.mcp_client import InvalidSessionId, get_storage
     session_id = request.cookies.get("sf_session", "")
     if not session_id:
         raise HTTPException(status_code=401, detail="Not connected to QMe MCP")
 
-    storage = get_storage(session_id)
+    try:
+        storage = get_storage(session_id)
+    except InvalidSessionId:
+        raise HTTPException(status_code=401, detail="Not connected to QMe MCP")
 
     # Fast path: token still valid
     connected = storage.is_connected()

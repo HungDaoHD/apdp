@@ -160,6 +160,13 @@ col.w-err  {width:11%}
 <script>
 let _file = null, _b64 = null, _filename = null, _errOnly = false;
 
+// Every SKU field below comes from a user-uploaded .xlsx (product_name,
+// remarks, agency_comment, error…) — none of it is trusted, so it must be
+// escaped before it reaches innerHTML. esc() is for element text/attributes.
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 document.getElementById('fileInput').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
   _file = f;
@@ -250,20 +257,20 @@ function showResult(d) {
   // Body
   document.getElementById('skuTbody').innerHTML = d.skus.map(s => {
     const cls = s.error ? 'bad' : 'ok';
-    return `<tr class="${cls}" data-err="${s.error?1:0}" data-name="${(s.product_name||'').toLowerCase().replace(/"/g,'')}">
-      <td class="ctr">${s.stt}</td>
-      <td class="desc" title="${(s.product_name||'').replace(/"/g,'&quot;')}">${s.product_name||'—'}</td>
-      <td class="num">${s.curr_price||'—'}</td>
-      <td class="num">${s.curr_regular||'—'}</td>
-      <td class="ctr">${s.curr_promo_off||'—'}</td>
-      <td class="ctr">${s.promo_start||'—'}</td>
-      <td class="ctr">${s.promo_end||'—'}</td>
-      <td class="ctr">${s.remarks||'—'}</td>
-      <td class="ctr">${s.agency_comment||''}</td>
-      <td class="num">${s.prev_price||'—'}</td>
-      <td class="num">${s.prev_regular||'—'}</td>
-      <td class="ctr">${s.prev_promo_off||'—'}</td>
-      <td class="err-cell">${s.error||''}</td>
+    return `<tr class="${cls}" data-err="${s.error?1:0}" data-name="${esc((s.product_name||'').toLowerCase())}">
+      <td class="ctr">${esc(s.stt)}</td>
+      <td class="desc" title="${esc(s.product_name||'')}">${s.product_name ? esc(s.product_name) : '—'}</td>
+      <td class="num">${s.curr_price ? esc(s.curr_price) : '—'}</td>
+      <td class="num">${s.curr_regular ? esc(s.curr_regular) : '—'}</td>
+      <td class="ctr">${s.curr_promo_off ? esc(s.curr_promo_off) : '—'}</td>
+      <td class="ctr">${s.promo_start ? esc(s.promo_start) : '—'}</td>
+      <td class="ctr">${s.promo_end ? esc(s.promo_end) : '—'}</td>
+      <td class="ctr">${s.remarks ? esc(s.remarks) : '—'}</td>
+      <td class="ctr">${esc(s.agency_comment)}</td>
+      <td class="num">${s.prev_price ? esc(s.prev_price) : '—'}</td>
+      <td class="num">${s.prev_regular ? esc(s.prev_regular) : '—'}</td>
+      <td class="ctr">${s.prev_promo_off ? esc(s.prev_promo_off) : '—'}</td>
+      <td class="err-cell">${esc(s.error)}</td>
     </tr>`;
   }).join('');
 

@@ -329,11 +329,12 @@ async def ingest_zip(survey_id: int, file: UploadFile = File(...),
     """
     import fnmatch, io, pathlib, tempfile, zipfile as _zipfile
     from surveyflow.steps.ingestion.export_parser import parse_export_csv
+    from services.upload_limits import read_upload_capped
 
     storage = get_storage()
 
     # ── 1. Read and validate the ZIP ─────────────────────────────────────────
-    zip_bytes = await file.read()
+    zip_bytes = await read_upload_capped(file)
     try:
         zf = _zipfile.ZipFile(io.BytesIO(zip_bytes))
     except _zipfile.BadZipFile:
@@ -438,10 +439,12 @@ async def ingest_zip(survey_id: int, file: UploadFile = File(...),
             return pipeline_svc.ingest(survey_id, definition, export_df=export_df)
 
         result = await loop.run_in_executor(None, _run)
-    except Exception as exc:
+    except Exception:
         elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
         log.exception("ingest_zip failed for survey %s after %.1fs", survey_id, elapsed)
-        raise HTTPException(500, f"Ingestion error after {elapsed:.0f}s — {str(exc)[:200]}")
+        # exc detail stays in the server log only — it can carry file paths,
+        # library internals, or other implementation detail not meant for the client.
+        raise HTTPException(500, f"Ingestion error after {elapsed:.0f}s — see server logs")
 
     elapsed = (datetime.now(timezone.utc) - t0).total_seconds()
     log.info("ingest_zip done: survey=%s elapsed=%.1fs rows=%s", survey_id, elapsed, result.get("n_rows"))
@@ -702,14 +705,23 @@ async def download_data_file(survey_id: int, filename: str,
         hint = _DOWNLOAD_NOT_FOUND_HINT.get(filename, "run Refresh first")
         raise HTTPException(404, f"{filename} not found — {hint}")
 
-    # Strip PII columns (user-name, user-phone) from rawdata.csv before download
+    # Strip PII columns before download. Fail-closed: if stripping can't be
+    # confirmed, refuse rather than risk serving names/phone numbers (SEC-007).
     if filename == "rawdata.csv":
         csv_text = storage.read_text(key)
         try:
             meta = storage.read_json(f"{survey_id}/data/metadata.json")
             csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.exception("PII stripping failed for survey %s — refusing download", survey_id)
+            raise HTTPException(500, "Could not verify PII was removed — download refused. See server logs.") from exc
+        content = csv_text.encode("utf-8-sig")
+    elif filename == "data_export.csv":
+        try:
+            csv_text = pipeline_svc.strip_system_pii_columns(storage.read_bytes(key))
+        except Exception as exc:
+            log.exception("System PII stripping failed for survey %s — refusing download", survey_id)
+            raise HTTPException(500, "Could not verify PII was removed — download refused. See server logs.") from exc
         content = csv_text.encode("utf-8-sig")
     else:
         content = storage.read_bytes(key)
@@ -737,13 +749,16 @@ async def get_rawdata(survey_id: int, request: Request,
     ip    = request.client.host if request.client else "unknown"
     log.warning("AUDIT rawdata access: survey=%s user=%s ip=%s", survey_id, email, ip)
 
-    # Strip PII columns (user-name, user-phone) before sending to browser
+    # Strip PII columns (user-name, user-phone) before sending to browser.
+    # Fail-closed: if stripping can't be confirmed, refuse rather than risk
+    # serving names/phone numbers (SEC-007).
     csv_text = storage.read_text(key)
     try:
         meta = storage.read_json(f"{survey_id}/data/metadata.json")
         csv_text = pipeline_svc.strip_pii_columns(csv_text, meta)
-    except Exception:
-        pass  # metadata unavailable — serve without stripping (still no-cache)
+    except Exception as exc:
+        log.exception("PII stripping failed for survey %s — refusing rawdata response", survey_id)
+        raise HTTPException(500, "Could not verify PII was removed — request refused. See server logs.") from exc
 
     return PlainTextResponse(csv_text, media_type="text/csv", headers=_NO_CACHE)
 

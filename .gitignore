@@ -32,7 +32,9 @@ app/data/
 .DS_Store
 Thumbs.db
 
-# Claude worktrees
+# Claude Code local settings — machine-specific paths and permission grants,
+# never meant to be shared (see SEC-014 in the security audit)
+.claude/settings.local.json
 .claude/worktrees/
 
 *.xlsx

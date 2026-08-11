@@ -138,10 +138,20 @@ def _cleanup_sessions() -> None:
 
 @router.get("/status")
 async def qme_status(request: Request):
+    from services.mcp_client import InvalidSessionId
+    ip = request.client.host if request.client else "unknown"
+    # The frontend calls this once per page load — a real user never approaches
+    # this limit. It exists so a single IP cannot mint thousands of registry
+    # entries per minute by hammering this endpoint with fresh cookie values
+    # (see the eviction cap in get_storage() for the bound on legitimate load).
+    _check_rate_limit(ip, limit=30, prefix="rate_status")
     session_id = request.cookies.get(_COOKIE_NAME, "")
     if not session_id:
         return {"connected": False, "email": None, "is_admin": False}
-    storage = get_storage(session_id)
+    try:
+        storage = get_storage(session_id)
+    except InvalidSessionId:
+        return {"connected": False, "email": None, "is_admin": False}
     # Silent refresh: if access_token expired but refresh_token valid, refresh before reporting status
     if not storage.is_connected() and storage.can_refresh():
         await storage.refresh()
@@ -435,10 +445,11 @@ async def qme_disconnect(request: Request):
     email: str | None = None
     if session_id:
         try:
-            email = get_storage(session_id).email
+            storage = get_storage(session_id)
+            email = storage.email
+            storage.clear()
         except Exception:
             pass
-        get_storage(session_id).clear()
     # Usage log — record logout
     try:
         from services import usage_log_svc

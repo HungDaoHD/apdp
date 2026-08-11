@@ -6,6 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from dependencies import require_qme
+from services.upload_limits import read_upload_capped
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["price-check"])
@@ -22,7 +23,9 @@ async def price_check(
         raise HTTPException(400, "File must be .xlsx")
 
     try:
-        xlsx_bytes = await file.read()
+        xlsx_bytes = await read_upload_capped(file)
+    except HTTPException:
+        raise   # 413 from read_upload_capped — must not be swallowed below
     except Exception:
         raise HTTPException(400, "Failed to read uploaded file")
 
@@ -34,9 +37,11 @@ async def price_check(
             None, lambda: process(xlsx_bytes, curr_week, prev_week)
         )
     except ValueError as exc:
+        # Deliberate, user-actionable validation message (see price_check_svc.py) —
+        # safe and useful to show as-is, unlike the generic exception below.
         raise HTTPException(422, str(exc))
-    except Exception as exc:
+    except Exception:
         log.exception("price_check failed")
-        raise HTTPException(500, f"Processing error — {str(exc)[:300]}")
+        raise HTTPException(500, "Processing error — see server logs")
 
     return result

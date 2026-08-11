@@ -4703,13 +4703,13 @@ function renderRow(row, nCols) {
            : row.type==='netted'  ? 'dt-rlbl dt-rlbl-netted'
            : 'dt-rlbl';
   const cells = row.cells.map((c,ci) => {
-    const sigTxt = row.sigs?.[ci]?.hi?.length ? ` <sup class="dt-sig">${row.sigs[ci].hi.join(',')}</sup>` : '';
+    const sigTxt = row.sigs?.[ci]?.hi?.length ? ` <sup class="dt-sig">${h(row.sigs[ci].hi.join(','))}</sup>` : '';
     const cc = row.type==='base'    ? 'dt-cell dt-base'
              : row.type==='summary' ? 'dt-cell dt-summ'
              : row.type==='group'   ? 'dt-cell dt-grp'
              : row.type==='netted'  ? 'dt-cell'
              : 'dt-cell';
-    return `<td class="${cc}">${c.display}${sigTxt}</td>`;
+    return `<td class="${cc}">${h(c.display)}${sigTxt}</td>`;
   }).join('');
   const lblStyle = row.type==='netted' ? ' style="padding-left:32px"' : '';
   return `<tr><td class="${lc}"${lblStyle}>${h(row.label)}</td>${cells}</tr>`;
@@ -5270,33 +5270,43 @@ function downloadXlsx() {
 
     const isPct    = t.cell_content === 'percentage';
     const pctFmt   = (t.decimal ?? 0) === 0 ? '0%' : '0.' + '0'.repeat(t.decimal ?? 0) + '%';
+    // Row/question labels ultimately trace back to survey text (question and
+    // choice labels from QMe, or datatable.json config) — not something this
+    // app fully controls. A label that happens to start with =/+/-/@ would
+    // otherwise be interpreted as a formula by Excel/Sheets on open (CSV/XLSX
+    // injection). Numbers from cellVal() are returned as JS numbers, not
+    // strings, so they are never affected by this and need no sanitizing.
+    const _xlsxSafeStr = (v) => {
+      const s = String(v ?? '');
+      return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+    };
     const cellVal = (c, rowType) => {
       if (isPct && rowType !== 'base') {
         const v = Number(c.raw);
-        return isNaN(v) ? (c.display || '-') : v / 100; // store as Excel fraction
+        return isNaN(v) ? _xlsxSafeStr(c.display || '-') : v / 100; // store as Excel fraction
       }
-      return isNaN(Number(c.raw)) ? c.display : Number(c.raw);
+      return isNaN(Number(c.raw)) ? _xlsxSafeStr(c.display) : Number(c.raw);
     };
     const _qHdr = (block) => {
       const parts = [];
       if (block.qCode && block.qCode !== block.qLabel) parts.push(block.qCode);
       parts.push(block.qLabel || '');
       if (block.answerType) parts.push(block.answerType);
-      return parts.join(' - ');
+      return _xlsxSafeStr(parts.join(' - '));
     };
     const pushBlock = (block) => {
       aoa.push([_qHdr(block)]); rowMeta.push({ type:'qhdr' });
       if (block.type === 'matrix') {
         for (const sub of (block.subBlocks||[])) {
-          aoa.push([`  ${sub.rowLabel}`]); rowMeta.push({ type:'sqhdr' });
+          aoa.push([`  ${_xlsxSafeStr(sub.rowLabel)}`]); rowMeta.push({ type:'sqhdr' });
           (sub.rows||[]).forEach((row, ri) => {
-            aoa.push([row.label, ...row.cells.map(c => cellVal(c, row.type))]);
+            aoa.push([_xlsxSafeStr(row.label), ...row.cells.map(c => cellVal(c, row.type))]);
             rowMeta.push({ type: row.type||'choice', choiceIdx: ri });
           });
         }
       } else {
         (block.rows||[]).forEach((row, ri) => {
-          aoa.push([row.label, ...row.cells.map(c => cellVal(c, row.type))]);
+          aoa.push([_xlsxSafeStr(row.label), ...row.cells.map(c => cellVal(c, row.type))]);
           rowMeta.push({ type: row.type||'choice', choiceIdx: ri });
         });
       }
