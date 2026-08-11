@@ -10,7 +10,7 @@ _APP_DIR = str(Path(__file__).parent)
 if _APP_DIR not in sys.path:
     sys.path.insert(0, _APP_DIR)
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,7 +23,20 @@ settings = Settings()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
-app = FastAPI(title="Q&Me SurveyFlow", version="1.0.0")
+# SECURE_COOKIES is already this app's "is this a real (non-local) deployment"
+# signal (see config.py) — reused here rather than adding a second env var.
+# /docs, /redoc, /openapi.json publicly list every endpoint, parameter, and
+# schema; that's a reasonable dev convenience but unnecessary reconnaissance
+# surface once the app is actually deployed.
+_IS_PROD = settings.SECURE_COOKIES
+
+app = FastAPI(
+    title="Q&Me SurveyFlow",
+    version="1.0.0",
+    docs_url=None if _IS_PROD else "/docs",
+    redoc_url=None if _IS_PROD else "/redoc",
+    openapi_url=None if _IS_PROD else "/openapi.json",
+)
 
 # M-6: Explicit CORS policy — deny all cross-origin requests (same-origin only)
 app.add_middleware(
@@ -33,6 +46,28 @@ app.add_middleware(
     allow_methods=[],
     allow_headers=[],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Baseline browser hardening headers, applied to every response.
+
+    setdefault() so a route that already sets one of these (e.g. the
+    per-route _NO_CACHE headers used for pages/API responses carrying survey
+    data) keeps its own value — this only fills in what a route forgot, it
+    never overrides an explicit choice.
+
+    Static assets (JS/CSS/images under /static) are exempt from the
+    no-store default: those rarely change and forcing no-store there would
+    just make every page load re-fetch them for no security benefit.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if not request.url.path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 
 @app.on_event("startup")
