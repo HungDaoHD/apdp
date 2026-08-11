@@ -8,21 +8,9 @@ from pathlib import Path
 
 _LOCK = threading.Lock()
 
-FW_USERS: set[str] = {
-    "hung.dao@asia-plus.net",
-    "bichthao.duong@asia-plus.net",
-    "huyen.nguyen94@asia-plus.net",
-    "pha.dang@asia-plus.net",
-    "thuthao.nguyen@asia-plus.net",
-    "diem.nguyen@asia-plus.net",
-    "huy.le@asia-plus.net",
-    "lieu.tran@asia-plus.net",
-    "tananh.nguyen@asia-plus.net",
-    "tan.nguyen@asia-plus.net",
-    "tam.nguyen@asia-plus.net",
-    "vananh.do@asia-plus.net",
-    "thuydo@kadence.com.vn",
-}
+# Single source of truth lives in services.authz — the same roster now gates
+# sign-in, so the log page and the access list can never drift apart.
+from services.authz import ALLOWED_USERS as FW_USERS  # noqa: E402
 
 # Human-readable action labels
 ACTION_LABELS: dict[str, str] = {

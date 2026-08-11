@@ -3,9 +3,13 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
+
+from services.authz import is_admin, is_allowed
 
 log = logging.getLogger(__name__)
+
+_NOT_AUTHORISED = "This account is not authorised to use SurveyFlow"
 
 
 async def require_qme(request: Request) -> str:
@@ -25,15 +29,35 @@ async def require_qme(request: Request) -> str:
     storage = get_storage(session_id)
 
     # Fast path: token still valid
-    if storage.is_connected():
-        return session_id
+    connected = storage.is_connected()
 
     # Token expired — attempt silent refresh if refresh_token available
-    if storage.can_refresh():
-        ok = await storage.refresh()
-        if ok:
+    if not connected and storage.can_refresh():
+        connected = await storage.refresh()
+        if connected:
             log.info("require_qme: silent token refresh OK (session=%s…)", session_id[:8])
-            return session_id
-        log.warning("require_qme: silent token refresh FAILED (session=%s…)", session_id[:8])
+        else:
+            log.warning("require_qme: silent token refresh FAILED (session=%s…)", session_id[:8])
 
-    raise HTTPException(status_code=401, detail="Not connected to QMe MCP")
+    if not connected:
+        raise HTTPException(status_code=401, detail="Not connected to QMe MCP")
+
+    # Checked on every request, not just at login: removing someone from the
+    # access list then takes effect at once instead of when their 7-day
+    # session finally expires. 403 (not 401) so the UI shows the reason
+    # instead of looping the user back through the login gate.
+    if not is_allowed(storage.email):
+        log.warning("Access denied for %s (not on access list)", storage.email)
+        raise HTTPException(status_code=403, detail=_NOT_AUTHORISED)
+
+    return session_id
+
+
+async def require_admin(session_id: str = Depends(require_qme)) -> str:
+    """Dependency: like require_qme, but the session must also be an admin."""
+    from services.mcp_client import get_storage
+    email = get_storage(session_id).email
+    if not is_admin(email):
+        log.warning("Admin-only endpoint refused for %s", email)
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return session_id

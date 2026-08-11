@@ -84,8 +84,13 @@ const ACTION_CLS = {
   open_datatable:'pill-open_datatable',
 };
 
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function pillCls(a) { return ACTION_CLS[a] || 'pill-other'; }
-function pillLbl(a) { return ACTION_LABEL[a] || a; }
+// ACTION_LABEL values are trusted constants — the fallback is raw server data, so escape it
+function pillLbl(a) { return ACTION_LABEL[a] || esc(a); }
 
 function fmtTs(ts) {
   if (!ts) return '<span class="never">—</span>';
@@ -104,7 +109,7 @@ async function load() {
     document.getElementById('loadTs').textContent = 'Updated: ' + new Date().toLocaleTimeString('vi-VN', {hour12:false});
     renderPage(sum, rec);
   } catch(e) {
-    document.getElementById('page').innerHTML = `<div class="err">⚠ ${e.message}<br>Make sure you are logged in at <a href="/">the app</a>.</div>`;
+    document.getElementById('page').innerHTML = `<div class="err">⚠ ${esc(e.message)}<br>Make sure you are logged in at <a href="/">the app</a>.</div>`;
   }
 }
 
@@ -126,7 +131,7 @@ function renderPage(sum, rec) {
     const last = fmtTs(u.last_seen);
     const total = u.total || 0;
     tBody += `<tr>
-      <td class="email">${u.email}</td>
+      <td class="email">${esc(u.email)}</td>
       <td class="ts-cell">${last}</td>
       <td class="total-badge">${total || '<span class="never">0</span>'}</td>`;
     actionCols.forEach(a => {
@@ -159,7 +164,7 @@ function renderPage(sum, rec) {
         <label>Filter:</label>
         <select id="actFilter" onchange="filterRecent()">
           <option value="all">All actions</option>
-          ${[...allActions].sort().map(a => `<option value="${a}">${pillLbl(a)}</option>`).join('')}
+          ${[...allActions].sort().map(a => `<option value="${esc(a)}">${pillLbl(a)}</option>`).join('')}
         </select>
         <input type="text" id="emailFilter" placeholder="Filter by email…" oninput="filterRecent()">
       </div>
@@ -182,10 +187,10 @@ function buildRecentTable(records, actFilter, emailFilter) {
     <tr><th>Time (ICT)</th><th>User</th><th>Action</th><th>Survey</th></tr>
   </thead><tbody>`;
   rows.forEach(r => {
-    const survey = r.survey_name ? `${r.survey_name}${r.survey_id ? ` <span style="color:#aaa">#${r.survey_id}</span>` : ''}` : '<span class="never">—</span>';
+    const survey = r.survey_name ? `${esc(r.survey_name)}${r.survey_id ? ` <span style="color:#aaa">#${esc(r.survey_id)}</span>` : ''}` : '<span class="never">—</span>';
     html += `<tr>
       <td class="ts-cell">${fmtTs(r.ts)}</td>
-      <td class="email">${r.email}</td>
+      <td class="email">${esc(r.email)}</td>
       <td><span class="pill ${pillCls(r.action)}">${pillLbl(r.action)}</span></td>
       <td>${survey}</td>
     </tr>`;

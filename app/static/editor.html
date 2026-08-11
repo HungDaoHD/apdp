@@ -5993,10 +5993,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (el) el.textContent = `apdp v${v.apdp} · surveyflow v${v.surveyflow}`;
   } catch(e) {}
 
-  // Show admin-only buttons for specific email
+  // Show admin-only buttons. Cosmetic only — the server enforces the same rule
+  // on /api/log/* and the raw-file downloads these buttons reach.
   try {
     const st = await fetch('/api/qme/status').then(r => r.json());
-    if (st.email === 'hung.dao@asia-plus.net') {
+    if (st.is_admin) {
       document.getElementById('rawBtn').style.display = '';
       document.getElementById('dlWrap').style.display = 'inline-block';
       document.getElementById('downloadBtn').style.display = '';

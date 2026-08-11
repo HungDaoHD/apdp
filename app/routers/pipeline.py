@@ -12,6 +12,7 @@ from fastapi.responses import PlainTextResponse, Response
 from config import settings
 from dependencies import require_qme
 from services import pipeline_svc
+from services.authz import is_admin
 from services.mcp_client import get_storage as get_token_storage, get_access_token
 from services.storage import get_storage
 
@@ -642,6 +643,15 @@ _DOWNLOAD_NOT_FOUND_HINT = {
     "flagged_profiles.csv": "run Quality Check first",
 }
 
+# Raw source files — respondent-level data, and data_export.csv bypasses the
+# PII stripping applied to rawdata.csv. Reachable only from the admin-only
+# Data menu in the editor; enforced here so hiding the menu is not the control.
+# flagged_profiles.csv is deliberately absent: the Quality panel offers it to
+# every user.
+_ADMIN_ONLY_DOWNLOADS = {
+    "rawdata.csv", "metadata.json", "data_export.csv", "definition.json",
+}
+
 
 # ── quality check ─────────────────────────────────────────────────────────────
 
@@ -679,6 +689,12 @@ async def download_data_file(survey_id: int, filename: str,
     """Download a raw data file (rawdata.csv, metadata.json, data_export.csv, definition.json)."""
     if filename not in _DOWNLOAD_FILES:
         raise HTTPException(404, f"Unknown file: {filename}")
+    if filename in _ADMIN_ONLY_DOWNLOADS:
+        email = get_token_storage(session_id).email
+        if not is_admin(email):
+            log.warning("AUDIT download refused: survey=%s file=%s user=%s",
+                        survey_id, filename, email)
+            raise HTTPException(403, "Administrator access required for this file")
     rel_key, media_type = _DOWNLOAD_FILES[filename]
     storage = get_storage()
     key = f"{survey_id}/{rel_key}"

@@ -151,8 +151,9 @@ class MemoryTokenStorage:
                     scope         = data.get("scope"),
                 ))
                 return True
-            log.warning("token refresh failed (%s) for session %s…: %s",
-                        r.status_code, self._session_id[:8], r.text[:200])
+            # Body omitted deliberately — a refresh response can carry tokens.
+            log.warning("token refresh failed (%s) for session %s…",
+                        r.status_code, self._session_id[:8])
         except Exception as exc:
             log.warning("token refresh error for session %s…: %s", self._session_id[:8], exc)
         return False

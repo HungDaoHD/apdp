@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import settings
+from services.authz import is_admin, is_allowed
 from services.mcp_client import get_storage, cleanup_expired_sessions, invalidate_sessions_for_email, _get_fernet
 
 log = logging.getLogger(__name__)
@@ -30,10 +32,19 @@ _SESSION_TTL = 300  # 5 minutes
 _COOKIE_NAME = "sf_session"
 _COOKIE_MAX_AGE = 7 * 86400   # 7 days
 
+_MAX_VERIFY_ATTEMPTS = 5   # failed OTP tries before the pending login is dropped
 
-def _check_rate_limit(ip: str) -> None:
+# Hosts this server will follow a provider redirect to. The OAuth dance never
+# leaves QMe's own origin — anything else means the response was tampered with.
+_ALLOWED_REDIRECT_HOSTS = {
+    h for h in (urlparse(_QME).hostname,
+                urlparse(settings.QME_MCP_BASE_URL).hostname) if h
+}
+
+
+def _check_rate_limit(ip: str, *, limit: int = 5, prefix: str = "rate_login") -> None:
     from services.rate_limiter import check as _rl_check
-    _rl_check(ip, settings.DATA_DIR, limit=5, window=60, prefix="rate_login")
+    _rl_check(ip, settings.DATA_DIR, limit=limit, window=60, prefix=prefix)
 
 
 # ── Disk-based login sessions (shared across all Gunicorn workers) ─────────────
@@ -83,6 +94,21 @@ def _delete_login_session(login_key: str) -> None:
         pass
 
 
+def _record_verify_failure(login_key: str, session: dict) -> None:
+    """Count a failed OTP attempt; drop the pending login once the cap is hit.
+
+    Bounds brute force against one issued `ref` — the per-IP limiter alone does
+    not, since an attacker can spread guesses across addresses.
+    """
+    attempts = int(session.get("attempts", 0)) + 1
+    if attempts >= _MAX_VERIFY_ATTEMPTS:
+        log.warning("Pending login dropped after %d failed OTP attempts", attempts)
+        _delete_login_session(login_key)
+        return
+    session["attempts"] = attempts
+    _save_login_session(login_key, session)
+
+
 def _cleanup_sessions() -> None:
     """Delete expired login session files."""
     data_dir = _login_dir()
@@ -114,12 +140,20 @@ def _cleanup_sessions() -> None:
 async def qme_status(request: Request):
     session_id = request.cookies.get(_COOKIE_NAME, "")
     if not session_id:
-        return {"connected": False, "email": None}
+        return {"connected": False, "email": None, "is_admin": False}
     storage = get_storage(session_id)
     # Silent refresh: if access_token expired but refresh_token valid, refresh before reporting status
     if not storage.is_connected() and storage.can_refresh():
         await storage.refresh()
-    return {"connected": storage.is_connected(), "email": storage.email}
+    # A session whose account left the access list reports as disconnected —
+    # otherwise the UI would look signed in while every API call returns 403.
+    if not is_allowed(storage.email):
+        return {"connected": False, "email": None, "is_admin": False}
+    return {
+        "connected": storage.is_connected(),
+        "email":     storage.email,
+        "is_admin":  is_admin(storage.email),
+    }
 
 
 # ── Step 1 — email + password ─────────────────────────────────────────────────
@@ -160,15 +194,16 @@ async def qme_login(body: LoginBody, request: Request):
     async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
         # Hit authorize → QMe sets OAuth context in session, redirects to login2
         r0 = await client.get(auth_url)
-        log.info("authorize → %s  url=%s", r0.status_code, r0.url)
+        log.info("authorize → %s  url=%s", r0.status_code, _safe_url(r0.url))
 
         if r0.status_code >= 400:
-            log.warning("QMe authorize failed (%s): %s", r0.status_code, r0.text[:300])
+            log.warning("QMe authorize failed (%s)", r0.status_code)
             raise HTTPException(502, "QMe authorization service unavailable — please try again")
 
         csrf = _extract_csrf(r0.text)
         if not csrf:
-            raise HTTPException(502, f"No CSRF token found on QMe page (url: {r0.url})")
+            log.warning("No CSRF token on QMe page (url=%s)", _safe_url(r0.url))
+            raise HTTPException(502, "Unexpected response from QMe login page — please try again")
 
         r1 = await client.post(
             f"{_QME}/Admin/DoLogin2",
@@ -190,9 +225,11 @@ async def qme_login(body: LoginBody, request: Request):
         try:
             data = r1.json()
         except Exception:
-            raise HTTPException(502, f"Unexpected response from DoLogin2: {r1.text[:300]}")
+            log.warning("DoLogin2 returned non-JSON (status=%s, %d bytes)",
+                        r1.status_code, len(r1.text))
+            raise HTTPException(502, "Unexpected response from QMe login — please try again")
 
-        log.info("DoLogin2 → %s", data)
+        log.info("DoLogin2 → result=%s", data.get("result"))
 
         if data.get("result") != 1:
             raise HTTPException(401, data.get("msg") or data.get("message") or "Invalid credentials")
@@ -202,7 +239,7 @@ async def qme_login(body: LoginBody, request: Request):
         ref = data.get("ref", "")
         if not ref and "ref=" in login_redirect:
             ref = parse_qs(urlparse(login_redirect).query).get("ref", [""])[0]
-        log.info("ref: %s", ref[:20] if ref else "(empty)")
+        log.info("ref received: %s", "yes" if ref else "(empty)")
 
         # Visit loginverify NOW (same session) so QMe arms the OTP session
         csrf_verify = ""
@@ -211,10 +248,10 @@ async def qme_login(body: LoginBody, request: Request):
                 f"{_QME}/loginverify",
                 params={"ref": ref},
             )
-            log.info("loginverify GET → %s  url=%s", r_lv.status_code, r_lv.url)
+            log.info("loginverify GET → %s  url=%s", r_lv.status_code, _safe_url(r_lv.url))
             # Extract CSRF token from the OTP form — browser sends this with DoVerify
             csrf_verify = _extract_csrf(r_lv.text) or _extract_form_token(r_lv.text)
-            log.info("csrf_verify: %s", csrf_verify[:10] if csrf_verify else "(none)")
+            log.info("csrf_verify found: %s", "yes" if csrf_verify else "no")
 
         all_cookies = {c.name: c.value for c in client.cookies.jar}
         log.info("cookies after loginverify: %s", list(all_cookies.keys()))
@@ -224,6 +261,7 @@ async def qme_login(body: LoginBody, request: Request):
         "email":         body.email,
         "cookies":       all_cookies,
         "state":         state,
+        "ref":           ref,       # bound to this login — /verify must echo it back
         "code_verifier": code_verifier,
         "redirect_uri":  _REDIRECT_URI,
         "csrf_verify":   csrf_verify,
@@ -252,6 +290,9 @@ class VerifyBody(BaseModel):
 
 @router.post("/verify")
 async def qme_verify(body: VerifyBody, request: Request):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip, limit=10, prefix="rate_verify")
+
     # H-3: login_key is stored in httpOnly cookie, not sent in body
     login_key = request.cookies.get("sf_login_key", "")
     if not login_key:
@@ -262,6 +303,13 @@ async def qme_verify(body: VerifyBody, request: Request):
     if time.time() - session.get("created_at", 0) > _SESSION_TTL:
         _delete_login_session(login_key)
         raise HTTPException(400, "Login session expired — please login again")
+
+    # Bind the OTP reference to this pending login, so a `ref` belonging to a
+    # different login cannot be verified against these cookies. Sessions issued
+    # before this check existed have no stored ref and must log in again.
+    if not _consteq(session.get("ref", ""), body.ref):
+        _record_verify_failure(login_key, session)
+        raise HTTPException(400, "Verification reference mismatch — please login again")
 
     cookies = session["cookies"]  # dict from login step (already visited loginverify)
     verify_url = f"{_QME}/loginverify?ref={body.ref}"
@@ -284,50 +332,72 @@ async def qme_verify(body: VerifyBody, request: Request):
             },
         )
 
-        log.info("DoVerify → status=%s  location=%s",
-                 r.status_code, r.headers.get("location", "—"))
+        log.info("DoVerify → status=%s", r.status_code)
 
         try:
             data = r.json()
         except Exception:
             data = {}
 
-        log.info("DoVerify body → %s", data)
+        log.info("DoVerify → result=%s", (data or {}).get("result"))
 
         if not data or data.get("result") != 1:
+            _record_verify_failure(login_key, session)
             raise HTTPException(401, (data or {}).get("msg") or (data or {}).get("message") or "Incorrect OTP")
 
         # DoVerify redirects back to authorize — follow it with the now-authenticated session
         next_url = r.headers.get("location") or data.get("redirect", "")
-        log.info("DoVerify next_url: %s", next_url)
+        log.info("DoVerify next_url: %s", _safe_url(next_url) if next_url else "(none)")
 
         code, redirect_uri = "", session.get("redirect_uri", "")
+        seen_urls: list[str] = []
 
         if next_url:
+            seen_urls.append(next_url)
             code, found_uri = _extract_code([next_url])
             if found_uri:
                 redirect_uri = found_uri
 
             if not code:
+                _assert_allowed_redirect(next_url)
                 r2 = await client.get(next_url)
                 location2 = r2.headers.get("location", "")
-                log.info("authorize follow → %s  location=%s", r2.status_code, location2)
+                log.info("authorize follow → %s", r2.status_code)
+                seen_urls.append(location2)
                 code, found_uri = _extract_code([location2])
                 if found_uri:
                     redirect_uri = found_uri
 
     if not code:
-        raise HTTPException(
-            502,
-            "OTP verified but no OAuth code received. "
-            f"Last redirect seen: {next_url!r}"
-        )
+        log.warning("OTP verified but no OAuth code in redirect chain: %s",
+                    [_safe_url(u) for u in seen_urls])
+        raise HTTPException(502, "OTP verified but no OAuth code received — please try again")
+
+    # The authorization server echoes back the `state` we generated at /login;
+    # a response carrying anyone else's state must not be exchanged for a token.
+    # A *missing* state is logged rather than rejected — QMe has not been seen
+    # omitting it, and hard-failing on absence would lock out every login if the
+    # provider ever changed that.
+    returned_state = _extract_param(seen_urls, "state")
+    if returned_state:
+        if not _consteq(returned_state, session.get("state", "")):
+            log.warning("OAuth state mismatch on verify — refusing code exchange")
+            raise HTTPException(400, "OAuth state mismatch — please login again")
+    else:
+        log.warning("OAuth redirect carried no `state` — response binding unverified")
 
     # OTP correct — consume the login session so it can't be reused
     _delete_login_session(login_key)
 
-    # Invalidate any existing sessions for this email before issuing a new one
+    # QMe proved the account is genuine; the access list decides whether that
+    # account may use *this* app. Checked before the code exchange so a token
+    # is never minted for someone outside the team.
     email = session.get("email") or body.email
+    if not is_allowed(email):
+        log.warning("Login refused for %s — not on the access list", email)
+        raise HTTPException(403, "This account is not authorised to use SurveyFlow")
+
+    # Invalidate any existing sessions for this email before issuing a new one
     invalidate_sessions_for_email(email)
 
     # Create a new session ID, exchange code for token, set cookie
@@ -382,6 +452,59 @@ async def qme_disconnect(request: Request):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+def _safe_url(url: object) -> str:
+    """Return scheme://host/path of *url*, dropping the query string.
+
+    OAuth query strings carry authorization codes, `state`, and the OTP `ref` —
+    none of which may reach the application log.
+    """
+    try:
+        p = urlparse(str(url))
+        return f"{p.scheme}://{p.netloc}{p.path}" if p.scheme else "(relative)"
+    except Exception:
+        return "(unparseable)"
+
+
+def _consteq(a: object, b: object) -> bool:
+    """Constant-time equality for untrusted strings.
+
+    Compares as bytes: hmac.compare_digest raises TypeError on str inputs that
+    contain non-ASCII, and both sides here come from outside (request body /
+    URL-decoded query parameters).
+    """
+    return hmac.compare_digest(str(a).encode("utf-8"), str(b).encode("utf-8"))
+
+
+def _extract_param(urls: list[str], name: str) -> str:
+    """Return the first non-empty *name* query parameter across *urls*."""
+    for url in urls:
+        if not url:
+            continue
+        try:
+            val = (parse_qs(urlparse(url).query).get(name) or [""])[0]
+        except Exception:
+            continue
+        if val:
+            return val
+    return ""
+
+
+def _assert_allowed_redirect(url: str) -> None:
+    """Refuse to fetch a provider redirect that leaves QMe's own origin.
+
+    This endpoint follows a URL chosen by the upstream response; without an
+    allowlist that turns /verify into an SSRF primitive whenever the provider
+    response (or its transport) is tampered with.
+    """
+    p = urlparse(url)
+    if (p.scheme != "https"
+            or "@" in p.netloc                     # userinfo — hides the real host
+            or p.hostname not in _ALLOWED_REDIRECT_HOSTS
+            or p.port not in (None, 443)):
+        log.warning("Blocked unexpected redirect target: %s", _safe_url(url))
+        raise HTTPException(502, "Unexpected redirect from QMe — please login again")
+
+
 def _extract_code(urls: list[str]) -> tuple[str, str]:
     """Return (code, redirect_uri_base) from the first URL that has a code param."""
     for url in urls:
@@ -411,10 +534,16 @@ async def _exchange_code(code: str, code_verifier: str, redirect_uri: str) -> di
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post(_TOKEN_URL, data=payload)
 
-    log.info("Token exchange → %s  %s", r.status_code, r.text[:300])
+    # Never log the body — it carries the access and refresh tokens.
+    log.info("Token exchange → %s", r.status_code)
 
     if r.status_code != 200:
-        log.warning("Token exchange failed (%s): %s", r.status_code, r.text[:300])
+        error_code = ""
+        try:
+            error_code = str(r.json().get("error", ""))   # OAuth error code, not a credential
+        except Exception:
+            pass
+        log.warning("Token exchange failed (%s) error=%s", r.status_code, error_code or "(unknown)")
         raise HTTPException(502, "Token exchange failed — please try logging in again")
     return r.json()
 
