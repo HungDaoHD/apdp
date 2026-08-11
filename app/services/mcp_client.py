@@ -16,7 +16,12 @@ _TOKEN_MAX_AGE    = 7 * 86400   # 7 days — upper cap for access token TTL on d
 _SESSION_MAX_AGE  = 7 * 86400   # 7 days — max session age before forced re-login
 
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+try:
+    from mcp.client.streamable_http import streamablehttp_client
+except ImportError:
+    # newer mcp SDK releases dropped the deprecated `streamablehttp_client`
+    # alias in favor of `streamable_http_client`
+    from mcp.client.streamable_http import streamable_http_client as streamablehttp_client
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 log = logging.getLogger(__name__)
