@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from routers import surveys, pipeline, qme_auth, usage_log, price_check
 from config import Settings
-from dependencies import require_qme
+from dependencies import require_csrf, require_qme
 
 settings = Settings()
 
@@ -85,11 +85,13 @@ async def on_startup() -> None:
 
 _STATIC = Path(__file__).parent / "static"
 
-app.include_router(surveys.router, dependencies=[Depends(require_qme)])
-app.include_router(pipeline.router, dependencies=[Depends(require_qme)])
-app.include_router(qme_auth.router)    # auth routes are always public
-app.include_router(usage_log.router)   # per-endpoint auth via require_qme
-app.include_router(price_check.router) # standalone, per-endpoint auth via require_qme
+# require_csrf no-ops on GET/HEAD/OPTIONS — this only gates the POST/DELETE
+# routes within each router, every GET keeps working exactly as before.
+app.include_router(surveys.router, dependencies=[Depends(require_qme), Depends(require_csrf)])
+app.include_router(pipeline.router, dependencies=[Depends(require_qme), Depends(require_csrf)])
+app.include_router(qme_auth.router)    # auth routes are always public; /disconnect checks CSRF itself
+app.include_router(usage_log.router)   # per-endpoint auth via require_qme; POST /log checks CSRF itself
+app.include_router(price_check.router) # standalone, per-endpoint auth via require_qme + require_csrf
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 

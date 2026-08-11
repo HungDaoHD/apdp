@@ -5,14 +5,14 @@ import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from dependencies import require_qme
+from dependencies import require_csrf, require_qme
 from services.upload_limits import read_upload_capped
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["price-check"])
 
 
-@router.post("/price-check")
+@router.post("/price-check", dependencies=[Depends(require_csrf)])
 async def price_check(
     file: UploadFile = File(...),
     curr_week: int | None = Form(default=None),

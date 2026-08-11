@@ -716,7 +716,7 @@ function logEvent(action) {
   try {
     fetch('/api/log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken },
       body: JSON.stringify({
         action,
         survey_id:   currentSurveyId   || null,
@@ -5362,6 +5362,10 @@ function downloadXlsx() {
 // ════════════════════════════════════════════════════
 let currentSurveyId   = null;
 let currentSurveyName = null;
+// Set from /api/qme/status on load; attached as X-CSRF-Token to every
+// mutating (POST/DELETE) fetch — see SEC-013. Server rejects with 403 if
+// missing/stale, so a null value here just fails closed, never open.
+let _csrfToken = null;
 
 function _setLoading(msg, sub = '', showCancel = false, showBar = false) {
   const ov = document.getElementById('loadingOverlay');
@@ -5535,7 +5539,7 @@ async function runQualityCheck() {
   btn.disabled = true;
   btn.textContent = '⏳ Running…';
   try {
-    const r    = await fetch(`/api/surveys/${currentSurveyId}/quality`, { method: 'POST' });
+    const r    = await fetch(`/api/surveys/${currentSurveyId}/quality`, { method: 'POST', headers: { 'X-CSRF-Token': _csrfToken } });
     const data = await r.json();
     if (!r.ok) { setStatus(`⚠ Quality check failed: ${data.detail || r.status}`, ''); return; }
     const flagged = (data.summary || {}).flagged_count ?? 0;
@@ -5570,7 +5574,7 @@ function _openQREmpty() {
 async function cancelRefresh() {
   if (!currentSurveyId) { _setLoading(null); return; }
   try {
-    await fetch(`/api/surveys/${currentSurveyId}/refresh/cancel`, { method: 'POST' });
+    await fetch(`/api/surveys/${currentSurveyId}/refresh/cancel`, { method: 'POST', headers: { 'X-CSRF-Token': _csrfToken } });
   } catch {}
   document.getElementById('refreshBtn').disabled = false;
   document.getElementById('uploadZipBtn').disabled = false;
@@ -5718,7 +5722,7 @@ async function _doRefreshConfirmed() {
   btn.disabled = true;
   _setRefreshProcessing('Starting…');
   try {
-    const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST'});
+    const r = await fetch(`/api/surveys/${currentSurveyId}/refresh`, {method: 'POST', headers: { 'X-CSRF-Token': _csrfToken }});
     let d = {};
     try { d = await r.json(); } catch {}
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
@@ -5749,6 +5753,7 @@ async function doIngestZip(input) {
 
     const res = await fetch(`/api/surveys/${currentSurveyId}/ingest-zip`, {
       method: 'POST',
+      headers: { 'X-CSRF-Token': _csrfToken },
       body: form,
     });
 
@@ -5839,7 +5844,7 @@ async function saveFile() {
   try {
     const res = await fetch(`/api/surveys/${currentSurveyId}/datatable`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken},
       body: JSON.stringify(dtPayload(), null, 2),
     });
     if (!res.ok) throw new Error((await res.json()).detail || 'save failed');
@@ -5869,7 +5874,7 @@ async function downloadXlsxDirect() {
     const langParam = activeLang || 'vi';
     const res = await fetch(`/api/surveys/${currentSurveyId}/generate?profile_status=${encodeURIComponent(psParam)}&lang=${encodeURIComponent(langParam)}`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': _csrfToken},
       body: JSON.stringify({ datatable_config: dtPayload() }),  // send full config → server bypasses stale cache
     });
     if (!res.ok) {
@@ -6007,6 +6012,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   // on /api/log/* and the raw-file downloads these buttons reach.
   try {
     const st = await fetch('/api/qme/status').then(r => r.json());
+    _csrfToken = st.csrf_token || null;
     if (st.is_admin) {
       document.getElementById('rawBtn').style.display = '';
       document.getElementById('dlWrap').style.display = 'inline-block';

@@ -203,11 +203,15 @@ async function runCheck() {
   btn.disabled = true;
   document.getElementById('statusMsg').textContent = '⏳ Processing…';
   try {
+    // Fetched fresh each run rather than cached at page load — this page has
+    // no other init step, and price-check is infrequent enough that one
+    // extra round-trip per run isn't worth adding a load-time flow for.
+    const { csrf_token } = await fetch('/api/qme/status').then(r => r.json());
     const fd = new FormData();
     fd.append('file', _file);
     const cv = document.getElementById('selCurr').value;
     if (cv) fd.append('curr_week', cv);
-    const res = await fetch('/api/price-check', {method:'POST', body:fd});
+    const res = await fetch('/api/price-check', {method:'POST', headers: { 'X-CSRF-Token': csrf_token }, body:fd});
     const data = await res.json();
     if (!res.ok) { showErr(data.detail || `Error ${res.status}`); return; }
     showResult(data);

@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from dependencies import require_admin, require_qme
+from dependencies import require_admin, require_csrf, require_qme
 from services import usage_log_svc
 from services.mcp_client import get_storage
 
@@ -28,7 +28,7 @@ class LogBody(BaseModel):
     survey_name: str | None = Field(default=None, max_length=200)
 
 
-@router.post("", dependencies=[Depends(require_qme)])
+@router.post("", dependencies=[Depends(require_qme), Depends(require_csrf)])
 async def log_event(body: LogBody, request: Request):
     """Called by the frontend to record an action."""
     session_id = request.cookies.get("sf_session", "")

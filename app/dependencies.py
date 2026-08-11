@@ -1,6 +1,8 @@
 """FastAPI shared dependencies."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 
 from fastapi import Depends, HTTPException, Request
@@ -10,6 +12,9 @@ from services.authz import is_admin, is_allowed
 log = logging.getLogger(__name__)
 
 _NOT_AUTHORISED = "This account is not authorised to use SurveyFlow"
+
+_CSRF_HEADER = "x-csrf-token"
+_CSRF_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 async def require_qme(request: Request) -> str:
@@ -64,3 +69,40 @@ async def require_admin(session_id: str = Depends(require_qme)) -> str:
         log.warning("Admin-only endpoint refused for %s", email)
         raise HTTPException(status_code=403, detail="Administrator access required")
     return session_id
+
+
+def csrf_token_for(session_id: str) -> str:
+    """Derive the CSRF token a browser must echo back for *session_id*.
+
+    Just a hash of the session id — no separate secret needed. session_id
+    is itself 256 bits from secrets.token_urlsafe(32) and lives in an
+    httpOnly cookie, so a cross-origin attacker never has it to hash; a
+    same-origin script (e.g. this app's own JS, right after login) can read
+    this derived value from /api/qme/status to attach as a header on
+    mutating requests. SHA-256 is one-way, so exposing the hash never
+    reveals the underlying session id.
+
+    Deliberately worker-independent: a shared HMAC secret would need to be
+    generated once and distributed to every Gunicorn worker process, which
+    session_id already achieves for free via the existing session cookie.
+    """
+    return hashlib.sha256(f"csrf:{session_id}".encode()).hexdigest()
+
+
+async def require_csrf(request: Request, session_id: str = Depends(require_qme)) -> None:
+    """Dependency: reject state-changing requests missing a valid CSRF token.
+
+    SameSite=Strict on the session cookie already blocks the classic
+    cross-site CSRF request in current browsers — this is defense in depth
+    for older browsers or a future SameSite misconfiguration, per SEC-013.
+    Only applies to non-safe HTTP methods; GET/HEAD/OPTIONS are read-only
+    and pass through unchecked.
+    """
+    if request.method in _CSRF_SAFE_METHODS:
+        return
+    sent = request.headers.get(_CSRF_HEADER, "")
+    expected = csrf_token_for(session_id)
+    if not sent or not hmac.compare_digest(sent, expected):
+        log.warning("CSRF check failed for %s %s (session=%s…)",
+                    request.method, request.url.path, session_id[:8])
+        raise HTTPException(status_code=403, detail="Missing or invalid CSRF token — please reload the page")

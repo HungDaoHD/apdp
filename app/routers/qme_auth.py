@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from config import settings
+from dependencies import csrf_token_for
 from services.authz import is_admin, is_allowed
 from services.mcp_client import get_storage, cleanup_expired_sessions, invalidate_sessions_for_email, _get_fernet
 
@@ -160,9 +161,10 @@ async def qme_status(request: Request):
     if not is_allowed(storage.email):
         return {"connected": False, "email": None, "is_admin": False}
     return {
-        "connected": storage.is_connected(),
-        "email":     storage.email,
-        "is_admin":  is_admin(storage.email),
+        "connected":  storage.is_connected(),
+        "email":      storage.email,
+        "is_admin":   is_admin(storage.email),
+        "csrf_token": csrf_token_for(session_id),
     }
 
 
@@ -444,6 +446,14 @@ async def qme_disconnect(request: Request):
     session_id = request.cookies.get(_COOKIE_NAME, "")
     email: str | None = None
     if session_id:
+        # CSRF check done manually here (not Depends(require_csrf)) — this
+        # route intentionally works even for an expired/stale session, so it
+        # can't sit behind require_qme, which require_csrf itself depends on.
+        expected = csrf_token_for(session_id)
+        sent = request.headers.get("x-csrf-token", "")
+        if not sent or not hmac.compare_digest(sent, expected):
+            log.warning("CSRF check failed for DELETE /disconnect (session=%s…)", session_id[:8])
+            raise HTTPException(403, "Missing or invalid CSRF token — please reload the page")
         try:
             storage = get_storage(session_id)
             email = storage.email

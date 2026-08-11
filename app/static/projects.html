@@ -601,7 +601,7 @@ async function doAddSurvey() {
   try {
     // Fetch only the survey definition — fast, synchronous
     // Data will be fetched later by user (Refresh or Upload ZIP in editor)
-    const r = await apiFetch(`/api/surveys/${dlgSelected.id}/fetch-definition`, {method:'POST'});
+    const r = await apiFetch(`/api/surveys/${dlgSelected.id}/fetch-definition`, {method:'POST', headers: { 'X-CSRF-Token': _csrfToken }});
     let d = {};
     try { d = await r.json(); } catch {}
     if (!r.ok) throw new Error(d.detail || `Server error (HTTP ${r.status})`);
@@ -662,9 +662,13 @@ document.addEventListener('keydown', e => {
 // ════════════════════════════════════════════════════
 // QMe CONNECTION
 // ════════════════════════════════════════════════════
+// Set from /api/qme/status; attached as X-CSRF-Token on mutating requests — see SEC-013.
+let _csrfToken = null;
+
 async function checkQmeStatus() {
   try {
-    const { connected, email } = await fetch('/api/qme/status').then(r => r.json());
+    const { connected, email, csrf_token } = await fetch('/api/qme/status').then(r => r.json());
+    _csrfToken = csrf_token || null;
     const dot = document.getElementById('qmeDot');
     const lbl = document.getElementById('qmeLbl');
     const btn = document.getElementById('qmeBtn');
@@ -769,7 +773,7 @@ async function qmeDoVerify() {
 
 async function disconnectQme() {
   if (!confirm('Disconnect QMe?')) return;
-  await fetch('/api/qme/disconnect', { method: 'DELETE' });
+  await fetch('/api/qme/disconnect', { method: 'DELETE', headers: { 'X-CSRF-Token': _csrfToken } });
   checkQmeStatus();
 }
 
