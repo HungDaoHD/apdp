@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="vi"><head>
+<meta charset="UTF-8">
+<link rel="shortcut icon" href="/static/favicon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Q&Me | Workload</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:13px;color:#1a1a2e;background:#f0f2f5;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── Header ── */
+.hdr{background:#16213e;color:white;padding:0 24px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.hdr-logo{display:flex;align-items:center}
+.hdr-logo img{height:30px;display:block}
+.hdr-nav{display:flex;gap:4px;margin-left:14px}
+.hdr-nav a{color:#9ab;text-decoration:none;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;transition:all .12s}
+.hdr-nav a:hover{background:#22304f;color:#e0e6ef}
+.hdr-nav a.on{background:#f36a17;color:white}
+.gap{flex:1}
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .12s;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;font-family:inherit}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-pri{background:#f36a17;color:white}.btn-pri:not(:disabled):hover{background:#d45a0f}
+.btn-suc{background:#1e8449;color:white}.btn-suc:not(:disabled):hover{background:#166138}
+.btn-dng{background:#c0392b;color:white}.btn-dng:not(:disabled):hover{background:#96271b}
+.btn-gho{background:transparent;color:#9ab;border:1px solid #3d4757}.btn-gho:hover{background:#3d4757;color:#e0e6ef}
+.btn-lt{background:white;color:#444;border:1px solid #dde1e7}.btn-lt:hover{border-color:#f36a17;color:#f36a17}
+
+/* ── Main ── */
+.main{flex:1;max-width:1500px;width:100%;margin:0 auto;padding:20px 24px 40px}
+
+/* ── Toolbar ── */
+.tbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid #dde1e7;border-radius:7px;overflow:hidden;background:white}
+.seg button{padding:6px 14px;border:none;background:white;color:#666;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .12s}
+.seg button+button{border-left:1px solid #eef0f3}
+.seg button.on{background:#f36a17;color:white}
+.nav-btn{width:30px;height:30px;border:1px solid #dde1e7;background:white;border-radius:7px;cursor:pointer;color:#555;font-size:14px;display:inline-flex;align-items:center;justify-content:center}
+.nav-btn:hover{border-color:#f36a17;color:#f36a17}
+.period{font-size:16px;font-weight:700;color:#1a1a2e;min-width:210px}
+.sel{padding:6px 10px;border:1px solid #dde1e7;border-radius:7px;background:white;font-size:12px;color:#444;outline:none;font-family:inherit;cursor:pointer;max-width:190px}
+.sel:focus{border-color:#f36a17}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:2px;border-bottom:1px solid #e0e4ea;margin-bottom:16px}
+.tabs button{padding:9px 18px;border:none;background:none;font-size:13px;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;font-family:inherit;margin-bottom:-1px}
+.tabs button.on{color:#f36a17;border-bottom-color:#f36a17}
+
+/* ── Calendar grid ── */
+.cal{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow:hidden}
+.cal-hd{display:grid;grid-template-columns:repeat(7,1fr);background:#f8f9fb;border-bottom:1px solid #e0e4ea}
+.cal-hd div{padding:8px 10px;font-size:11px;font-weight:700;color:#888;text-align:center;letter-spacing:.4px}
+.cal-hd div.wknd{color:#c0392b}
+.cal-body{display:grid;grid-template-columns:repeat(7,1fr)}
+.cell{min-height:104px;border-right:1px solid #eef0f3;border-bottom:1px solid #eef0f3;padding:6px;display:flex;flex-direction:column;gap:3px}
+.cell:nth-child(7n){border-right:none}
+.cell.out{background:#fafbfc}
+.cell.today{background:#fff8f3;box-shadow:inset 0 0 0 2px #f36a17}
+.cell-n{font-size:11px;font-weight:700;color:#999;display:flex;align-items:center;justify-content:space-between}
+.cell.out .cell-n{color:#ccc}
+.cell.today .cell-n{color:#f36a17}
+.cell-add{opacity:0;border:none;background:none;cursor:pointer;color:#f36a17;font-size:13px;font-weight:700;line-height:1;padding:0 2px}
+.cell:hover .cell-add{opacity:1}
+.more{font-size:10px;color:#888;cursor:pointer;padding:1px 4px}
+.more:hover{color:#f36a17;text-decoration:underline}
+
+/* ── Task chip ── */
+.chip{border-radius:5px;padding:3px 6px;font-size:10.5px;line-height:1.35;cursor:pointer;border-left:3px solid;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:filter .12s}
+.chip:hover{filter:brightness(.94)}
+.chip b{font-weight:700}
+.chip-pending{background:#fff8e1;border-color:#f5a623;color:#8a5a00}
+.chip-complete{background:#e6f4ea;border-color:#1e8449;color:#14663a}
+.chip-cancel{background:#f1f2f4;border-color:#aeb4bd;color:#8a8f97;text-decoration:line-through}
+
+/* ── Week view ── */
+.wk{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow:auto}
+.wk table{width:100%;border-collapse:collapse;min-width:920px}
+.wk th{background:#f8f9fb;font-size:11px;font-weight:700;color:#888;padding:8px 10px;text-align:center;border-bottom:1px solid #e0e4ea;border-right:1px solid #eef0f3}
+.wk th.who{text-align:left;width:130px;position:sticky;left:0;background:#f8f9fb;z-index:2}
+.wk th.today-col{background:#fff1e7;color:#f36a17}
+.wk td{border-right:1px solid #eef0f3;border-bottom:1px solid #eef0f3;padding:5px;vertical-align:top;min-width:110px}
+.wk td.who{position:sticky;left:0;background:white;z-index:1;font-size:12px;font-weight:600;color:#333;vertical-align:middle;border-right:1px solid #e0e4ea}
+.wk td.who small{display:block;font-weight:400;color:#aaa;font-size:10px;margin-top:1px}
+.wk td.today-col{background:#fffaf6}
+.wk-cell{display:flex;flex-direction:column;gap:3px;min-height:44px}
+
+/* ── Day view ── */
+.day-grp{background:white;border:1px solid #e0e4ea;border-radius:10px;margin-bottom:12px;overflow:hidden}
+.day-grp-hd{padding:10px 14px;background:#f8f9fb;border-bottom:1px solid #eef0f3;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.day-grp-hd strong{font-size:13px}
+.day-row{padding:9px 14px;border-bottom:1px solid #f5f6f8;display:flex;align-items:center;gap:10px;cursor:pointer}
+.day-row:last-child{border-bottom:none}
+.day-row:hover{background:#fffaf6}
+.day-row-t{flex:1;font-size:12.5px}
+.day-row-w{font-size:11px;color:#888;font-family:monospace}
+
+/* ── Project cards ── */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.pcard{background:white;border:1px solid #e0e4ea;border-radius:10px;padding:15px 17px;display:flex;flex-direction:column;gap:9px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.pcard:hover{border-color:#f8b184;box-shadow:0 4px 16px rgba(243,106,23,.12)}
+.pcard-top{display:flex;align-items:flex-start;gap:8px}
+.pcard-title{font-size:13.5px;font-weight:700;flex:1;line-height:1.4}
+.pcard-sub{font-size:11px;color:#888}
+.pcard-mem{display:flex;gap:4px;flex-wrap:wrap}
+.avt{font-size:10px;background:#eef2f7;color:#4a5568;border-radius:10px;padding:2px 8px;font-weight:600}
+.bar{height:5px;background:#eef0f3;border-radius:3px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.bar .b-complete{background:#1e8449}.bar .b-pending{background:#f5a623}.bar .b-cancel{background:#c7ccd3}
+
+/* ── Status tag ── */
+.stag{font-size:10px;padding:2px 9px;border-radius:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.stag-pending{background:#fff8e1;color:#a06800;border:1px solid #ffe082}
+.stag-complete{background:#e6f4ea;color:#1e8449;border:1px solid #b7dfbf}
+.stag-cancel{background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6}
+.ttag{font-size:10px;padding:2px 8px;border-radius:5px;background:#e8f0fe;color:#1a5fb4;font-weight:700}
+
+/* ── Empty / loading ── */
+.empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:56px 24px;text-align:center;color:#aaa}
+.empty-ico{font-size:44px;opacity:.5}
+.empty h3{font-size:15px;font-weight:600;color:#555}
+.empty p{font-size:12px;line-height:1.7;max-width:340px}
+.loading{display:flex;align-items:center;justify-content:center;padding:48px;gap:10px;color:#888;font-size:13px}
+.spin{width:20px;height:20px;border:2.5px solid #e0e4ea;border-top-color:#f36a17;border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Modal ── */
+.mov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px}
+.mdlg{background:white;border-radius:12px;width:600px;max-width:100%;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.mdlg.wide{width:860px}
+.mhd{padding:15px 20px;border-bottom:1px solid #e0e4ea;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px}
+.mhd strong{font-size:15px;display:flex;align-items:center;gap:8px}
+.mbtn-close{background:none;border:none;cursor:pointer;font-size:18px;color:#999;padding:2px 6px;border-radius:4px;line-height:1}
+.mbtn-close:hover{background:#f0f2f5;color:#333}
+.mbody{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:13px}
+.mft{padding:12px 20px;border-top:1px solid #e0e4ea;display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;align-items:center}
+.mft-status{flex:1;font-size:11px;color:#555;font-family:monospace;background:#f8f9fb;padding:5px 9px;border-radius:5px;max-height:52px;overflow-y:auto;white-space:pre-wrap}
+.mft-status.err{color:#c0392b;background:#fce8e6}
+.mft-status.ok{color:#1e8449;background:#e6f4ea}
+
+/* ── Form ── */
+.fld{display:flex;flex-direction:column;gap:5px}
+.fld label{font-size:11px;font-weight:700;color:#666;letter-spacing:.2px}
+.inp{width:100%;padding:8px 10px;border:1px solid #dde1e7;border-radius:6px;font-size:13px;outline:none;font-family:inherit;background:white}
+.inp:focus{border-color:#f36a17;box-shadow:0 0 0 2px rgba(243,106,23,.1)}
+.inp:disabled{background:#f6f7f9;color:#888;cursor:not-allowed}
+textarea.inp{resize:vertical;min-height:56px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.chks{display:flex;flex-wrap:wrap;gap:7px}
+.chk{display:inline-flex;align-items:center;gap:6px;border:1px solid #dde1e7;border-radius:7px;padding:6px 11px;font-size:12px;cursor:pointer;background:white;user-select:none}
+.chk:hover{border-color:#f8b184}
+.chk input{cursor:pointer;accent-color:#f36a17}
+.chk.on{border-color:#f36a17;background:#fff4ee;color:#c05010;font-weight:600}
+
+/* ── Task table in project dialog ── */
+.ttbl{width:100%;border-collapse:collapse}
+.ttbl th{font-size:10.5px;font-weight:700;color:#999;text-align:left;padding:5px 6px;border-bottom:1px solid #e0e4ea;letter-spacing:.3px}
+.ttbl td{padding:4px 6px;border-bottom:1px solid #f5f6f8;vertical-align:middle}
+.ttbl input,.ttbl select{width:100%;padding:5px 7px;border:1px solid transparent;border-radius:5px;font-size:12px;font-family:inherit;background:transparent;outline:none;color:#1a1a2e}
+.ttbl input:hover,.ttbl select:hover{border-color:#e0e4ea;background:white}
+.ttbl input:focus,.ttbl select:focus{border-color:#f36a17;background:white}
+.ttbl input:disabled,.ttbl select:disabled{color:#666;cursor:default;background:transparent;-webkit-appearance:none;appearance:none}
+.ttbl .del{border:none;background:none;cursor:pointer;color:#ccc;font-size:14px;padding:2px 5px;border-radius:4px}
+.ttbl .del:hover{color:#c0392b;background:#fce8e6}
+.ttbl tr.st-complete td:nth-child(1) input{color:#1e8449}
+.ttbl tr.st-cancel td:nth-child(1) input{color:#aaa;text-decoration:line-through}
+
+.hint{font-size:11px;color:#999;line-height:1.6}
+.badge-ro{font-size:10px;background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6;padding:2px 8px;border-radius:10px;font-weight:700}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d0d4dc;border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- QMe gate -->
+<div id="qmeGate" style="display:none;position:fixed;inset:0;background:#0d1117;z-index:9999;
+     flex-direction:column;align-items:center;justify-content:center;gap:20px">
+  <img src="/static/logo.png" alt="Q&Me" style="height:52px;filter:brightness(0) invert(1)">
+  <div style="color:#8899aa;font-size:13px">Kết nối QMe MCP để tiếp tục</div>
+  <button class="btn btn-pri" style="padding:10px 28px;font-size:13px;margin-top:8px"
+          onclick="connectQme()">🔗 Connect QMe</button>
+</div>
+
+<!-- Not-on-roster gate -->
+<div id="denyGate" style="display:none;position:fixed;inset:0;background:#0d1117;z-index:9998;
+     flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px">
+  <div style="font-size:44px">🔒</div>
+  <div style="color:#e0e6ef;font-size:15px;font-weight:600">Không có quyền truy cập Workload</div>
+  <div id="denyMsg" style="color:#8899aa;font-size:12.5px;max-width:420px;line-height:1.7"></div>
+  <a href="/projects" class="btn btn-pri" style="text-decoration:none;padding:9px 22px">← Về Projects</a>
+</div>
+
+<div class="hdr">
+  <div class="hdr-logo"><img src="/static/logo.png" alt="Q&Me"></div>
+  <nav class="hdr-nav">
+    <a href="/projects">📋 Surveys</a>
+    <a href="/workload" class="on">📅 Workload</a>
+  </nav>
+  <div class="gap"></div>
+  <button id="newProjBtn" class="btn btn-pri" style="display:none" onclick="openProjectDlg(null)">＋ Dự án mới</button>
+  <button id="qmeBtn" class="btn btn-gho" onclick="connectQme()" style="font-size:11px;gap:5px">
+    <span id="qmeDot" style="width:7px;height:7px;border-radius:50%;background:#666;display:inline-block"></span>
+    <span id="qmeLbl">QMe</span>
+  </button>
+</div>
+
+<!-- QMe login modal -->
+<div id="qmeMov" class="mov" style="display:none;z-index:10000">
+  <div class="mdlg" style="width:400px">
+    <div class="mhd">
+      <strong>🔗 Connect QMe</strong>
+      <button class="mbtn-close" onclick="closeQmeModal()">✕</button>
+    </div>
+    <div id="qmeStep1">
+      <div class="mbody" style="gap:10px">
+        <input id="qmeEmail" class="inp" type="email" placeholder="Email" autocomplete="email">
+        <input id="qmePassword" class="inp" type="password" placeholder="Password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')qmeDoLogin()">
+      </div>
+      <div class="mft">
+        <div id="qmeLoginStatus" class="mft-status" style="display:none"></div>
+        <button class="btn btn-lt" onclick="closeQmeModal()">Cancel</button>
+        <button id="qmeLoginBtn" class="btn btn-pri" onclick="qmeDoLogin()">Send OTP</button>
+      </div>
+    </div>
+    <div id="qmeStep2" style="display:none">
+      <div class="mbody" style="gap:10px">
+        <p style="font-size:12px;color:#555">OTP đã được gửi tới email của bạn.</p>
+        <input id="qmeOtp" class="inp" type="text" placeholder="Nhập OTP" maxlength="10"
+               style="font-size:18px;letter-spacing:6px;text-align:center;font-family:monospace"
+               onkeydown="if(event.key==='Enter')qmeDoVerify()">
+      </div>
+      <div class="mft">
+        <div id="qmeOtpStatus" class="mft-status" style="display:none"></div>
+        <button class="btn btn-lt" onclick="qmeBackToLogin()">← Back</button>
+        <button id="qmeVerifyBtn" class="btn btn-pri" onclick="qmeDoVerify()">Verify</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="tabs">
+    <button id="tabCal"  class="on" onclick="switchTab('cal')">📅 Lịch</button>
+    <button id="tabProj"          onclick="switchTab('proj')">📁 Dự án</button>
+  </div>
+
+  <!-- ══ CALENDAR TAB ══ -->
+  <div id="paneCal">
+    <div class="tbar">
+      <div class="seg">
+        <button id="vMonth" class="on" onclick="setView('month')">Tháng</button>
+        <button id="vWeek"           onclick="setView('week')">Tuần</button>
+        <button id="vDay"            onclick="setView('day')">Ngày</button>
+      </div>
+      <button class="nav-btn" onclick="shift(-1)">‹</button>
+      <button class="btn btn-lt" onclick="goToday()">Hôm nay</button>
+      <button class="nav-btn" onclick="shift(1)">›</button>
+      <div class="period" id="periodLbl">—</div>
+      <div class="gap"></div>
+      <select class="sel" id="fMember" onchange="loadCalendar()"><option value="">Tất cả member</option></select>
+      <select class="sel" id="fProject" onchange="loadCalendar()"><option value="">Tất cả dự án</option></select>
+      <select class="sel" id="fStatus" onchange="loadCalendar()">
+        <option value="">Mọi status</option>
+        <option value="pending">Pending</option>
+        <option value="complete">Complete</option>
+        <option value="cancel">Cancel</option>
+      </select>
+    </div>
+    <div id="calArea"><div class="loading"><div class="spin"></div> Đang tải lịch…</div></div>
+    <div id="unsched"></div>
+  </div>
+
+  <!-- ══ PROJECTS TAB ══ -->
+  <div id="paneProj" style="display:none">
+    <div class="tbar">
+      <input class="inp" id="pFilter" style="max-width:300px" placeholder="Lọc theo tên dự án / khách hàng…" oninput="renderProjects()">
+      <select class="sel" id="pStatus" onchange="renderProjects()">
+        <option value="">Mọi status</option>
+        <option value="pending">Pending</option>
+        <option value="complete">Complete</option>
+        <option value="cancel">Cancel</option>
+      </select>
+      <div class="gap"></div>
+      <button class="btn btn-lt" onclick="loadProjects()">↻ Refresh</button>
+    </div>
+    <div id="projArea"><div class="loading"><div class="spin"></div> Đang tải dự án…</div></div>
+  </div>
+</div>
+
+<!-- ══ PROJECT DIALOG (create / edit) ══ -->
+<div class="mov" id="projDlg" style="display:none" onclick="if(event.target===this)closeProjectDlg()">
+  <div class="mdlg">
+    <div class="mhd">
+      <strong id="projDlgTitle">＋ Dự án mới</strong>
+      <button class="mbtn-close" onclick="closeProjectDlg()">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="fld">
+        <label>TÊN DỰ ÁN *</label>
+        <input class="inp" id="pfName" placeholder="VD: Coca-Cola Brand Tracking Q3">
+      </div>
+      <div class="row2">
+        <div class="fld">
+          <label>KHÁCH HÀNG / CORPORATE</label>
+          <input class="inp" id="pfClient" placeholder="VD: Coca-Cola Vietnam">
+        </div>
+        <div class="fld">
+          <label>LOẠI HÌNH DỰ ÁN</label>
+          <input class="inp" id="pfType" list="typeList" placeholder="VD: Tracking">
+          <datalist id="typeList"></datalist>
+        </div>
+      </div>
+      <div class="row3">
+        <div class="fld">
+          <label>NGÀY BẮT ĐẦU</label>
+          <input class="inp" id="pfStart" type="date">
+        </div>
+        <div class="fld">
+          <label>NGÀY KẾT THÚC</label>
+          <input class="inp" id="pfEnd" type="date">
+        </div>
+        <div class="fld">
+          <label>STATUS</label>
+          <select class="inp" id="pfStatus">
+            <option value="pending">Pending</option>
+            <option value="complete">Complete</option>
+            <option value="cancel">Cancel</option>
+          </select>
+        </div>
+      </div>
+      <div class="fld">
+        <label>MEMBER PHỤ TRÁCH</label>
+        <div class="chks" id="pfMembers"></div>
+        <div class="hint">Member được chọn có quyền thêm / sửa / xoá task trong dự án này.</div>
+      </div>
+      <div class="fld">
+        <label>GHI CHÚ</label>
+        <textarea class="inp" id="pfNote" placeholder="Ghi chú thêm về dự án…"></textarea>
+      </div>
+      <label class="chk" id="pfScaffoldWrap">
+        <input type="checkbox" id="pfScaffold" checked>
+        Tạo sẵn 7 task chuẩn
+      </label>
+    </div>
+    <div class="mft">
+      <div class="mft-status" id="pfStatusMsg" style="display:none"></div>
+      <button class="btn btn-lt" onclick="closeProjectDlg()">Huỷ</button>
+      <button class="btn btn-suc" id="pfSaveBtn" onclick="saveProject()">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PROJECT DETAIL (tasks) ══ -->
+<div class="mov" id="detDlg" style="display:none" onclick="if(event.target===this)closeDetail()">
+  <div class="mdlg wide">
+    <div class="mhd">
+      <strong id="detTitle">Dự án</strong>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="detRo" class="badge-ro" style="display:none">Chỉ xem</span>
+        <button class="btn btn-lt" id="detEditBtn" style="display:none" onclick="editFromDetail()">✎ Sửa dự án</button>
+        <button class="btn btn-dng" id="detDelBtn" style="display:none" onclick="deleteProject()">🗑 Xoá</button>
+        <button class="mbtn-close" onclick="closeDetail()">✕</button>
+      </div>
+    </div>
+    <div class="mbody" id="detBody"></div>
+    <div class="mft">
+      <div class="mft-status" id="detStatusMsg" style="display:none"></div>
+      <button class="btn btn-lt" onclick="closeDetail()">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════
+let META      = null;      // /api/workload/meta
+let CAL       = null;      // last calendar payload
+let PROJECTS  = [];
+let VIEW      = 'month';
+let ANCHOR    = todayISO();
+let TAB       = 'cal';
+let DETAIL    = null;      // project currently open in the detail dialog
+let EDITING   = null;      // project being edited in the project dialog (null = create)
+let _csrfToken = null;
+
+const DOW = ['T2','T3','T4','T5','T6','T7','CN'];
+const STATUS_LABEL = {pending:'Pending', complete:'Complete', cancel:'Cancel'};
+
+// ════════════════════════════════════════════════════
+// DATE HELPERS
+// ════════════════════════════════════════════════════
+// Dates are parsed at local noon: midnight can land on the previous day once a
+// DST or timezone offset is applied, which would shift every chip by a day.
+function parseISO(s){ const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d, 12); }
+function iso(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function todayISO(){ return iso(new Date()); }
+function addDays(s, n){ const d = parseISO(s); d.setDate(d.getDate()+n); return iso(d); }
+function addMonths(s, n){
+  const d = parseISO(s);
+  const day = d.getDate();
+  d.setDate(1); d.setMonth(d.getMonth()+n);
+  // Clamp: 31 Jan + 1 month must not roll over into 3 March.
+  const last = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+  d.setDate(Math.min(day, last));
+  return iso(d);
+}
+function fmtDM(s){ const d = parseISO(s); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
+function fmtFull(s){ const d = parseISO(s); return `${fmtDM(s)}/${d.getFullYear()}`; }
+
+function periodLabel(){
+  if (VIEW === 'month'){ const d = parseISO(ANCHOR); return `Tháng ${d.getMonth()+1}, ${d.getFullYear()}`; }
+  if (VIEW === 'week'){
+    const d = parseISO(ANCHOR);
+    const mon = addDays(ANCHOR, -((d.getDay()+6)%7));
+    return `${fmtDM(mon)} – ${fmtFull(addDays(mon,6))}`;
+  }
+  const names = ['Chủ nhật','Thứ hai','Thứ ba','Thứ tư','Thứ năm','Thứ sáu','Thứ bảy'];
+  return `${names[parseISO(ANCHOR).getDay()]}, ${fmtFull(ANCHOR)}`;
+}
+
+// ════════════════════════════════════════════════════
+// LOAD
+// ════════════════════════════════════════════════════
+async function boot(){
+  await checkQmeStatus();
+  try {
+    META = await api('/api/workload/meta');
+  } catch(e){
+    if (e.status === 403) return showDeny(e.message);
+    if (e.status === 401) return;
+    return showCalError(e.message);
+  }
+  if (META.me.is_admin) document.getElementById('newProjBtn').style.display = '';
+
+  const fm = document.getElementById('fMember');
+  META.members.forEach(m => fm.add(new Option(m.name + (m.is_admin ? ' (admin)' : ''), m.email)));
+  document.getElementById('typeList').innerHTML =
+    META.project_types.map(t => `<option value="${esc(t)}">`).join('');
+  document.getElementById('pfMembers').innerHTML = META.members.map(m => `
+    <label class="chk" onclick="setTimeout(()=>this.classList.toggle('on', this.querySelector('input').checked),0)">
+      <input type="checkbox" value="${esc(m.email)}"> ${esc(m.name)}
+    </label>`).join('');
+
+  await loadProjects();
+  await loadCalendar();
+}
+
+async function loadCalendar(){
+  if (!META) return;
+  document.getElementById('periodLbl').textContent = periodLabel();
+  const q = new URLSearchParams({view: VIEW, anchor: ANCHOR});
+  const mem = document.getElementById('fMember').value;
+  const prj = document.getElementById('fProject').value;
+  const st  = document.getElementById('fStatus').value;
+  if (mem) q.set('assignee', mem);
+  if (prj) q.set('project_id', prj);
+  if (st)  q.set('status', st);
+  try {
+    CAL = await api('/api/workload/calendar?' + q);
+    renderCalendar();
+  } catch(e){
+    if (e.status === 403) return showDeny(e.message);
+    showCalError(e.message);
+  }
+}
+
+async function loadProjects(){
+  try {
+    PROJECTS = await api('/api/workload/projects');
+  } catch(e){
+    if (e.status === 403) return showDeny(e.message);
+    document.getElementById('projArea').innerHTML = errBox(e.message);
+    return;
+  }
+  const sel = document.getElementById('fProject');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">Tất cả dự án</option>';
+  PROJECTS.forEach(p => sel.add(new Option(p.name, p.id)));
+  sel.value = keep;
+  renderProjects();
+}
+
+function showCalError(msg){ document.getElementById('calArea').innerHTML = errBox(msg); }
+function errBox(msg){
+  return `<div class="empty"><div class="empty-ico">⚠️</div><h3>Không tải được dữ liệu</h3><p>${esc(msg)}</p></div>`;
+}
+function showDeny(msg){
+  document.getElementById('denyMsg').textContent =
+    msg || 'Tài khoản của bạn không nằm trong team workload.';
+  document.getElementById('denyGate').style.display = 'flex';
+}
+
+// ════════════════════════════════════════════════════
+// CALENDAR RENDER
+// ════════════════════════════════════════════════════
+function canEdit(projectId){
+  if (!META) return false;
+  if (META.me.is_admin) return true;
+  const p = PROJECTS.find(x => x.id === projectId);
+  return !!p && p.members.includes(META.me.email);
+}
+
+function chip(t, withWho = true){
+  const who = withWho && t.assignee ? `<b>${esc(t.assignee.split('@')[0])}</b> · ` : '';
+  const title = `${t.project_name} — ${t.title}${t.assignee ? ' · ' + t.assignee.split('@')[0] : ''} [${STATUS_LABEL[t.status]}]`;
+  return `<span class="chip chip-${t.status}" title="${esc(title)}" onclick="event.stopPropagation();openDetail('${t.project_id}','${t.id}')">${who}${esc(t.title)}</span>`;
+}
+
+function tasksByDate(){
+  const map = {};
+  (CAL.tasks || []).forEach(t => (map[t.due_date] ||= []).push(t));
+  return map;
+}
+
+function renderCalendar(){
+  if (VIEW === 'month') renderMonth();
+  else if (VIEW === 'week') renderWeek();
+  else renderDay();
+  renderUnscheduled();
+}
+
+function renderMonth(){
+  const byDate = tasksByDate();
+  const curMonth = parseISO(ANCHOR).getMonth();
+  const today = todayISO();
+  let cells = '';
+  for (let i = 0; i < 42; i++){
+    const d = addDays(CAL.from, i);
+    const dd = parseISO(d);
+    const list = byDate[d] || [];
+    const shown = list.slice(0, 3);
+    const rest  = list.length - shown.length;
+    cells += `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}">
+      <div class="cell-n"><span>${dd.getDate()}</span>
+        <button class="cell-add" title="Xem ngày này" onclick="jumpToDay('${d}')">＋</button></div>
+      ${shown.map(t => chip(t)).join('')}
+      ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} task khác</span>` : ''}
+    </div>`;
+  }
+  document.getElementById('calArea').innerHTML = `<div class="cal">
+    <div class="cal-hd">${DOW.map((n,i) => `<div class="${i>4?'wknd':''}">${n}</div>`).join('')}</div>
+    <div class="cal-body">${cells}</div>
+  </div>`;
+}
+
+function renderWeek(){
+  const byDate = tasksByDate();
+  const days = Array.from({length:7}, (_, i) => addDays(CAL.from, i));
+  const today = todayISO();
+
+  // One row per member, plus a catch-all row so unassigned work is visible
+  // rather than silently missing from the week.
+  const rows = META.members.map(m => ({key: m.email, label: m.name, sub: 'member'}));
+  rows.push({key: '', label: 'Chưa gán', sub: 'unassigned'});
+
+  const body = rows.map(r => {
+    const tds = days.map(d => {
+      const list = (byDate[d] || []).filter(t => (t.assignee || '') === r.key);
+      return `<td class="${d===today?'today-col':''}"><div class="wk-cell">${list.map(t => chip(t,false)).join('')}</div></td>`;
+    }).join('');
+    return `<tr><td class="who">${esc(r.label)}<small>${r.sub}</small></td>${tds}</tr>`;
+  }).join('');
+
+  const heads = days.map((d,i) =>
+    `<th class="${d===today?'today-col':''}">${DOW[i]}<br><span style="font-weight:400;color:#aaa">${fmtDM(d)}</span></th>`
+  ).join('');
+
+  document.getElementById('calArea').innerHTML = `<div class="wk"><table>
+    <thead><tr><th class="who">MEMBER</th>${heads}</tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+
+function renderDay(){
+  const list = CAL.tasks || [];
+  if (!list.length){
+    document.getElementById('calArea').innerHTML =
+      `<div class="empty"><div class="empty-ico">☕</div><h3>Không có task nào</h3><p>Ngày ${fmtFull(ANCHOR)} chưa có task nào được lên lịch.</p></div>`;
+    return;
+  }
+  const groups = {};
+  list.forEach(t => (groups[t.project_id] ||= {name: t.project_name, client: t.project_client, type: t.project_type, tasks: []}).tasks.push(t));
+
+  document.getElementById('calArea').innerHTML = Object.entries(groups).map(([pid, g]) => `
+    <div class="day-grp">
+      <div class="day-grp-hd">
+        <strong>${esc(g.name)}</strong>
+        ${g.client ? `<span class="pcard-sub">${esc(g.client)}</span>` : ''}
+        ${g.type ? `<span class="ttag">${esc(g.type)}</span>` : ''}
+        <div class="gap"></div>
+        <button class="btn btn-lt" style="font-size:11px" onclick="openDetail('${pid}')">Mở dự án →</button>
+      </div>
+      ${g.tasks.map(t => `
+        <div class="day-row" onclick="openDetail('${t.project_id}','${t.id}')">
+          <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
+          <span class="day-row-t">${esc(t.title)}</span>
+          <span class="day-row-w">${t.assignee ? esc(t.assignee.split('@')[0]) : '—'}</span>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function renderUnscheduled(){
+  const list = CAL.unscheduled || [];
+  const box = document.getElementById('unsched');
+  if (!list.length){ box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="day-grp" style="margin-top:14px">
+    <div class="day-grp-hd">
+      <strong>🗓 Chưa lên lịch</strong>
+      <span class="pcard-sub">${list.length} task chưa có ngày due — mở dự án để đặt ngày</span>
+    </div>
+    <div style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px">
+      ${list.map(t => `<span class="chip chip-${t.status}" style="display:inline-block"
+        title="${esc(t.project_name)}" onclick="openDetail('${t.project_id}','${t.id}')">
+        ${esc(t.project_name)} · ${esc(t.title)}</span>`).join('')}
+    </div></div>`;
+}
+
+// ════════════════════════════════════════════════════
+// PROJECTS RENDER
+// ════════════════════════════════════════════════════
+function renderProjects(){
+  const q  = (document.getElementById('pFilter').value || '').toLowerCase();
+  const st = document.getElementById('pStatus').value;
+  const list = PROJECTS.filter(p => {
+    if (st && p.status !== st) return false;
+    if (!q) return true;
+    return `${p.name} ${p.client} ${p.project_type}`.toLowerCase().includes(q);
+  });
+
+  if (!list.length){
+    document.getElementById('projArea').innerHTML = PROJECTS.length
+      ? `<div class="empty"><div class="empty-ico">🔍</div><h3>Không có dự án khớp bộ lọc</h3></div>`
+      : `<div class="empty"><div class="empty-ico">📁</div><h3>Chưa có dự án nào</h3><p>${
+          META && META.me.is_admin
+            ? 'Bấm <strong>Dự án mới</strong> để tạo dự án đầu tiên và giao cho member.'
+            : 'Manager chưa tạo dự án nào.'}</p></div>`;
+    return;
+  }
+
+  document.getElementById('projArea').innerHTML =
+    `<div class="pgrid">${list.map(projCard).join('')}</div>`;
+}
+
+function projCard(p){
+  const c = p.task_counts, total = p.task_total || 0;
+  const pct = k => total ? (c[k] / total * 100) : 0;
+  const dates = [p.start_date && fmtFull(p.start_date), p.end_date && fmtFull(p.end_date)].filter(Boolean).join(' → ');
+  return `<div class="pcard" onclick="openDetail('${p.id}')">
+    <div class="pcard-top">
+      <div class="pcard-title">${esc(p.name)}</div>
+      <span class="stag stag-${p.status}">${STATUS_LABEL[p.status]}</span>
+    </div>
+    <div class="pcard-sub">${esc(p.client || '—')}${p.project_type ? ' · ' : ''}${p.project_type ? `<span class="ttag">${esc(p.project_type)}</span>` : ''}</div>
+    ${dates ? `<div class="pcard-sub">📅 ${dates}</div>` : ''}
+    <div class="pcard-mem">${p.member_names.length
+      ? p.member_names.map(n => `<span class="avt">${esc(n)}</span>`).join('')
+      : '<span class="avt" style="background:#fce8e6;color:#c0392b">chưa giao</span>'}</div>
+    <div class="bar">
+      <i class="b-complete" style="width:${pct('complete')}%"></i>
+      <i class="b-pending"  style="width:${pct('pending')}%"></i>
+      <i class="b-cancel"   style="width:${pct('cancel')}%"></i>
+    </div>
+    <div class="pcard-sub">${c.complete}/${total} task hoàn thành${c.cancel ? ` · ${c.cancel} huỷ` : ''}</div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════════════
+function setView(v){
+  VIEW = v;
+  ['Month','Week','Day'].forEach(x =>
+    document.getElementById('v'+x).classList.toggle('on', x.toLowerCase() === v));
+  loadCalendar();
+}
+function shift(n){
+  ANCHOR = VIEW === 'month' ? addMonths(ANCHOR, n)
+         : VIEW === 'week'  ? addDays(ANCHOR, 7*n)
+         : addDays(ANCHOR, n);
+  loadCalendar();
+}
+function goToday(){ ANCHOR = todayISO(); loadCalendar(); }
+function jumpToDay(d){ ANCHOR = d; setView('day'); }
+function switchTab(t){
+  TAB = t;
+  document.getElementById('tabCal').classList.toggle('on', t === 'cal');
+  document.getElementById('tabProj').classList.toggle('on', t === 'proj');
+  document.getElementById('paneCal').style.display  = t === 'cal'  ? '' : 'none';
+  document.getElementById('paneProj').style.display = t === 'proj' ? '' : 'none';
+}
+
+// ════════════════════════════════════════════════════
+// PROJECT DIALOG
+// ════════════════════════════════════════════════════
+function openProjectDlg(project){
+  EDITING = project;
+  document.getElementById('projDlgTitle').textContent = project ? '✎ Sửa dự án' : '＋ Dự án mới';
+  document.getElementById('pfName').value   = project ? project.name : '';
+  document.getElementById('pfClient').value = project ? project.client : '';
+  document.getElementById('pfType').value   = project ? project.project_type : '';
+  document.getElementById('pfStart').value  = project ? (project.start_date || '') : '';
+  document.getElementById('pfEnd').value    = project ? (project.end_date   || '') : '';
+  document.getElementById('pfStatus').value = project ? project.status : 'pending';
+  document.getElementById('pfNote').value   = project ? project.note : '';
+  document.querySelectorAll('#pfMembers input').forEach(cb => {
+    cb.checked = !!project && project.members.includes(cb.value);
+    cb.closest('.chk').classList.toggle('on', cb.checked);
+  });
+  // The 7 standard tasks are only scaffolded at creation time; on an edit the
+  // project already has its task list and re-adding them would duplicate it.
+  document.getElementById('pfScaffoldWrap').style.display = project ? 'none' : '';
+  document.getElementById('pfScaffold').checked = true;
+  setMsg('pfStatusMsg', '');
+  document.getElementById('projDlg').style.display = 'flex';
+  setTimeout(() => document.getElementById('pfName').focus(), 50);
+}
+function closeProjectDlg(){ document.getElementById('projDlg').style.display = 'none'; EDITING = null; }
+
+async function saveProject(){
+  const body = {
+    name:         document.getElementById('pfName').value.trim(),
+    client:       document.getElementById('pfClient').value.trim(),
+    project_type: document.getElementById('pfType').value.trim(),
+    status:       document.getElementById('pfStatus').value,
+    start_date:   document.getElementById('pfStart').value || null,
+    end_date:     document.getElementById('pfEnd').value   || null,
+    note:         document.getElementById('pfNote').value.trim(),
+    members:      [...document.querySelectorAll('#pfMembers input:checked')].map(c => c.value),
+  };
+  if (!body.name) return setMsg('pfStatusMsg', 'Tên dự án là bắt buộc', 'err');
+
+  const btn = document.getElementById('pfSaveBtn');
+  btn.disabled = true; btn.textContent = 'Đang lưu…';
+  try {
+    if (EDITING){
+      await api(`/api/workload/projects/${EDITING.id}`, {method:'PATCH', body});
+    } else {
+      body.scaffold_default_tasks = document.getElementById('pfScaffold').checked;
+      await api('/api/workload/projects', {method:'POST', body});
+    }
+    const reopen = EDITING ? EDITING.id : null;
+    closeProjectDlg();
+    await loadProjects();
+    await loadCalendar();
+    if (reopen) openDetail(reopen);
+  } catch(e){
+    setMsg('pfStatusMsg', e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Lưu';
+  }
+}
+
+async function deleteProject(){
+  if (!DETAIL) return;
+  if (!confirm(`Xoá dự án "${DETAIL.name}" và toàn bộ ${DETAIL.task_total} task của nó?\nKhông thể hoàn tác.`)) return;
+  try {
+    await api(`/api/workload/projects/${DETAIL.id}`, {method:'DELETE'});
+    closeDetail();
+    await loadProjects();
+    await loadCalendar();
+  } catch(e){ setMsg('detStatusMsg', e.message, 'err'); }
+}
+
+function editFromDetail(){ if (DETAIL) openProjectDlg(DETAIL); }
+
+// ════════════════════════════════════════════════════
+// PROJECT DETAIL + TASKS
+// ════════════════════════════════════════════════════
+async function openDetail(projectId, focusTaskId){
+  document.getElementById('detDlg').style.display = 'flex';
+  document.getElementById('detBody').innerHTML = '<div class="loading"><div class="spin"></div> Đang tải…</div>';
+  setMsg('detStatusMsg', '');
+  try {
+    DETAIL = await api(`/api/workload/projects/${projectId}`);
+  } catch(e){
+    document.getElementById('detBody').innerHTML = errBox(e.message);
+    return;
+  }
+  renderDetail(focusTaskId);
+}
+function closeDetail(){ document.getElementById('detDlg').style.display = 'none'; DETAIL = null; }
+
+function renderDetail(focusTaskId){
+  const p = DETAIL, rw = p.can_edit_tasks;
+  const isAdmin = META.me.is_admin;
+  document.getElementById('detTitle').textContent = p.name;
+  document.getElementById('detRo').style.display      = rw ? 'none' : '';
+  document.getElementById('detEditBtn').style.display = isAdmin ? '' : 'none';
+  document.getElementById('detDelBtn').style.display  = isAdmin ? '' : 'none';
+
+  const memOpts = ['<option value="">— chưa gán —</option>']
+    .concat(META.members.map(m => `<option value="${esc(m.email)}">${esc(m.name)}</option>`)).join('');
+  const stOpts = Object.entries(STATUS_LABEL)
+    .map(([k,v]) => `<option value="${k}">${v}</option>`).join('');
+  const dis = rw ? '' : 'disabled';
+
+  const rows = p.tasks.map(t => `
+    <tr class="st-${t.status}" id="row-${t.id}">
+      <td><input value="${esc(t.title)}" ${dis} onchange="patchTask('${t.id}','title',this.value)"></td>
+      <td style="width:130px"><select ${dis} onchange="patchTask('${t.id}','assignee',this.value)">
+        ${memOpts.replace(`value="${esc(t.assignee)}"`, `value="${esc(t.assignee)}" selected`)}
+      </select></td>
+      <td style="width:135px"><input type="date" value="${t.due_date || ''}" ${dis}
+        onchange="patchTask('${t.id}','due_date',this.value||null)"></td>
+      <td style="width:115px"><select ${dis} onchange="patchTask('${t.id}','status',this.value)">
+        ${stOpts.replace(`value="${t.status}"`, `value="${t.status}" selected`)}
+      </select></td>
+      <td><input value="${esc(t.note)}" placeholder="ghi chú…" ${dis} onchange="patchTask('${t.id}','note',this.value)"></td>
+      <td style="width:28px">${rw ? `<button class="del" title="Xoá task" onclick="removeTask('${t.id}')">✕</button>` : ''}</td>
+    </tr>`).join('');
+
+  const dates = [p.start_date && fmtFull(p.start_date), p.end_date && fmtFull(p.end_date)].filter(Boolean).join(' → ');
+
+  document.getElementById('detBody').innerHTML = `
+    <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+      <span class="stag stag-${p.status}">${STATUS_LABEL[p.status]}</span>
+      ${p.project_type ? `<span class="ttag">${esc(p.project_type)}</span>` : ''}
+      ${p.client ? `<span class="pcard-sub">🏢 ${esc(p.client)}</span>` : ''}
+      ${dates ? `<span class="pcard-sub">📅 ${dates}</span>` : ''}
+    </div>
+    <div class="pcard-mem">${p.member_names.length
+      ? p.member_names.map(n => `<span class="avt">${esc(n)}</span>`).join('')
+      : '<span class="avt" style="background:#fce8e6;color:#c0392b">chưa giao cho ai</span>'}</div>
+    ${p.note ? `<div class="hint" style="background:#f8f9fb;padding:9px 11px;border-radius:7px;white-space:pre-wrap">${esc(p.note)}</div>` : ''}
+    ${rw ? '' : '<div class="hint">Bạn không nằm trong dự án này nên chỉ có thể xem. Liên hệ manager để được giao.</div>'}
+    <table class="ttbl">
+      <thead><tr><th>TASK</th><th>PHỤ TRÁCH</th><th>NGÀY</th><th>STATUS</th><th>GHI CHÚ</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="padding:16px;text-align:center;color:#bbb">Chưa có task nào</td></tr>'}</tbody>
+    </table>
+    ${rw ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input class="inp" id="newTaskTitle" style="flex:1;min-width:200px" list="taskTpl" placeholder="Tên task mới…"
+             onkeydown="if(event.key==='Enter')addTask()">
+      <datalist id="taskTpl">${META.default_tasks.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+      <input class="inp" id="newTaskDue" type="date" style="width:150px">
+      <select class="inp" id="newTaskWho" style="width:150px">${memOpts}</select>
+      <button class="btn btn-suc" onclick="addTask()">＋ Thêm task</button>
+    </div>` : ''}`;
+
+  if (focusTaskId){
+    const row = document.getElementById('row-' + focusTaskId);
+    if (row){
+      row.scrollIntoView({block:'center'});
+      row.style.background = '#fff4ee';
+      setTimeout(() => row.style.background = '', 1600);
+    }
+  }
+}
+
+async function patchTask(taskId, field, value){
+  try {
+    await api(`/api/workload/tasks/${taskId}`, {method:'PATCH', body:{[field]: value}});
+    setMsg('detStatusMsg', '✓ Đã lưu', 'ok');
+    await refreshAfterTaskChange();
+  } catch(e){
+    setMsg('detStatusMsg', e.message, 'err');
+    await refreshAfterTaskChange();   // revert the input to what the server holds
+  }
+}
+
+async function addTask(){
+  const title = document.getElementById('newTaskTitle').value.trim();
+  if (!title) return;
+  try {
+    await api(`/api/workload/projects/${DETAIL.id}/tasks`, {method:'POST', body:{
+      title,
+      assignee: document.getElementById('newTaskWho').value,
+      due_date: document.getElementById('newTaskDue').value || null,
+    }});
+    setMsg('detStatusMsg', '✓ Đã thêm task', 'ok');
+    await refreshAfterTaskChange();
+    document.getElementById('newTaskTitle').focus();
+  } catch(e){ setMsg('detStatusMsg', e.message, 'err'); }
+}
+
+async function removeTask(taskId){
+  if (!confirm('Xoá task này?')) return;
+  try {
+    await api(`/api/workload/tasks/${taskId}`, {method:'DELETE'});
+    setMsg('detStatusMsg', '✓ Đã xoá', 'ok');
+    await refreshAfterTaskChange();
+  } catch(e){ setMsg('detStatusMsg', e.message, 'err'); }
+}
+
+async function refreshAfterTaskChange(){
+  const pid = DETAIL && DETAIL.id;
+  await loadProjects();
+  await loadCalendar();
+  if (pid){
+    DETAIL = await api(`/api/workload/projects/${pid}`);
+    renderDetail();
+  }
+}
+
+// ════════════════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════════════════
+function esc(s){
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function setMsg(id, msg, cls){
+  const el = document.getElementById(id);
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg;
+  el.className = 'mft-status' + (cls ? ' ' + cls : '');
+}
+
+/** fetch wrapper: JSON in/out, attaches CSRF on writes, throws Error with .status. */
+async function api(url, {method = 'GET', body} = {}){
+  const opts = {method, headers: {}};
+  if (body !== undefined){
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  if (method !== 'GET') opts.headers['X-CSRF-Token'] = _csrfToken || '';
+  const r = await fetch(url, opts);
+  let data = null;
+  try { data = await r.json(); } catch {}
+  if (!r.ok){
+    if (r.status === 401) showAuthExpired();
+    const detail = data && data.detail;
+    const err = new Error(
+      typeof detail === 'string' ? detail
+      : Array.isArray(detail)    ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+      : `Lỗi máy chủ (HTTP ${r.status})`);
+    err.status = r.status;
+    throw err;
+  }
+  return data;
+}
+
+function showAuthExpired(){
+  document.getElementById('qmeGate').style.display = 'flex';
+  document.getElementById('qmeDot').style.background = '#f87171';
+  document.getElementById('qmeLbl').textContent = 'Connect QMe';
+  document.getElementById('qmeBtn').onclick = connectQme;
+  setTimeout(() => connectQme(), 300);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('projDlg').style.display === 'flex') return closeProjectDlg();
+  if (document.getElementById('detDlg').style.display === 'flex')  return closeDetail();
+});
+
+// ════════════════════════════════════════════════════
+// QMe CONNECTION
+// ════════════════════════════════════════════════════
+let _qmeRef = '';
+
+async function checkQmeStatus(){
+  try {
+    const {connected, email, csrf_token} = await fetch('/api/qme/status').then(r => r.json());
+    _csrfToken = csrf_token || null;
+    const dot = document.getElementById('qmeDot');
+    const lbl = document.getElementById('qmeLbl');
+    const btn = document.getElementById('qmeBtn');
+    const gate = document.getElementById('qmeGate');
+    if (connected){
+      gate.style.display = 'none';
+      dot.style.background = '#22c55e';
+      lbl.textContent = email || 'QMe Connected';
+      btn.title = `Connected as ${email || 'QMe'} — click to disconnect`;
+      btn.onclick = disconnectQme;
+    } else {
+      gate.style.display = 'flex';
+      dot.style.background = '#f87171';
+      lbl.textContent = 'Connect QMe';
+      btn.onclick = connectQme;
+    }
+  } catch(_){}
+}
+
+function connectQme(){
+  document.getElementById('qmeMov').style.display = 'flex';
+  document.getElementById('qmeStep1').style.display = '';
+  document.getElementById('qmeStep2').style.display = 'none';
+  document.getElementById('qmeLoginStatus').style.display = 'none';
+  setTimeout(() => document.getElementById('qmeEmail').focus(), 50);
+}
+function closeQmeModal(){ document.getElementById('qmeMov').style.display = 'none'; }
+function qmeBackToLogin(){
+  document.getElementById('qmeStep2').style.display = 'none';
+  document.getElementById('qmeStep1').style.display = '';
+}
+
+async function qmeDoLogin(){
+  const email = document.getElementById('qmeEmail').value.trim();
+  const password = document.getElementById('qmePassword').value;
+  if (!email || !password) return;
+  const btn = document.getElementById('qmeLoginBtn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  setMsg('qmeLoginStatus', '');
+  try {
+    const r = await fetch('/api/qme/login', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email, password}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+    _qmeRef = data.ref || '';
+    document.getElementById('qmeStep1').style.display = 'none';
+    document.getElementById('qmeStep2').style.display = '';
+    document.getElementById('qmeOtp').value = '';
+    document.getElementById('qmeOtp').focus();
+  } catch(e){
+    setMsg('qmeLoginStatus', e.message, 'err');
+  } finally { btn.disabled = false; btn.textContent = 'Send OTP'; }
+}
+
+async function qmeDoVerify(){
+  const email = document.getElementById('qmeEmail').value.trim();
+  const otp = document.getElementById('qmeOtp').value.trim();
+  if (!otp) return;
+  const btn = document.getElementById('qmeVerifyBtn');
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  setMsg('qmeOtpStatus', '');
+  try {
+    const r = await fetch('/api/qme/verify', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email, ref: _qmeRef, otp}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || JSON.stringify(data));
+    closeQmeModal();
+    await checkQmeStatus();
+    boot();
+  } catch(e){
+    setMsg('qmeOtpStatus', e.message, 'err');
+  } finally { btn.disabled = false; btn.textContent = 'Verify'; }
+}
+
+async function disconnectQme(){
+  if (!confirm('Disconnect QMe?')) return;
+  await fetch('/api/qme/disconnect', {method:'DELETE', headers:{'X-CSRF-Token': _csrfToken}});
+  checkQmeStatus();
+}
+
+// ── Init ──
+boot();
+fetch('/api/version').then(r => r.json()).then(d => {
+  document.getElementById('appVersion').textContent = `apdp v${d.apdp} · surveyflow v${d.surveyflow}`;
+}).catch(() => {});
+</script>
+<div id="appVersion" style="position:fixed;bottom:8px;right:12px;font-size:10px;color:#555;pointer-events:none;z-index:10001;white-space:nowrap;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:3px;border:1px solid rgba(0,0,0,.08);box-shadow:0 1px 3px rgba(0,0,0,.1)"></div>
+</body>
+</html>

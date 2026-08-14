@@ -7,7 +7,7 @@ import logging
 
 from fastapi import Depends, HTTPException, Request
 
-from services.authz import is_admin, is_allowed
+from services.authz import is_admin, is_allowed, is_workload_admin, is_workload_user
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +69,33 @@ async def require_admin(session_id: str = Depends(require_qme)) -> str:
         log.warning("Admin-only endpoint refused for %s", email)
         raise HTTPException(status_code=403, detail="Administrator access required")
     return session_id
+
+
+async def current_email(session_id: str = Depends(require_qme)) -> str:
+    """The signed-in account's email — what the workload routes key everything on."""
+    from services.mcp_client import get_storage
+    return (get_storage(session_id).email or "").strip().lower()
+
+
+async def require_workload(email: str = Depends(current_email)) -> str:
+    """Dependency: the session must be on the workload roster.
+
+    Deliberately narrower than require_qme: everyone in ALLOWED_USERS can use
+    SurveyFlow, but only the four accounts in WORKLOAD_MEMBERS belong to the
+    team whose workload this tracks.
+    """
+    if not is_workload_user(email):
+        log.warning("Workload access refused for %s (not on workload roster)", email)
+        raise HTTPException(status_code=403, detail="Tài khoản này không nằm trong team workload")
+    return email
+
+
+async def require_workload_admin(email: str = Depends(require_workload)) -> str:
+    """Dependency: workload member *and* administrator (creates/assigns projects)."""
+    if not is_workload_admin(email):
+        log.warning("Workload admin endpoint refused for %s", email)
+        raise HTTPException(status_code=403, detail="Chỉ manager mới được thay đổi dự án")
+    return email
 
 
 def csrf_token_for(session_id: str) -> str:

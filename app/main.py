@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from routers import surveys, pipeline, qme_auth, usage_log, price_check
+from routers import surveys, pipeline, qme_auth, usage_log, price_check, workload
 from config import Settings
 from dependencies import require_csrf, require_qme
 
@@ -75,6 +75,9 @@ async def on_startup() -> None:
     """Restore persisted sessions from disk so users don't need to re-login after restart."""
     from services.mcp_client import init_sessions
     init_sessions()
+    # Creates workload.db + schema on first boot; a no-op on every boot after.
+    from services.workload_svc import init_db
+    init_db()
     # H-4: warn if SECURE_COOKIES is off (risky on non-localhost deployments)
     if not settings.SECURE_COOKIES:
         logging.getLogger(__name__).warning(
@@ -92,6 +95,7 @@ app.include_router(pipeline.router, dependencies=[Depends(require_qme), Depends(
 app.include_router(qme_auth.router)    # auth routes are always public; /disconnect checks CSRF itself
 app.include_router(usage_log.router)   # per-endpoint auth via require_qme; POST /log checks CSRF itself
 app.include_router(price_check.router) # standalone, per-endpoint auth via require_qme + require_csrf
+app.include_router(workload.router)    # per-endpoint auth via require_workload(_admin) + require_csrf
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
@@ -136,6 +140,11 @@ async def editor():
 @app.get("/log", response_class=HTMLResponse)
 async def log_page():
     return HTMLResponse((_STATIC / "log.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
+
+
+@app.get("/workload", response_class=HTMLResponse)
+async def workload_page():
+    return HTMLResponse((_STATIC / "workload.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
 
 
 @app.get("/price-check", response_class=HTMLResponse)
