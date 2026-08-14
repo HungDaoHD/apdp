@@ -87,7 +87,7 @@ def _bad(exc: WorkloadError) -> HTTPException:
 
 def _require_task_editor(email: str, project_id: str) -> None:
     if not workload_svc.can_edit_tasks(email, project_id):
-        raise HTTPException(403, "Bạn chỉ có thể sửa task trong dự án được giao cho mình")
+        raise HTTPException(403, "You can only edit tasks in projects assigned to you")
 
 
 # ── Meta ──────────────────────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ async def list_projects(email: str = Depends(require_workload)):
 async def get_project(project_id: str, email: str = Depends(require_workload)):
     project = workload_svc.get_project(project_id)
     if project is None:
-        raise HTTPException(404, "Không tìm thấy dự án")
+        raise HTTPException(404, "Project not found")
     project["can_edit_tasks"] = workload_svc.can_edit_tasks(email, project_id)
     return project
 
@@ -177,7 +177,7 @@ async def create_task(
 async def update_task(task_id: str, body: TaskUpdate, email: str = Depends(require_workload)):
     task = workload_svc.get_task(task_id)
     if task is None:
-        raise HTTPException(404, "Không tìm thấy task")
+        raise HTTPException(404, "Task not found")
     _require_task_editor(email, task["project_id"])
     try:
         return workload_svc.update_task(task_id, _patch(body))
@@ -189,7 +189,7 @@ async def update_task(task_id: str, body: TaskUpdate, email: str = Depends(requi
 async def delete_task(task_id: str, email: str = Depends(require_workload)):
     task = workload_svc.get_task(task_id)
     if task is None:
-        raise HTTPException(404, "Không tìm thấy task")
+        raise HTTPException(404, "Task not found")
     _require_task_editor(email, task["project_id"])
     workload_svc.delete_task(task_id)
     return {"ok": True}

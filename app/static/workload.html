@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi"><head>
+<html lang="en"><head>
 <meta charset="UTF-8">
 <link rel="shortcut icon" href="/static/favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -178,7 +178,7 @@ textarea.inp{resize:vertical;min-height:56px}
 <div id="qmeGate" style="display:none;position:fixed;inset:0;background:#0d1117;z-index:9999;
      flex-direction:column;align-items:center;justify-content:center;gap:20px">
   <img src="/static/logo.png" alt="Q&Me" style="height:52px;filter:brightness(0) invert(1)">
-  <div style="color:#8899aa;font-size:13px">Kết nối QMe MCP để tiếp tục</div>
+  <div style="color:#8899aa;font-size:13px">Connect to QMe MCP to continue</div>
   <button class="btn btn-pri" style="padding:10px 28px;font-size:13px;margin-top:8px"
           onclick="connectQme()">🔗 Connect QMe</button>
 </div>
@@ -187,9 +187,9 @@ textarea.inp{resize:vertical;min-height:56px}
 <div id="denyGate" style="display:none;position:fixed;inset:0;background:#0d1117;z-index:9998;
      flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px">
   <div style="font-size:44px">🔒</div>
-  <div style="color:#e0e6ef;font-size:15px;font-weight:600">Không có quyền truy cập Workload</div>
+  <div style="color:#e0e6ef;font-size:15px;font-weight:600">No access to Workload</div>
   <div id="denyMsg" style="color:#8899aa;font-size:12.5px;max-width:420px;line-height:1.7"></div>
-  <a href="/projects" class="btn btn-pri" style="text-decoration:none;padding:9px 22px">← Về Projects</a>
+  <a href="/projects" class="btn btn-pri" style="text-decoration:none;padding:9px 22px">← Back to Projects</a>
 </div>
 
 <div class="hdr">
@@ -199,7 +199,7 @@ textarea.inp{resize:vertical;min-height:56px}
     <a href="/workload" class="on">📅 Workload</a>
   </nav>
   <div class="gap"></div>
-  <button id="newProjBtn" class="btn btn-pri" style="display:none" onclick="openProjectDlg(null)">＋ Dự án mới</button>
+  <button id="newProjBtn" class="btn btn-pri" style="display:none" onclick="openProjectDlg(null)">＋ New Project</button>
   <button id="qmeBtn" class="btn btn-gho" onclick="connectQme()" style="font-size:11px;gap:5px">
     <span id="qmeDot" style="width:7px;height:7px;border-radius:50%;background:#666;display:inline-block"></span>
     <span id="qmeLbl">QMe</span>
@@ -227,8 +227,8 @@ textarea.inp{resize:vertical;min-height:56px}
     </div>
     <div id="qmeStep2" style="display:none">
       <div class="mbody" style="gap:10px">
-        <p style="font-size:12px;color:#555">OTP đã được gửi tới email của bạn.</p>
-        <input id="qmeOtp" class="inp" type="text" placeholder="Nhập OTP" maxlength="10"
+        <p style="font-size:12px;color:#555">An OTP has been sent to your email.</p>
+        <input id="qmeOtp" class="inp" type="text" placeholder="Enter OTP" maxlength="10"
                style="font-size:18px;letter-spacing:6px;text-align:center;font-family:monospace"
                onkeydown="if(event.key==='Enter')qmeDoVerify()">
       </div>
@@ -243,42 +243,42 @@ textarea.inp{resize:vertical;min-height:56px}
 
 <div class="main">
   <div class="tabs">
-    <button id="tabCal"  class="on" onclick="switchTab('cal')">📅 Lịch</button>
-    <button id="tabProj"          onclick="switchTab('proj')">📁 Dự án</button>
+    <button id="tabCal"  class="on" onclick="switchTab('cal')">📅 Calendar</button>
+    <button id="tabProj"          onclick="switchTab('proj')">📁 Projects</button>
   </div>
 
   <!-- ══ CALENDAR TAB ══ -->
   <div id="paneCal">
     <div class="tbar">
       <div class="seg">
-        <button id="vMonth" class="on" onclick="setView('month')">Tháng</button>
-        <button id="vWeek"           onclick="setView('week')">Tuần</button>
-        <button id="vDay"            onclick="setView('day')">Ngày</button>
+        <button id="vMonth" class="on" onclick="setView('month')">Month</button>
+        <button id="vWeek"           onclick="setView('week')">Week</button>
+        <button id="vDay"            onclick="setView('day')">Day</button>
       </div>
       <button class="nav-btn" onclick="shift(-1)">‹</button>
-      <button class="btn btn-lt" onclick="goToday()">Hôm nay</button>
+      <button class="btn btn-lt" onclick="goToday()">Today</button>
       <button class="nav-btn" onclick="shift(1)">›</button>
       <div class="period" id="periodLbl">—</div>
       <div class="gap"></div>
-      <select class="sel" id="fMember" onchange="loadCalendar()"><option value="">Tất cả member</option></select>
-      <select class="sel" id="fProject" onchange="loadCalendar()"><option value="">Tất cả dự án</option></select>
+      <select class="sel" id="fMember" onchange="loadCalendar()"><option value="">All members</option></select>
+      <select class="sel" id="fProject" onchange="loadCalendar()"><option value="">All projects</option></select>
       <select class="sel" id="fStatus" onchange="loadCalendar()">
-        <option value="">Mọi status</option>
+        <option value="">Any status</option>
         <option value="pending">Pending</option>
         <option value="complete">Complete</option>
         <option value="cancel">Cancel</option>
       </select>
     </div>
-    <div id="calArea"><div class="loading"><div class="spin"></div> Đang tải lịch…</div></div>
+    <div id="calArea"><div class="loading"><div class="spin"></div> Loading calendar…</div></div>
     <div id="unsched"></div>
   </div>
 
   <!-- ══ PROJECTS TAB ══ -->
   <div id="paneProj" style="display:none">
     <div class="tbar">
-      <input class="inp" id="pFilter" style="max-width:300px" placeholder="Lọc theo tên dự án / khách hàng…" oninput="renderProjects()">
+      <input class="inp" id="pFilter" style="max-width:300px" placeholder="Filter by project name / client…" oninput="renderProjects()">
       <select class="sel" id="pStatus" onchange="renderProjects()">
-        <option value="">Mọi status</option>
+        <option value="">Any status</option>
         <option value="pending">Pending</option>
         <option value="complete">Complete</option>
         <option value="cancel">Cancel</option>
@@ -286,7 +286,7 @@ textarea.inp{resize:vertical;min-height:56px}
       <div class="gap"></div>
       <button class="btn btn-lt" onclick="loadProjects()">↻ Refresh</button>
     </div>
-    <div id="projArea"><div class="loading"><div class="spin"></div> Đang tải dự án…</div></div>
+    <div id="projArea"><div class="loading"><div class="spin"></div> Loading projects…</div></div>
   </div>
 </div>
 
@@ -294,32 +294,32 @@ textarea.inp{resize:vertical;min-height:56px}
 <div class="mov" id="projDlg" style="display:none" onclick="if(event.target===this)closeProjectDlg()">
   <div class="mdlg">
     <div class="mhd">
-      <strong id="projDlgTitle">＋ Dự án mới</strong>
+      <strong id="projDlgTitle">＋ New Project</strong>
       <button class="mbtn-close" onclick="closeProjectDlg()">✕</button>
     </div>
     <div class="mbody">
       <div class="fld">
-        <label>TÊN DỰ ÁN *</label>
+        <label>PROJECT NAME *</label>
         <input class="inp" id="pfName" placeholder="VD: Coca-Cola Brand Tracking Q3">
       </div>
       <div class="row2">
         <div class="fld">
-          <label>KHÁCH HÀNG / CORPORATE</label>
+          <label>CLIENT / CORPORATE</label>
           <input class="inp" id="pfClient" placeholder="VD: Coca-Cola Vietnam">
         </div>
         <div class="fld">
-          <label>LOẠI HÌNH DỰ ÁN</label>
+          <label>PROJECT TYPE</label>
           <input class="inp" id="pfType" list="typeList" placeholder="VD: Tracking">
           <datalist id="typeList"></datalist>
         </div>
       </div>
       <div class="row3">
         <div class="fld">
-          <label>NGÀY BẮT ĐẦU</label>
+          <label>START DATE</label>
           <input class="inp" id="pfStart" type="date">
         </div>
         <div class="fld">
-          <label>NGÀY KẾT THÚC</label>
+          <label>END DATE</label>
           <input class="inp" id="pfEnd" type="date">
         </div>
         <div class="fld">
@@ -332,23 +332,23 @@ textarea.inp{resize:vertical;min-height:56px}
         </div>
       </div>
       <div class="fld">
-        <label>MEMBER PHỤ TRÁCH</label>
+        <label>ASSIGNED MEMBERS</label>
         <div class="chks" id="pfMembers"></div>
-        <div class="hint">Member được chọn có quyền thêm / sửa / xoá task trong dự án này.</div>
+        <div class="hint">Selected members can add / edit / delete tasks in this project.</div>
       </div>
       <div class="fld">
-        <label>GHI CHÚ</label>
-        <textarea class="inp" id="pfNote" placeholder="Ghi chú thêm về dự án…"></textarea>
+        <label>NOTE</label>
+        <textarea class="inp" id="pfNote" placeholder="Additional notes about the project…"></textarea>
       </div>
       <label class="chk" id="pfScaffoldWrap">
         <input type="checkbox" id="pfScaffold" checked>
-        Tạo sẵn 7 task chuẩn
+        Scaffold the 7 standard tasks
       </label>
     </div>
     <div class="mft">
       <div class="mft-status" id="pfStatusMsg" style="display:none"></div>
-      <button class="btn btn-lt" onclick="closeProjectDlg()">Huỷ</button>
-      <button class="btn btn-suc" id="pfSaveBtn" onclick="saveProject()">Lưu</button>
+      <button class="btn btn-lt" onclick="closeProjectDlg()">Cancel</button>
+      <button class="btn btn-suc" id="pfSaveBtn" onclick="saveProject()">Save</button>
     </div>
   </div>
 </div>
@@ -357,18 +357,18 @@ textarea.inp{resize:vertical;min-height:56px}
 <div class="mov" id="detDlg" style="display:none" onclick="if(event.target===this)closeDetail()">
   <div class="mdlg wide">
     <div class="mhd">
-      <strong id="detTitle">Dự án</strong>
+      <strong id="detTitle">Project</strong>
       <div style="display:flex;gap:8px;align-items:center">
-        <span id="detRo" class="badge-ro" style="display:none">Chỉ xem</span>
-        <button class="btn btn-lt" id="detEditBtn" style="display:none" onclick="editFromDetail()">✎ Sửa dự án</button>
-        <button class="btn btn-dng" id="detDelBtn" style="display:none" onclick="deleteProject()">🗑 Xoá</button>
+        <span id="detRo" class="badge-ro" style="display:none">Read-only</span>
+        <button class="btn btn-lt" id="detEditBtn" style="display:none" onclick="editFromDetail()">✎ Edit project</button>
+        <button class="btn btn-dng" id="detDelBtn" style="display:none" onclick="deleteProject()">🗑 Delete</button>
         <button class="mbtn-close" onclick="closeDetail()">✕</button>
       </div>
     </div>
     <div class="mbody" id="detBody"></div>
     <div class="mft">
       <div class="mft-status" id="detStatusMsg" style="display:none"></div>
-      <button class="btn btn-lt" onclick="closeDetail()">Đóng</button>
+      <button class="btn btn-lt" onclick="closeDetail()">Close</button>
     </div>
   </div>
 </div>
@@ -387,7 +387,7 @@ let DETAIL    = null;      // project currently open in the detail dialog
 let EDITING   = null;      // project being edited in the project dialog (null = create)
 let _csrfToken = null;
 
-const DOW = ['T2','T3','T4','T5','T6','T7','CN'];
+const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const STATUS_LABEL = {pending:'Pending', complete:'Complete', cancel:'Cancel'};
 
 // ════════════════════════════════════════════════════
@@ -413,15 +413,18 @@ function addMonths(s, n){
 function fmtDM(s){ const d = parseISO(s); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`; }
 function fmtFull(s){ const d = parseISO(s); return `${fmtDM(s)}/${d.getFullYear()}`; }
 
+const MONTH_NAMES = ['January','February','March','April','May','June',
+  'July','August','September','October','November','December'];
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
 function periodLabel(){
-  if (VIEW === 'month'){ const d = parseISO(ANCHOR); return `Tháng ${d.getMonth()+1}, ${d.getFullYear()}`; }
+  if (VIEW === 'month'){ const d = parseISO(ANCHOR); return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`; }
   if (VIEW === 'week'){
     const d = parseISO(ANCHOR);
     const mon = addDays(ANCHOR, -((d.getDay()+6)%7));
     return `${fmtDM(mon)} – ${fmtFull(addDays(mon,6))}`;
   }
-  const names = ['Chủ nhật','Thứ hai','Thứ ba','Thứ tư','Thứ năm','Thứ sáu','Thứ bảy'];
-  return `${names[parseISO(ANCHOR).getDay()]}, ${fmtFull(ANCHOR)}`;
+  return `${DAY_NAMES[parseISO(ANCHOR).getDay()]}, ${fmtFull(ANCHOR)}`;
 }
 
 // ════════════════════════════════════════════════════
@@ -480,7 +483,7 @@ async function loadProjects(){
   }
   const sel = document.getElementById('fProject');
   const keep = sel.value;
-  sel.innerHTML = '<option value="">Tất cả dự án</option>';
+  sel.innerHTML = '<option value="">All projects</option>';
   PROJECTS.forEach(p => sel.add(new Option(p.name, p.id)));
   sel.value = keep;
   renderProjects();
@@ -488,11 +491,11 @@ async function loadProjects(){
 
 function showCalError(msg){ document.getElementById('calArea').innerHTML = errBox(msg); }
 function errBox(msg){
-  return `<div class="empty"><div class="empty-ico">⚠️</div><h3>Không tải được dữ liệu</h3><p>${esc(msg)}</p></div>`;
+  return `<div class="empty"><div class="empty-ico">⚠️</div><h3>Couldn't load data</h3><p>${esc(msg)}</p></div>`;
 }
 function showDeny(msg){
   document.getElementById('denyMsg').textContent =
-    msg || 'Tài khoản của bạn không nằm trong team workload.';
+    msg || 'Your account is not on the workload team.';
   document.getElementById('denyGate').style.display = 'flex';
 }
 
@@ -538,9 +541,9 @@ function renderMonth(){
     const rest  = list.length - shown.length;
     cells += `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}">
       <div class="cell-n"><span>${dd.getDate()}</span>
-        <button class="cell-add" title="Xem ngày này" onclick="jumpToDay('${d}')">＋</button></div>
+        <button class="cell-add" title="View this day" onclick="jumpToDay('${d}')">＋</button></div>
       ${shown.map(t => chip(t)).join('')}
-      ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} task khác</span>` : ''}
+      ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}
     </div>`;
   }
   document.getElementById('calArea').innerHTML = `<div class="cal">
@@ -557,7 +560,7 @@ function renderWeek(){
   // One row per member, plus a catch-all row so unassigned work is visible
   // rather than silently missing from the week.
   const rows = META.members.map(m => ({key: m.email, label: m.name, sub: 'member'}));
-  rows.push({key: '', label: 'Chưa gán', sub: 'unassigned'});
+  rows.push({key: '', label: 'Unassigned', sub: 'unassigned'});
 
   const body = rows.map(r => {
     const tds = days.map(d => {
@@ -580,7 +583,7 @@ function renderDay(){
   const list = CAL.tasks || [];
   if (!list.length){
     document.getElementById('calArea').innerHTML =
-      `<div class="empty"><div class="empty-ico">☕</div><h3>Không có task nào</h3><p>Ngày ${fmtFull(ANCHOR)} chưa có task nào được lên lịch.</p></div>`;
+      `<div class="empty"><div class="empty-ico">☕</div><h3>No tasks</h3><p>No tasks scheduled for ${fmtFull(ANCHOR)}.</p></div>`;
     return;
   }
   const groups = {};
@@ -593,7 +596,7 @@ function renderDay(){
         ${g.client ? `<span class="pcard-sub">${esc(g.client)}</span>` : ''}
         ${g.type ? `<span class="ttag">${esc(g.type)}</span>` : ''}
         <div class="gap"></div>
-        <button class="btn btn-lt" style="font-size:11px" onclick="openDetail('${pid}')">Mở dự án →</button>
+        <button class="btn btn-lt" style="font-size:11px" onclick="openDetail('${pid}')">Open project →</button>
       </div>
       ${g.tasks.map(t => `
         <div class="day-row" onclick="openDetail('${t.project_id}','${t.id}')">
@@ -610,8 +613,8 @@ function renderUnscheduled(){
   if (!list.length){ box.innerHTML = ''; return; }
   box.innerHTML = `<div class="day-grp" style="margin-top:14px">
     <div class="day-grp-hd">
-      <strong>🗓 Chưa lên lịch</strong>
-      <span class="pcard-sub">${list.length} task chưa có ngày due — mở dự án để đặt ngày</span>
+      <strong>🗓 Unscheduled</strong>
+      <span class="pcard-sub">${list.length} task(s) with no due date — open the project to set one</span>
     </div>
     <div style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px">
       ${list.map(t => `<span class="chip chip-${t.status}" style="display:inline-block"
@@ -634,11 +637,11 @@ function renderProjects(){
 
   if (!list.length){
     document.getElementById('projArea').innerHTML = PROJECTS.length
-      ? `<div class="empty"><div class="empty-ico">🔍</div><h3>Không có dự án khớp bộ lọc</h3></div>`
-      : `<div class="empty"><div class="empty-ico">📁</div><h3>Chưa có dự án nào</h3><p>${
+      ? `<div class="empty"><div class="empty-ico">🔍</div><h3>No projects match the filter</h3></div>`
+      : `<div class="empty"><div class="empty-ico">📁</div><h3>No projects yet</h3><p>${
           META && META.me.is_admin
-            ? 'Bấm <strong>Dự án mới</strong> để tạo dự án đầu tiên và giao cho member.'
-            : 'Manager chưa tạo dự án nào.'}</p></div>`;
+            ? 'Click <strong>New Project</strong> to create the first project and assign it to a member.'
+            : 'The manager hasn\'t created any projects yet.'}</p></div>`;
     return;
   }
 
@@ -659,13 +662,13 @@ function projCard(p){
     ${dates ? `<div class="pcard-sub">📅 ${dates}</div>` : ''}
     <div class="pcard-mem">${p.member_names.length
       ? p.member_names.map(n => `<span class="avt">${esc(n)}</span>`).join('')
-      : '<span class="avt" style="background:#fce8e6;color:#c0392b">chưa giao</span>'}</div>
+      : '<span class="avt" style="background:#fce8e6;color:#c0392b">unassigned</span>'}</div>
     <div class="bar">
       <i class="b-complete" style="width:${pct('complete')}%"></i>
       <i class="b-pending"  style="width:${pct('pending')}%"></i>
       <i class="b-cancel"   style="width:${pct('cancel')}%"></i>
     </div>
-    <div class="pcard-sub">${c.complete}/${total} task hoàn thành${c.cancel ? ` · ${c.cancel} huỷ` : ''}</div>
+    <div class="pcard-sub">${c.complete}/${total} tasks complete${c.cancel ? ` · ${c.cancel} cancelled` : ''}</div>
   </div>`;
 }
 
@@ -699,7 +702,7 @@ function switchTab(t){
 // ════════════════════════════════════════════════════
 function openProjectDlg(project){
   EDITING = project;
-  document.getElementById('projDlgTitle').textContent = project ? '✎ Sửa dự án' : '＋ Dự án mới';
+  document.getElementById('projDlgTitle').textContent = project ? '✎ Edit project' : '＋ New Project';
   document.getElementById('pfName').value   = project ? project.name : '';
   document.getElementById('pfClient').value = project ? project.client : '';
   document.getElementById('pfType').value   = project ? project.project_type : '';
@@ -732,10 +735,10 @@ async function saveProject(){
     note:         document.getElementById('pfNote').value.trim(),
     members:      [...document.querySelectorAll('#pfMembers input:checked')].map(c => c.value),
   };
-  if (!body.name) return setMsg('pfStatusMsg', 'Tên dự án là bắt buộc', 'err');
+  if (!body.name) return setMsg('pfStatusMsg', 'Project name is required', 'err');
 
   const btn = document.getElementById('pfSaveBtn');
-  btn.disabled = true; btn.textContent = 'Đang lưu…';
+  btn.disabled = true; btn.textContent = 'Saving…';
   try {
     if (EDITING){
       await api(`/api/workload/projects/${EDITING.id}`, {method:'PATCH', body});
@@ -751,13 +754,13 @@ async function saveProject(){
   } catch(e){
     setMsg('pfStatusMsg', e.message, 'err');
   } finally {
-    btn.disabled = false; btn.textContent = 'Lưu';
+    btn.disabled = false; btn.textContent = 'Save';
   }
 }
 
 async function deleteProject(){
   if (!DETAIL) return;
-  if (!confirm(`Xoá dự án "${DETAIL.name}" và toàn bộ ${DETAIL.task_total} task của nó?\nKhông thể hoàn tác.`)) return;
+  if (!confirm(`Delete project "${DETAIL.name}" and all ${DETAIL.task_total} of its tasks?\nThis cannot be undone.`)) return;
   try {
     await api(`/api/workload/projects/${DETAIL.id}`, {method:'DELETE'});
     closeDetail();
@@ -773,7 +776,7 @@ function editFromDetail(){ if (DETAIL) openProjectDlg(DETAIL); }
 // ════════════════════════════════════════════════════
 async function openDetail(projectId, focusTaskId){
   document.getElementById('detDlg').style.display = 'flex';
-  document.getElementById('detBody').innerHTML = '<div class="loading"><div class="spin"></div> Đang tải…</div>';
+  document.getElementById('detBody').innerHTML = '<div class="loading"><div class="spin"></div> Loading…</div>';
   setMsg('detStatusMsg', '');
   try {
     DETAIL = await api(`/api/workload/projects/${projectId}`);
@@ -793,7 +796,7 @@ function renderDetail(focusTaskId){
   document.getElementById('detEditBtn').style.display = isAdmin ? '' : 'none';
   document.getElementById('detDelBtn').style.display  = isAdmin ? '' : 'none';
 
-  const memOpts = ['<option value="">— chưa gán —</option>']
+  const memOpts = ['<option value="">— unassigned —</option>']
     .concat(META.members.map(m => `<option value="${esc(m.email)}">${esc(m.name)}</option>`)).join('');
   const stOpts = Object.entries(STATUS_LABEL)
     .map(([k,v]) => `<option value="${k}">${v}</option>`).join('');
@@ -810,8 +813,8 @@ function renderDetail(focusTaskId){
       <td style="width:115px"><select ${dis} onchange="patchTask('${t.id}','status',this.value)">
         ${stOpts.replace(`value="${t.status}"`, `value="${t.status}" selected`)}
       </select></td>
-      <td><input value="${esc(t.note)}" placeholder="ghi chú…" ${dis} onchange="patchTask('${t.id}','note',this.value)"></td>
-      <td style="width:28px">${rw ? `<button class="del" title="Xoá task" onclick="removeTask('${t.id}')">✕</button>` : ''}</td>
+      <td><input value="${esc(t.note)}" placeholder="note…" ${dis} onchange="patchTask('${t.id}','note',this.value)"></td>
+      <td style="width:28px">${rw ? `<button class="del" title="Delete task" onclick="removeTask('${t.id}')">✕</button>` : ''}</td>
     </tr>`).join('');
 
   const dates = [p.start_date && fmtFull(p.start_date), p.end_date && fmtFull(p.end_date)].filter(Boolean).join(' → ');
@@ -825,20 +828,20 @@ function renderDetail(focusTaskId){
     </div>
     <div class="pcard-mem">${p.member_names.length
       ? p.member_names.map(n => `<span class="avt">${esc(n)}</span>`).join('')
-      : '<span class="avt" style="background:#fce8e6;color:#c0392b">chưa giao cho ai</span>'}</div>
+      : '<span class="avt" style="background:#fce8e6;color:#c0392b">not assigned to anyone</span>'}</div>
     ${p.note ? `<div class="hint" style="background:#f8f9fb;padding:9px 11px;border-radius:7px;white-space:pre-wrap">${esc(p.note)}</div>` : ''}
-    ${rw ? '' : '<div class="hint">Bạn không nằm trong dự án này nên chỉ có thể xem. Liên hệ manager để được giao.</div>'}
+    ${rw ? '' : '<div class="hint">You\'re not on this project, so you can only view it. Contact the manager to be assigned.</div>'}
     <table class="ttbl">
-      <thead><tr><th>TASK</th><th>PHỤ TRÁCH</th><th>NGÀY</th><th>STATUS</th><th>GHI CHÚ</th><th></th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="6" style="padding:16px;text-align:center;color:#bbb">Chưa có task nào</td></tr>'}</tbody>
+      <thead><tr><th>TASK</th><th>ASSIGNEE</th><th>DATE</th><th>STATUS</th><th>NOTE</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="6" style="padding:16px;text-align:center;color:#bbb">No tasks yet</td></tr>'}</tbody>
     </table>
     ${rw ? `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <input class="inp" id="newTaskTitle" style="flex:1;min-width:200px" list="taskTpl" placeholder="Tên task mới…"
+      <input class="inp" id="newTaskTitle" style="flex:1;min-width:200px" list="taskTpl" placeholder="New task title…"
              onkeydown="if(event.key==='Enter')addTask()">
       <datalist id="taskTpl">${META.default_tasks.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
       <input class="inp" id="newTaskDue" type="date" style="width:150px">
       <select class="inp" id="newTaskWho" style="width:150px">${memOpts}</select>
-      <button class="btn btn-suc" onclick="addTask()">＋ Thêm task</button>
+      <button class="btn btn-suc" onclick="addTask()">＋ Add task</button>
     </div>` : ''}`;
 
   if (focusTaskId){
@@ -854,7 +857,7 @@ function renderDetail(focusTaskId){
 async function patchTask(taskId, field, value){
   try {
     await api(`/api/workload/tasks/${taskId}`, {method:'PATCH', body:{[field]: value}});
-    setMsg('detStatusMsg', '✓ Đã lưu', 'ok');
+    setMsg('detStatusMsg', '✓ Saved', 'ok');
     await refreshAfterTaskChange();
   } catch(e){
     setMsg('detStatusMsg', e.message, 'err');
@@ -871,17 +874,17 @@ async function addTask(){
       assignee: document.getElementById('newTaskWho').value,
       due_date: document.getElementById('newTaskDue').value || null,
     }});
-    setMsg('detStatusMsg', '✓ Đã thêm task', 'ok');
+    setMsg('detStatusMsg', '✓ Task added', 'ok');
     await refreshAfterTaskChange();
     document.getElementById('newTaskTitle').focus();
   } catch(e){ setMsg('detStatusMsg', e.message, 'err'); }
 }
 
 async function removeTask(taskId){
-  if (!confirm('Xoá task này?')) return;
+  if (!confirm('Delete this task?')) return;
   try {
     await api(`/api/workload/tasks/${taskId}`, {method:'DELETE'});
-    setMsg('detStatusMsg', '✓ Đã xoá', 'ok');
+    setMsg('detStatusMsg', '✓ Deleted', 'ok');
     await refreshAfterTaskChange();
   } catch(e){ setMsg('detStatusMsg', e.message, 'err'); }
 }
@@ -927,7 +930,7 @@ async function api(url, {method = 'GET', body} = {}){
     const err = new Error(
       typeof detail === 'string' ? detail
       : Array.isArray(detail)    ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
-      : `Lỗi máy chủ (HTTP ${r.status})`);
+      : `Server error (HTTP ${r.status})`);
     err.status = r.status;
     throw err;
   }

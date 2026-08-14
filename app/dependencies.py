@@ -86,7 +86,7 @@ async def require_workload(email: str = Depends(current_email)) -> str:
     """
     if not is_workload_user(email):
         log.warning("Workload access refused for %s (not on workload roster)", email)
-        raise HTTPException(status_code=403, detail="Tài khoản này không nằm trong team workload")
+        raise HTTPException(status_code=403, detail="This account is not on the workload team")
     return email
 
 
@@ -94,7 +94,7 @@ async def require_workload_admin(email: str = Depends(require_workload)) -> str:
     """Dependency: workload member *and* administrator (creates/assigns projects)."""
     if not is_workload_admin(email):
         log.warning("Workload admin endpoint refused for %s", email)
-        raise HTTPException(status_code=403, detail="Chỉ manager mới được thay đổi dự án")
+        raise HTTPException(status_code=403, detail="Only the manager can change projects")
     return email
 
 

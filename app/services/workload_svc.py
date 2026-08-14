@@ -154,7 +154,7 @@ def _new_id() -> str:
 
 def _check_status(status: str) -> str:
     if status not in STATUSES:
-        raise WorkloadError(f"Status {status!r} không hợp lệ — chỉ nhận: {', '.join(STATUSES)}")
+        raise WorkloadError(f"Status {status!r} is invalid — expected one of {', '.join(STATUSES)}")
     return status
 
 
@@ -165,7 +165,7 @@ def _check_date(value: str | None, field: str) -> str | None:
     try:
         return date.fromisoformat(value).isoformat()
     except ValueError:
-        raise WorkloadError(f"{field} phải là ngày dạng YYYY-MM-DD, nhận được {value!r}")
+        raise WorkloadError(f"{field} must be a YYYY-MM-DD date, got {value!r}")
 
 
 def _check_member(email: str | None, field: str = "assignee") -> str:
@@ -174,7 +174,7 @@ def _check_member(email: str | None, field: str = "assignee") -> str:
     if not e:
         return ""
     if e not in WORKLOAD_MEMBERS:
-        raise WorkloadError(f"{field} {e!r} không nằm trong team workload")
+        raise WorkloadError(f"{field} {e!r} is not a workload member")
     return e
 
 
@@ -258,12 +258,12 @@ def create_project(
 ) -> dict:
     name = (name or "").strip()
     if not name:
-        raise WorkloadError("Tên dự án là bắt buộc")
+        raise WorkloadError("Project name is required")
     _check_status(status)
     start = _check_date(start_date, "start_date")
     end = _check_date(end_date, "end_date")
     if start and end and end < start:
-        raise WorkloadError("Ngày kết thúc không được sớm hơn ngày bắt đầu")
+        raise WorkloadError("end_date must not be earlier than start_date")
     emails = [_check_member(m, "member") for m in (members or [])]
     emails = sorted({e for e in emails if e})
 
@@ -311,7 +311,7 @@ def update_project(project_id: str, fields: dict, members: list[str] | None = No
     if "name" in patch:
         patch["name"] = (patch["name"] or "").strip()
         if not patch["name"]:
-            raise WorkloadError("Tên dự án là bắt buộc")
+            raise WorkloadError("Project name is required")
 
     emails = None
     if members is not None:
@@ -320,14 +320,14 @@ def update_project(project_id: str, fields: dict, members: list[str] | None = No
     with _conn() as con, _tx(con):
         row = con.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
         if row is None:
-            raise WorkloadError("Không tìm thấy dự án")
+            raise WorkloadError("Project not found")
 
         # Range check against the merged result, so patching only one end of the
         # range is still validated against the stored other end.
         start = patch.get("start_date", row["start_date"])
         end = patch.get("end_date", row["end_date"])
         if start and end and end < start:
-            raise WorkloadError("Ngày kết thúc không được sớm hơn ngày bắt đầu")
+            raise WorkloadError("end_date must not be earlier than start_date")
 
         if patch:
             patch["updated_at"] = _now()
@@ -346,7 +346,7 @@ def delete_project(project_id: str) -> None:
     with _conn() as con, _tx(con):
         cur = con.execute("DELETE FROM projects WHERE id = ?", (project_id,))
         if cur.rowcount == 0:
-            raise WorkloadError("Không tìm thấy dự án")
+            raise WorkloadError("Project not found")
 
 
 def project_types() -> list[str]:
@@ -397,7 +397,7 @@ def create_task(
 ) -> dict:
     title = (title or "").strip()
     if not title:
-        raise WorkloadError("Tên task là bắt buộc")
+        raise WorkloadError("Task title is required")
     _check_status(status)
     due = _check_date(due_date, "due_date")
     who = _check_member(assignee)
@@ -406,7 +406,7 @@ def create_task(
     ts = _now()
     with _conn() as con, _tx(con):
         if con.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
-            raise WorkloadError("Không tìm thấy dự án")
+            raise WorkloadError("Project not found")
         nxt = con.execute(
             "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM tasks WHERE project_id = ?",
             (project_id,),
@@ -435,12 +435,12 @@ def update_task(task_id: str, fields: dict) -> dict:
     if "title" in patch:
         patch["title"] = (patch["title"] or "").strip()
         if not patch["title"]:
-            raise WorkloadError("Tên task là bắt buộc")
+            raise WorkloadError("Task title is required")
 
     with _conn() as con, _tx(con):
         row = con.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
-            raise WorkloadError("Không tìm thấy task")
+            raise WorkloadError("Task not found")
         if "status" in patch and patch["status"] != row["status"]:
             # Stamped on the transition into 'complete' and cleared on the way
             # out, so re-opening a task doesn't leave a stale completion time.
@@ -456,7 +456,7 @@ def delete_task(task_id: str) -> None:
     with _conn() as con, _tx(con):
         cur = con.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         if cur.rowcount == 0:
-            raise WorkloadError("Không tìm thấy task")
+            raise WorkloadError("Task not found")
 
 
 def list_tasks(
@@ -521,7 +521,7 @@ def calendar_range(view: str, anchor: str) -> tuple[str, str]:
     try:
         d = date.fromisoformat(anchor)
     except ValueError:
-        raise WorkloadError(f"anchor phải là ngày dạng YYYY-MM-DD, nhận được {anchor!r}")
+        raise WorkloadError(f"anchor must be a YYYY-MM-DD date, got {anchor!r}")
 
     if view == "day":
         return d.isoformat(), d.isoformat()
@@ -532,7 +532,7 @@ def calendar_range(view: str, anchor: str) -> tuple[str, str]:
         first = d.replace(day=1)
         grid_start = first - timedelta(days=first.weekday())
         return grid_start.isoformat(), (grid_start + timedelta(days=41)).isoformat()
-    raise WorkloadError(f"View {view!r} không hợp lệ — chỉ nhận: day, week, month")
+    raise WorkloadError(f"Invalid view {view!r} — expected day, week or month")
 
 
 def calendar(view: str, anchor: str, **filters) -> dict:
