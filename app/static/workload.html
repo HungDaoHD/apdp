@@ -111,7 +111,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .stag-pending{background:#fff8e1;color:#a06800;border:1px solid #ffe082}
 .stag-complete{background:#e6f4ea;color:#1e8449;border:1px solid #b7dfbf}
 .stag-cancel{background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6}
+.stag-ongoing{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9}
 .ttag{font-size:10px;padding:2px 8px;border-radius:5px;background:#e8f0fe;color:#1a5fb4;font-weight:700}
+.pcode{font-size:10px;padding:2px 8px;border-radius:5px;background:#f1f2f4;color:#4a5568;font-weight:700;font-family:monospace;letter-spacing:.3px;white-space:nowrap}
 
 /* ── Empty / loading ── */
 .empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:56px 24px;text-align:center;color:#aaa}
@@ -145,11 +147,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 textarea.inp{resize:vertical;min-height:56px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.row-idname{display:grid;grid-template-columns:170px 1fr;gap:12px}
 .chks{display:flex;flex-wrap:wrap;gap:7px}
 .chk{display:inline-flex;align-items:center;gap:6px;border:1px solid #dde1e7;border-radius:7px;padding:6px 11px;font-size:12px;cursor:pointer;background:white;user-select:none}
 .chk:hover{border-color:#f8b184}
 .chk input{cursor:pointer;accent-color:#f36a17}
 .chk.on{border-color:#f36a17;background:#fff4ee;color:#c05010;font-weight:600}
+
+/* ── Searchable combobox ── */
+.ssel{position:relative}
+.ssel-panel{display:none;position:absolute;top:100%;left:0;right:0;margin-top:4px;background:white;
+  border:1px solid #dde1e7;border-radius:8px;max-height:190px;overflow-y:auto;
+  box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50}
+.ssel-panel.show{display:block}
+.ssel-opt{padding:7px 12px;font-size:12.5px;cursor:pointer;color:#1a1a2e}
+.ssel-opt:hover,.ssel-opt.hi{background:#fff4ee;color:#c05010}
+.ssel-empty{padding:9px 12px;font-size:11.5px;color:#aaa}
+.ssel-add{padding:8px 12px;font-size:12.5px;cursor:pointer;color:#f36a17;font-weight:700;border-top:1px solid #f0f2f5}
+.ssel-add:hover{background:#fff4ee}
 
 /* ── Task table in project dialog ── */
 .ttbl{width:100%;border-collapse:collapse}
@@ -280,8 +295,8 @@ textarea.inp{resize:vertical;min-height:56px}
       <select class="sel" id="pStatus" onchange="renderProjects()">
         <option value="">Any status</option>
         <option value="pending">Pending</option>
+        <option value="ongoing">Ongoing</option>
         <option value="complete">Complete</option>
-        <option value="cancel">Cancel</option>
       </select>
       <div class="gap"></div>
       <button class="btn btn-lt" onclick="loadProjects()">↻ Refresh</button>
@@ -298,37 +313,39 @@ textarea.inp{resize:vertical;min-height:56px}
       <button class="mbtn-close" onclick="closeProjectDlg()">✕</button>
     </div>
     <div class="mbody">
-      <div class="fld">
-        <label>PROJECT NAME *</label>
-        <input class="inp" id="pfName" placeholder="VD: Coca-Cola Brand Tracking Q3">
+      <div class="row-idname">
+        <div class="fld">
+          <label>PROJECT ID *</label>
+          <input class="inp" id="pfCode" placeholder="Format: VN + 4 digits, e.g. VN0001" maxlength="6"
+                 style="font-family:monospace;letter-spacing:1px"
+                 oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <div class="fld">
+          <label>PROJECT NAME *</label>
+          <input class="inp" id="pfName" placeholder="e.g. Retail Brand Tracking Q3">
+        </div>
       </div>
       <div class="row2">
         <div class="fld">
-          <label>CLIENT / CORPORATE</label>
-          <input class="inp" id="pfClient" placeholder="VD: Coca-Cola Vietnam">
+          <label>STATUS</label>
+          <div class="ssel" id="pfStatusWrap">
+            <input class="inp" autocomplete="off" placeholder="Search status…">
+            <div class="ssel-panel"></div>
+          </div>
         </div>
         <div class="fld">
-          <label>PROJECT TYPE</label>
-          <input class="inp" id="pfType" list="typeList" placeholder="VD: Tracking">
-          <datalist id="typeList"></datalist>
+          <label>CLIENT / CORPORATE</label>
+          <div class="ssel" id="pfClientWrap">
+            <input class="inp" autocomplete="off" placeholder="Type or search client…">
+            <div class="ssel-panel"></div>
+          </div>
         </div>
       </div>
-      <div class="row3">
-        <div class="fld">
-          <label>START DATE</label>
-          <input class="inp" id="pfStart" type="date">
-        </div>
-        <div class="fld">
-          <label>END DATE</label>
-          <input class="inp" id="pfEnd" type="date">
-        </div>
-        <div class="fld">
-          <label>STATUS</label>
-          <select class="inp" id="pfStatus">
-            <option value="pending">Pending</option>
-            <option value="complete">Complete</option>
-            <option value="cancel">Cancel</option>
-          </select>
+      <div class="fld">
+        <label>PROJECT TYPE</label>
+        <div class="ssel" id="pfTypeWrap">
+          <input class="inp" autocomplete="off" placeholder="Type or search type…">
+          <div class="ssel-panel"></div>
         </div>
       </div>
       <div class="fld">
@@ -336,14 +353,15 @@ textarea.inp{resize:vertical;min-height:56px}
         <div class="chks" id="pfMembers"></div>
         <div class="hint">Selected members can add / edit / delete tasks in this project.</div>
       </div>
+      <div class="fld" id="pfTasksWrap">
+        <label>STANDARD TASKS</label>
+        <div class="chks" id="pfTasks"></div>
+        <div class="hint">Uncheck any that don't apply to this project.</div>
+      </div>
       <div class="fld">
         <label>NOTE</label>
         <textarea class="inp" id="pfNote" placeholder="Additional notes about the project…"></textarea>
       </div>
-      <label class="chk" id="pfScaffoldWrap">
-        <input type="checkbox" id="pfScaffold" checked>
-        Scaffold the 7 standard tasks
-      </label>
     </div>
     <div class="mft">
       <div class="mft-status" id="pfStatusMsg" style="display:none"></div>
@@ -388,7 +406,8 @@ let EDITING   = null;      // project being edited in the project dialog (null =
 let _csrfToken = null;
 
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-const STATUS_LABEL = {pending:'Pending', complete:'Complete', cancel:'Cancel'};
+const STATUS_LABEL = {pending:'Pending', complete:'Complete', cancel:'Cancel'};          // tasks
+const PROJECT_STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete'}; // projects — a distinct domain
 
 // ════════════════════════════════════════════════════
 // DATE HELPERS
@@ -428,6 +447,79 @@ function periodLabel(){
 }
 
 // ════════════════════════════════════════════════════
+// SEARCHABLE COMBOBOX
+// ════════════════════════════════════════════════════
+// An <input> plus a floating filtered option panel — used for Status,
+// Client and Project Type in the project dialog. `allowCustom` lets the
+// user commit whatever they typed even if it matches no existing option
+// (Client / Project Type can grow); when false (Status, a fixed enum) the
+// wrapper's stored value only ever reflects an option actually picked from
+// the list, so typing garbage can't produce an invalid status.
+function ssInit(wrap, {getOptions, allowCustom, initial}){
+  const input = wrap.querySelector('.inp');
+  const panel = wrap.querySelector('.ssel-panel');
+
+  const labelFor = value => (getOptions().find(o => o.value === value) || {}).label ?? value;
+  const setValue = value => { wrap.dataset.value = value; input.value = labelFor(value); };
+
+  function render(){
+    const q = input.value.trim().toLowerCase();
+    const opts = getOptions();
+    const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
+    let html = filtered.map(o =>
+      `<div class="ssel-opt${o.value === wrap.dataset.value ? ' hi' : ''}" data-value="${esc(o.value)}">${esc(o.label)}</div>`
+    ).join('');
+    if (!filtered.length) html += '<div class="ssel-empty">No matches</div>';
+    if (allowCustom && input.value.trim() && !opts.some(o => o.label.toLowerCase() === q)){
+      html += `<div class="ssel-add" data-value="${esc(input.value.trim())}">＋ Use "${esc(input.value.trim())}"</div>`;
+    }
+    panel.innerHTML = html;
+    panel.classList.add('show');
+  }
+
+  input.addEventListener('focus', render);
+  input.addEventListener('input', () => { if (allowCustom) wrap.dataset.value = input.value.trim(); render(); });
+  input.addEventListener('blur', () => setTimeout(() => {
+    panel.classList.remove('show');
+    // Fixed-enum widgets (Status) can't be left on unmatched free text.
+    if (!allowCustom) setValue(wrap.dataset.value || (getOptions()[0] || {}).value || '');
+  }, 150));
+  panel.addEventListener('mousedown', e => {
+    const opt = e.target.closest('[data-value]');
+    if (!opt) return;
+    e.preventDefault();
+    setValue(opt.dataset.value);
+    panel.classList.remove('show');
+  });
+
+  setValue(initial);
+}
+function ssValue(wrap){ return wrap.dataset.value || ''; }
+
+// ════════════════════════════════════════════════════
+// MEMBER COLORS
+// ════════════════════════════════════════════════════
+// One fixed, distinct color per member — assigned deterministically by
+// position in META.members so it's stable across reloads without needing to
+// store anything server-side. Shows up as a dot on calendar task chips (the
+// specific ask) and, for consistency, on the member avatar tags elsewhere.
+const MEMBER_PALETTE = ['#4285f4','#7c4dff','#26a69a','#ec407a','#8d6e63','#5c6bc0','#66bb6a','#ab47bc'];
+let MEMBER_COLORS = {};
+function buildMemberColors(){
+  MEMBER_COLORS = {};
+  META.members.forEach((m, i) => { MEMBER_COLORS[m.email] = MEMBER_PALETTE[i % MEMBER_PALETTE.length]; });
+}
+function memberColor(email){ return MEMBER_COLORS[email] || '#aeb4bd'; }
+function memberDot(email){
+  return email
+    ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${memberColor(email)};margin-right:4px;flex-shrink:0;vertical-align:middle"></span>`
+    : '';
+}
+function memberAvatar(email, name){
+  return `<span class="avt" style="border-left:3px solid ${memberColor(email)};padding-left:6px">${esc(name)}</span>`;
+}
+
+// ════════════════════════════════════════════════════
 // LOAD
 // ════════════════════════════════════════════════════
 async function boot(){
@@ -440,14 +532,18 @@ async function boot(){
     return showCalError(e.message);
   }
   if (META.me.is_admin) document.getElementById('newProjBtn').style.display = '';
+  buildMemberColors();
 
   const fm = document.getElementById('fMember');
   META.members.forEach(m => fm.add(new Option(m.name + (m.is_admin ? ' (admin)' : ''), m.email)));
-  document.getElementById('typeList').innerHTML =
-    META.project_types.map(t => `<option value="${esc(t)}">`).join('');
   document.getElementById('pfMembers').innerHTML = META.members.map(m => `
-    <label class="chk" onclick="setTimeout(()=>this.classList.toggle('on', this.querySelector('input').checked),0)">
+    <label class="chk" style="border-left:3px solid ${memberColor(m.email)}"
+           onclick="setTimeout(()=>this.classList.toggle('on', this.querySelector('input').checked),0)">
       <input type="checkbox" value="${esc(m.email)}"> ${esc(m.name)}
+    </label>`).join('');
+  document.getElementById('pfTasks').innerHTML = META.default_tasks.map(t => `
+    <label class="chk on" onclick="setTimeout(()=>this.classList.toggle('on', this.querySelector('input').checked),0)">
+      <input type="checkbox" value="${esc(t)}" checked> ${esc(t)}
     </label>`).join('');
 
   await loadProjects();
@@ -512,7 +608,7 @@ function canEdit(projectId){
 function chip(t, withWho = true){
   const who = withWho && t.assignee ? `<b>${esc(t.assignee.split('@')[0])}</b> · ` : '';
   const title = `${t.project_name} — ${t.title}${t.assignee ? ' · ' + t.assignee.split('@')[0] : ''} [${STATUS_LABEL[t.status]}]`;
-  return `<span class="chip chip-${t.status}" title="${esc(title)}" onclick="event.stopPropagation();openDetail('${t.project_id}','${t.id}')">${who}${esc(t.title)}</span>`;
+  return `<span class="chip chip-${t.status}" title="${esc(title)}" onclick="event.stopPropagation();openDetail('${t.project_id}','${t.id}')">${memberDot(t.assignee)}${who}${esc(t.title)}</span>`;
 }
 
 function tasksByDate(){
@@ -567,7 +663,8 @@ function renderWeek(){
       const list = (byDate[d] || []).filter(t => (t.assignee || '') === r.key);
       return `<td class="${d===today?'today-col':''}"><div class="wk-cell">${list.map(t => chip(t,false)).join('')}</div></td>`;
     }).join('');
-    return `<tr><td class="who">${esc(r.label)}<small>${r.sub}</small></td>${tds}</tr>`;
+    const accent = r.key ? `border-left:3px solid ${memberColor(r.key)}` : '';
+    return `<tr><td class="who" style="${accent}">${esc(r.label)}<small>${r.sub}</small></td>${tds}</tr>`;
   }).join('');
 
   const heads = days.map((d,i) =>
@@ -602,7 +699,7 @@ function renderDay(){
         <div class="day-row" onclick="openDetail('${t.project_id}','${t.id}')">
           <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
           <span class="day-row-t">${esc(t.title)}</span>
-          <span class="day-row-w">${t.assignee ? esc(t.assignee.split('@')[0]) : '—'}</span>
+          <span class="day-row-w">${t.assignee ? memberDot(t.assignee) + esc(t.assignee.split('@')[0]) : '—'}</span>
         </div>`).join('')}
     </div>`).join('');
 }
@@ -619,7 +716,7 @@ function renderUnscheduled(){
     <div style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px">
       ${list.map(t => `<span class="chip chip-${t.status}" style="display:inline-block"
         title="${esc(t.project_name)}" onclick="openDetail('${t.project_id}','${t.id}')">
-        ${esc(t.project_name)} · ${esc(t.title)}</span>`).join('')}
+        ${memberDot(t.assignee)}${esc(t.project_name)} · ${esc(t.title)}</span>`).join('')}
     </div></div>`;
 }
 
@@ -652,16 +749,16 @@ function renderProjects(){
 function projCard(p){
   const c = p.task_counts, total = p.task_total || 0;
   const pct = k => total ? (c[k] / total * 100) : 0;
-  const dates = [p.start_date && fmtFull(p.start_date), p.end_date && fmtFull(p.end_date)].filter(Boolean).join(' → ');
   return `<div class="pcard" onclick="openDetail('${p.id}')">
     <div class="pcard-top">
+      ${p.project_code ? `<span class="pcode">${esc(p.project_code)}</span>` : ''}
       <div class="pcard-title">${esc(p.name)}</div>
-      <span class="stag stag-${p.status}">${STATUS_LABEL[p.status]}</span>
+      <span class="stag stag-${p.status}">${PROJECT_STATUS_LABEL[p.status]}</span>
     </div>
     <div class="pcard-sub">${esc(p.client || '—')}${p.project_type ? ' · ' : ''}${p.project_type ? `<span class="ttag">${esc(p.project_type)}</span>` : ''}</div>
-    ${dates ? `<div class="pcard-sub">📅 ${dates}</div>` : ''}
-    <div class="pcard-mem">${p.member_names.length
-      ? p.member_names.map(n => `<span class="avt">${esc(n)}</span>`).join('')
+    <div class="pcard-sub">📅 Created ${fmtFull(p.created_at.slice(0, 10))}</div>
+    <div class="pcard-mem">${p.members.length
+      ? p.members.map((email,i) => memberAvatar(email, p.member_names[i])).join('')
       : '<span class="avt" style="background:#fce8e6;color:#c0392b">unassigned</span>'}</div>
     <div class="bar">
       <i class="b-complete" style="width:${pct('complete')}%"></i>
@@ -703,39 +800,58 @@ function switchTab(t){
 function openProjectDlg(project){
   EDITING = project;
   document.getElementById('projDlgTitle').textContent = project ? '✎ Edit project' : '＋ New Project';
-  document.getElementById('pfName').value   = project ? project.name : '';
-  document.getElementById('pfClient').value = project ? project.client : '';
-  document.getElementById('pfType').value   = project ? project.project_type : '';
-  document.getElementById('pfStart').value  = project ? (project.start_date || '') : '';
-  document.getElementById('pfEnd').value    = project ? (project.end_date   || '') : '';
-  document.getElementById('pfStatus').value = project ? project.status : 'pending';
-  document.getElementById('pfNote').value   = project ? project.note : '';
+  document.getElementById('pfCode').value = project ? (project.project_code || '') : '';
+  document.getElementById('pfName').value = project ? project.name : '';
+  document.getElementById('pfNote').value = project ? project.note : '';
+
+  ssInit(document.getElementById('pfStatusWrap'), {
+    getOptions: () => Object.entries(PROJECT_STATUS_LABEL).map(([value, label]) => ({value, label})),
+    allowCustom: false,
+    initial: project ? project.status : 'pending',
+  });
+  ssInit(document.getElementById('pfClientWrap'), {
+    getOptions: () => META.clients.map(c => ({value: c, label: c})),
+    allowCustom: true,
+    initial: project ? project.client : '',
+  });
+  ssInit(document.getElementById('pfTypeWrap'), {
+    getOptions: () => META.project_types.map(t => ({value: t, label: t})),
+    allowCustom: true,
+    initial: project ? project.project_type : '',
+  });
+
   document.querySelectorAll('#pfMembers input').forEach(cb => {
     cb.checked = !!project && project.members.includes(cb.value);
     cb.closest('.chk').classList.toggle('on', cb.checked);
   });
-  // The 7 standard tasks are only scaffolded at creation time; on an edit the
-  // project already has its task list and re-adding them would duplicate it.
-  document.getElementById('pfScaffoldWrap').style.display = project ? 'none' : '';
-  document.getElementById('pfScaffold').checked = true;
+  // The 7 standard tasks are only offered at creation time; on an edit the
+  // project already has its own task list.
+  document.getElementById('pfTasksWrap').style.display = project ? 'none' : '';
+  document.querySelectorAll('#pfTasks input').forEach(cb => {
+    cb.checked = true;
+    cb.closest('.chk').classList.add('on');
+  });
   setMsg('pfStatusMsg', '');
   document.getElementById('projDlg').style.display = 'flex';
-  setTimeout(() => document.getElementById('pfName').focus(), 50);
+  setTimeout(() => document.getElementById('pfCode').focus(), 50);
 }
 function closeProjectDlg(){ document.getElementById('projDlg').style.display = 'none'; EDITING = null; }
 
+const _PROJECT_CODE_RE = /^VN\d{4}$/;
+
 async function saveProject(){
+  const code = document.getElementById('pfCode').value.trim().toUpperCase();
   const body = {
+    project_code: code,
     name:         document.getElementById('pfName').value.trim(),
-    client:       document.getElementById('pfClient').value.trim(),
-    project_type: document.getElementById('pfType').value.trim(),
-    status:       document.getElementById('pfStatus').value,
-    start_date:   document.getElementById('pfStart').value || null,
-    end_date:     document.getElementById('pfEnd').value   || null,
+    client:       ssValue(document.getElementById('pfClientWrap')),
+    project_type: ssValue(document.getElementById('pfTypeWrap')),
+    status:       ssValue(document.getElementById('pfStatusWrap')),
     note:         document.getElementById('pfNote').value.trim(),
     members:      [...document.querySelectorAll('#pfMembers input:checked')].map(c => c.value),
   };
   if (!body.name) return setMsg('pfStatusMsg', 'Project name is required', 'err');
+  if (!_PROJECT_CODE_RE.test(code)) return setMsg('pfStatusMsg', 'Project ID must be VN followed by 4 digits, e.g. VN0001', 'err');
 
   const btn = document.getElementById('pfSaveBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
@@ -743,7 +859,7 @@ async function saveProject(){
     if (EDITING){
       await api(`/api/workload/projects/${EDITING.id}`, {method:'PATCH', body});
     } else {
-      body.scaffold_default_tasks = document.getElementById('pfScaffold').checked;
+      body.tasks = [...document.querySelectorAll('#pfTasks input:checked')].map(c => c.value);
       await api('/api/workload/projects', {method:'POST', body});
     }
     const reopen = EDITING ? EDITING.id : null;
@@ -791,7 +907,7 @@ function closeDetail(){ document.getElementById('detDlg').style.display = 'none'
 function renderDetail(focusTaskId){
   const p = DETAIL, rw = p.can_edit_tasks;
   const isAdmin = META.me.is_admin;
-  document.getElementById('detTitle').textContent = p.name;
+  document.getElementById('detTitle').textContent = (p.project_code ? p.project_code + ' — ' : '') + p.name;
   document.getElementById('detRo').style.display      = rw ? 'none' : '';
   document.getElementById('detEditBtn').style.display = isAdmin ? '' : 'none';
   document.getElementById('detDelBtn').style.display  = isAdmin ? '' : 'none';
@@ -817,17 +933,15 @@ function renderDetail(focusTaskId){
       <td style="width:28px">${rw ? `<button class="del" title="Delete task" onclick="removeTask('${t.id}')">✕</button>` : ''}</td>
     </tr>`).join('');
 
-  const dates = [p.start_date && fmtFull(p.start_date), p.end_date && fmtFull(p.end_date)].filter(Boolean).join(' → ');
-
   document.getElementById('detBody').innerHTML = `
     <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
-      <span class="stag stag-${p.status}">${STATUS_LABEL[p.status]}</span>
+      <span class="stag stag-${p.status}">${PROJECT_STATUS_LABEL[p.status]}</span>
       ${p.project_type ? `<span class="ttag">${esc(p.project_type)}</span>` : ''}
       ${p.client ? `<span class="pcard-sub">🏢 ${esc(p.client)}</span>` : ''}
-      ${dates ? `<span class="pcard-sub">📅 ${dates}</span>` : ''}
+      <span class="pcard-sub">📅 Created ${fmtFull(p.created_at.slice(0, 10))}</span>
     </div>
-    <div class="pcard-mem">${p.member_names.length
-      ? p.member_names.map(n => `<span class="avt">${esc(n)}</span>`).join('')
+    <div class="pcard-mem">${p.members.length
+      ? p.members.map((email,i) => memberAvatar(email, p.member_names[i])).join('')
       : '<span class="avt" style="background:#fce8e6;color:#c0392b">not assigned to anyone</span>'}</div>
     ${p.note ? `<div class="hint" style="background:#f8f9fb;padding:9px 11px;border-radius:7px;white-space:pre-wrap">${esc(p.note)}</div>` : ''}
     ${rw ? '' : '<div class="hint">You\'re not on this project, so you can only view it. Contact the manager to be assigned.</div>'}

@@ -14,6 +14,7 @@ would be circular — same arrangement as `authz.py`.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -22,6 +23,10 @@ from pathlib import Path
 from typing import Iterator
 
 from services.authz import WORKLOAD_MEMBERS, is_workload_admin
+
+# VN + 4 digits, e.g. VN0001 — the human-facing project identifier, distinct
+# from the internal `id` primary key used in URLs and joins.
+_PROJECT_CODE_RE = re.compile(r"^VN\d{4}$")
 
 # The seven tasks that make up a standard project here. Used to scaffold a new
 # project so nobody has to retype them; entirely optional, and any project can
@@ -43,11 +48,17 @@ DEFAULT_PROJECT_TYPES: tuple[str, ...] = (
     "U&A", "CLT", "HUT", "Tracking", "Ad-hoc", "Brand Health", "Concept Test",
 )
 
+# Task status — unchanged since the original spec (criterion 9).
 STATUSES: tuple[str, ...] = ("pending", "complete", "cancel")
+
+# Project status is a separate domain from task status: a project can be
+# "ongoing" while individual tasks under it are pending/complete/cancel.
+PROJECT_STATUSES: tuple[str, ...] = ("pending", "ongoing", "complete")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
     id           TEXT PRIMARY KEY,
+    project_code TEXT,
     name         TEXT NOT NULL,
     client       TEXT NOT NULL DEFAULT '',
     project_type TEXT NOT NULL DEFAULT '',
@@ -137,9 +148,20 @@ def _tx(con: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 
 
 def init_db() -> None:
-    """Create the schema if absent. Safe to call on every startup."""
+    """Create the schema if absent, and migrate older databases. Safe to call
+    on every startup."""
     with _conn() as con:
         con.executescript(_SCHEMA)
+        # CREATE TABLE IF NOT EXISTS above is a no-op against a database that
+        # already has a `projects` table from before project_code existed —
+        # add the column by hand so upgrading doesn't require wiping the DB.
+        # The index is created afterwards either way, once the column is
+        # guaranteed to exist — indexing it inside _SCHEMA would run before
+        # this ALTER TABLE and fail on exactly that older database.
+        cols = {r["name"] for r in con.execute("PRAGMA table_info(projects)")}
+        if "project_code" not in cols:
+            con.execute("ALTER TABLE projects ADD COLUMN project_code TEXT")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_projects_code ON projects(project_code)")
 
 
 def _now() -> str:
@@ -152,9 +174,9 @@ def _new_id() -> str:
 
 # ── Validation ────────────────────────────────────────────────────────────────
 
-def _check_status(status: str) -> str:
-    if status not in STATUSES:
-        raise WorkloadError(f"Status {status!r} is invalid — expected one of {', '.join(STATUSES)}")
+def _check_status(status: str, allowed: tuple[str, ...] = STATUSES) -> str:
+    if status not in allowed:
+        raise WorkloadError(f"Status {status!r} is invalid — expected one of {', '.join(allowed)}")
     return status
 
 
@@ -176,6 +198,14 @@ def _check_member(email: str | None, field: str = "assignee") -> str:
     if e not in WORKLOAD_MEMBERS:
         raise WorkloadError(f"{field} {e!r} is not a workload member")
     return e
+
+
+def _check_project_code(value: str) -> str:
+    """Normalise to uppercase, then require VN + 4 digits (e.g. VN0001)."""
+    v = (value or "").strip().upper()
+    if not _PROJECT_CODE_RE.match(v):
+        raise WorkloadError(f"Project ID must be VN followed by 4 digits (e.g. VN0001), got {value!r}")
+    return v
 
 
 # ── Projects ──────────────────────────────────────────────────────────────────
@@ -221,9 +251,7 @@ def _project_rows_to_dicts(con: sqlite3.Connection, rows: list[sqlite3.Row]) -> 
 def list_projects() -> list[dict]:
     """Every project, newest first. Visible to all workload members (criterion 5)."""
     with _conn() as con:
-        rows = con.execute(
-            "SELECT * FROM projects ORDER BY COALESCE(start_date, '9999') DESC, created_at DESC"
-        ).fetchall()
+        rows = con.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
         return _project_rows_to_dicts(con, rows)
 
 
@@ -245,54 +273,57 @@ def get_project(project_id: str) -> dict | None:
 
 def create_project(
     *,
+    project_code: str,
     name: str,
     client: str = "",
     project_type: str = "",
     status: str = "pending",
-    start_date: str | None = None,
-    end_date: str | None = None,
     note: str = "",
     members: list[str] | None = None,
-    scaffold_default_tasks: bool = True,
+    tasks: list[str] | None = None,
     created_by: str = "",
 ) -> dict:
+    """Create a project. *tasks* is the exact list of task titles to seed —
+    the UI offers the 7 standard ones as pre-checked boxes so the creator can
+    drop any that don't apply; omitting the argument entirely (rather than
+    passing []) falls back to all 7, for callers other than that dialog."""
     name = (name or "").strip()
     if not name:
         raise WorkloadError("Project name is required")
-    _check_status(status)
-    start = _check_date(start_date, "start_date")
-    end = _check_date(end_date, "end_date")
-    if start and end and end < start:
-        raise WorkloadError("end_date must not be earlier than start_date")
+    code = _check_project_code(project_code)
+    _check_status(status, PROJECT_STATUSES)
     emails = [_check_member(m, "member") for m in (members or [])]
     emails = sorted({e for e in emails if e})
+    task_titles = [t.strip() for t in (DEFAULT_TASKS if tasks is None else tasks) if t and t.strip()]
 
     pid = _new_id()
     ts = _now()
     with _conn() as con, _tx(con):
+        if con.execute("SELECT 1 FROM projects WHERE project_code = ?", (code,)).fetchone():
+            raise WorkloadError(f"Project ID {code} is already in use")
         con.execute(
-            "INSERT INTO projects (id, name, client, project_type, status, start_date, end_date,"
+            "INSERT INTO projects (id, project_code, name, client, project_type, status,"
             " note, created_by, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (pid, name, client.strip(), project_type.strip(), status, start, end,
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (pid, code, name, client.strip(), project_type.strip(), status,
              note.strip(), created_by, ts, ts),
         )
         con.executemany(
             "INSERT INTO project_members (project_id, email) VALUES (?,?)",
             [(pid, e) for e in emails],
         )
-        if scaffold_default_tasks:
+        if task_titles:
             con.executemany(
                 "INSERT INTO tasks (id, project_id, title, assignee, due_date, status, note,"
                 " sort_order, created_by, created_at, updated_at)"
                 " VALUES (?,?,?,'',NULL,'pending','',?,?,?,?)",
                 [(_new_id(), pid, title, i, created_by, ts, ts)
-                 for i, title in enumerate(DEFAULT_TASKS)],
+                 for i, title in enumerate(task_titles)],
             )
     return get_project(pid)  # type: ignore[return-value]
 
 
-_PROJECT_FIELDS = {"name", "client", "project_type", "status", "start_date", "end_date", "note"}
+_PROJECT_FIELDS = {"project_code", "name", "client", "project_type", "status", "note"}
 
 
 def update_project(project_id: str, fields: dict, members: list[str] | None = None) -> dict:
@@ -303,11 +334,9 @@ def update_project(project_id: str, fields: dict, members: list[str] | None = No
     """
     patch = {k: v for k, v in fields.items() if k in _PROJECT_FIELDS}
     if "status" in patch:
-        _check_status(patch["status"])
-    if "start_date" in patch:
-        patch["start_date"] = _check_date(patch["start_date"], "start_date")
-    if "end_date" in patch:
-        patch["end_date"] = _check_date(patch["end_date"], "end_date")
+        _check_status(patch["status"], PROJECT_STATUSES)
+    if "project_code" in patch:
+        patch["project_code"] = _check_project_code(patch["project_code"])
     if "name" in patch:
         patch["name"] = (patch["name"] or "").strip()
         if not patch["name"]:
@@ -322,12 +351,13 @@ def update_project(project_id: str, fields: dict, members: list[str] | None = No
         if row is None:
             raise WorkloadError("Project not found")
 
-        # Range check against the merged result, so patching only one end of the
-        # range is still validated against the stored other end.
-        start = patch.get("start_date", row["start_date"])
-        end = patch.get("end_date", row["end_date"])
-        if start and end and end < start:
-            raise WorkloadError("end_date must not be earlier than start_date")
+        if "project_code" in patch:
+            dupe = con.execute(
+                "SELECT 1 FROM projects WHERE project_code = ? AND id <> ?",
+                (patch["project_code"], project_id),
+            ).fetchone()
+            if dupe:
+                raise WorkloadError(f"Project ID {patch['project_code']} is already in use")
 
         if patch:
             patch["updated_at"] = _now()
@@ -357,6 +387,14 @@ def project_types() -> list[str]:
             con.execute("SELECT DISTINCT project_type FROM projects WHERE project_type <> ''")
         }
     return [*DEFAULT_PROJECT_TYPES, *sorted(used - set(DEFAULT_PROJECT_TYPES))]
+
+
+def clients() -> list[str]:
+    """Every client/corporate name used so far, for the combobox — no fixed
+    suggestions here since, unlike project types, there's no sensible default list."""
+    with _conn() as con:
+        rows = con.execute("SELECT DISTINCT client FROM projects WHERE client <> '' ORDER BY client")
+        return [r["client"] for r in rows]
 
 
 # ── Permissions ───────────────────────────────────────────────────────────────

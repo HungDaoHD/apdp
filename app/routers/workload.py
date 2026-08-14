@@ -21,22 +21,22 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workload", tags=["workload"])
 
-Status = Literal["pending", "complete", "cancel"]
+Status = Literal["pending", "complete", "cancel"]          # tasks
+ProjectStatus = Literal["pending", "ongoing", "complete"]   # projects — a distinct domain
 View = Literal["month", "week", "day"]
 
 
 # ── Request bodies ────────────────────────────────────────────────────────────
 
 class ProjectCreate(BaseModel):
+    project_code: str = Field(min_length=1, max_length=20, description="VN + 4 digits, e.g. VN0001")
     name:         str = Field(min_length=1, max_length=200)
     client:       str = Field(default="", max_length=200)
     project_type: str = Field(default="", max_length=100)
-    status:       Status = "pending"
-    start_date:   str | None = None
-    end_date:     str | None = None
+    status:       ProjectStatus = "pending"
     note:         str = Field(default="", max_length=2000)
     members:      list[str] = Field(default_factory=list, max_length=50)
-    scaffold_default_tasks: bool = True
+    tasks:        list[str] = Field(default_factory=lambda: list(workload_svc.DEFAULT_TASKS), max_length=20)
 
 
 class ProjectUpdate(BaseModel):
@@ -44,12 +44,11 @@ class ProjectUpdate(BaseModel):
 
     `members=None` means "leave the roster alone"; `members=[]` clears it.
     """
+    project_code: str | None = Field(default=None, min_length=1, max_length=20)
     name:         str | None = Field(default=None, min_length=1, max_length=200)
     client:       str | None = Field(default=None, max_length=200)
     project_type: str | None = Field(default=None, max_length=100)
-    status:       Status | None = None
-    start_date:   str | None = None
-    end_date:     str | None = None
+    status:       ProjectStatus | None = None
     note:         str | None = Field(default=None, max_length=2000)
     members:      list[str] | None = Field(default=None, max_length=50)
 
@@ -107,6 +106,7 @@ async def meta(email: str = Depends(require_workload)):
             for m in WORKLOAD_MEMBERS
         ],
         "project_types": workload_svc.project_types(),
+        "clients":       workload_svc.clients(),
         "default_tasks": list(workload_svc.DEFAULT_TASKS),
         "statuses":      list(workload_svc.STATUSES),
     }
