@@ -1,10 +1,15 @@
-version: '3.4'
-
 services:
   app:
     build:
       context: .
     env_file: app/.env
+    environment:
+      # Overrides whatever MONGODB_URI/MONGODB_DB is in app/.env — the app
+      # always talks to the `mongo` service below over the compose network,
+      # authenticated as the least-privilege app user mongo-init.js creates
+      # (readWrite on this one database only, not the cluster admin account).
+      MONGODB_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_INITDB_DATABASE}?authSource=${MONGO_INITDB_DATABASE}
+      MONGODB_DB: ${MONGO_INITDB_DATABASE}
     ports:
       - "9000:8000"
     volumes:
@@ -17,3 +22,37 @@ services:
       start_period: 10s
     restart: unless-stopped
     stop_grace_period: 30s
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE:      ${MONGO_INITDB_DATABASE}
+      # Read by mongo-init.js — not a variable the official image understands
+      # on its own, just how we hand the app-user credentials to that script.
+      MONGO_APP_USER:             ${MONGO_APP_USER}
+      MONGO_APP_PASSWORD:         ${MONGO_APP_PASSWORD}
+    ports:
+      # Bound to loopback only — reachable from this host (mongosh, local
+      # dev scripts run outside docker-compose, admin tools) but never from
+      # the LAN or internet, unlike a bare "27018:27017" mapping. Host side
+      # is 27018, not the default 27017, to avoid colliding with any mongod
+      # already installed directly on the host.
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

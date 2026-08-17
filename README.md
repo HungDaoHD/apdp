@@ -76,16 +76,43 @@ AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 
 # MongoDB (workload module — projects/tasks)
-MONGODB_URI=mongodb+srv://user:password@your-cluster.mongodb.net/
+MONGODB_URI=mongodb://apdp_app:changeme@127.0.0.1:27018/ap_workload?authSource=ap_workload
 MONGODB_DB=ap_workload
 ```
 
-> MongoDB is a managed [Atlas](https://www.mongodb.com/atlas) cluster, not a
-> container this app runs itself — `docker-compose.yml` has no `mongo`
-> service. Set `MONGODB_URI`/`MONGODB_DB` in `app/.env` (used both locally and
-> by Docker Compose, since it reads the same file). On Atlas, remember to add
-> whichever server the app runs on to **Network Access** — a new deploy
-> target that isn't whitelisted there will time out connecting.
+> MongoDB is self-hosted via the `mongo` service in `docker-compose.yml`,
+> not a managed cloud cluster — its data lives in the `mongo_data` named
+> volume, so it survives `docker compose down` (only `down -v` wipes it).
+> Credentials come from a **root-level** `.env` (next to `docker-compose.yml`,
+> separate from `app/.env`), read for `${...}` substitution:
+>
+> ```ini
+> MONGO_ROOT_USER=apdp_root
+> MONGO_ROOT_PASSWORD=<strong random value>
+> MONGO_APP_USER=apdp_app
+> MONGO_APP_PASSWORD=<strong random value>
+> MONGO_INITDB_DATABASE=ap_workload
+> ```
+>
+> `mongo-init.js` runs once (only on an empty data volume) to create the
+> `apdp_app` user scoped to `readWrite` on `ap_workload` only — the app never
+> authenticates as `apdp_root`, so a compromised app process can't touch any
+> other database or run admin commands. When running via `docker compose up`,
+> the `app` service's `MONGODB_URI` is set from those same variables
+> automatically (overriding whatever is in `app/.env`) and points at the
+> `mongo` service by its container name, not localhost.
+>
+> The container's port is published as `127.0.0.1:27018 -> 27017` — reachable
+> from this host only (for `mongosh`, local test scripts run outside Docker),
+> never from the LAN or internet. 27018 rather than the default 27017 avoids
+> colliding with a `mongod` already installed directly on the host, if there
+> is one. `app/.env`'s own `MONGODB_URI` (shown above) is what's used for that
+> host-side path — running `python main.py` directly, without Docker.
+>
+> To change these credentials later: stop the stack, delete the `mongo_data`
+> volume (`docker compose down -v`), update the root `.env`, and start again
+> — `mongo-init.js` only runs against an empty volume, so it won't pick up
+> new values on an existing one.
 
 ---
 
