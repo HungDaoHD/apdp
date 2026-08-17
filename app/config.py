@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_APP_DIR / ".env"),
         env_file_encoding="utf-8",
+        # app/.env doubles as docker-compose's variable-substitution source
+        # (MONGO_ROOT_USER etc., read only by docker-compose.yml — the app
+        # itself has no use for them). Without this, pydantic-settings'
+        # default `extra="forbid"` makes the app refuse to start over env
+        # vars it doesn't declare a field for.
+        extra="ignore",
     )
 
 

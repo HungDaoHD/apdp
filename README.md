@@ -78,41 +78,57 @@ AWS_SECRET_ACCESS_KEY=
 # MongoDB (workload module — projects/tasks)
 MONGODB_URI=mongodb://apdp_app:changeme@127.0.0.1:27018/ap_workload?authSource=ap_workload
 MONGODB_DB=ap_workload
+
+# Read by docker-compose.yml for ${...} substitution — the mongo container's
+# root/app credentials (see the note below on --env-file). The app itself
+# ignores these (config.py's Settings has extra="ignore").
+MONGO_ROOT_USER=apdp_root
+MONGO_ROOT_PASSWORD=<strong random value>
+MONGO_APP_USER=apdp_app
+MONGO_APP_PASSWORD=<strong random value>
+MONGO_INITDB_DATABASE=ap_workload
 ```
 
 > MongoDB is self-hosted via the `mongo` service in `docker-compose.yml`,
 > not a managed cloud cluster — its data lives in the `mongo_data` named
 > volume, so it survives `docker compose down` (only `down -v` wipes it).
-> Credentials come from a **root-level** `.env` (next to `docker-compose.yml`,
-> separate from `app/.env`), read for `${...}` substitution:
 >
-> ```ini
-> MONGO_ROOT_USER=apdp_root
-> MONGO_ROOT_PASSWORD=<strong random value>
-> MONGO_APP_USER=apdp_app
-> MONGO_APP_PASSWORD=<strong random value>
-> MONGO_INITDB_DATABASE=ap_workload
+> **All variables — the app's own settings *and* the Mongo container's
+> credentials — live in this single `app/.env`.** Docker Compose only
+> auto-discovers a `.env` at the project root by default, not `app/.env`, so
+> every `docker compose` invocation must say where to find it:
+>
+> ```bash
+> docker compose --env-file app/.env up -d
+> docker compose --env-file app/.env logs -f app
+> docker compose --env-file app/.env down
 > ```
+>
+> Forgetting `--env-file app/.env` doesn't error loudly — Compose just treats
+> the missing variables as empty strings, which produces a `MONGODB_URI` with
+> a blank user/password and makes the app container crash-loop on startup
+> (`pydantic ValidationError` / Mongo auth failure). If that happens, that's
+> almost always the cause.
 >
 > `mongo-init.js` runs once (only on an empty data volume) to create the
 > `apdp_app` user scoped to `readWrite` on `ap_workload` only — the app never
 > authenticates as `apdp_root`, so a compromised app process can't touch any
 > other database or run admin commands. When running via `docker compose up`,
 > the `app` service's `MONGODB_URI` is set from those same variables
-> automatically (overriding whatever is in `app/.env`) and points at the
+> automatically (overriding the `MONGODB_URI` line above) and points at the
 > `mongo` service by its container name, not localhost.
 >
 > The container's port is published as `127.0.0.1:27018 -> 27017` — reachable
 > from this host only (for `mongosh`, local test scripts run outside Docker),
 > never from the LAN or internet. 27018 rather than the default 27017 avoids
 > colliding with a `mongod` already installed directly on the host, if there
-> is one. `app/.env`'s own `MONGODB_URI` (shown above) is what's used for that
-> host-side path — running `python main.py` directly, without Docker.
+> is one. `app/.env`'s own `MONGODB_URI` (shown above) is what's used when
+> running `python main.py` directly, without Docker.
 >
 > To change these credentials later: stop the stack, delete the `mongo_data`
-> volume (`docker compose down -v`), update the root `.env`, and start again
-> — `mongo-init.js` only runs against an empty volume, so it won't pick up
-> new values on an existing one.
+> volume (`docker compose --env-file app/.env down -v`), update `app/.env`,
+> and start again — `mongo-init.js` only runs against an empty volume, so it
+> won't pick up new values on an existing one.
 
 ---
 
