@@ -1,3 +1,9 @@
+# Pinned to the 2.4 file format, not the version-less Compose Spec: prod runs
+# docker-compose 1.25.0, which cannot parse a file without a `version` key. It
+# must be 2.4 rather than 3.x — only the 2.x format lets 1.25.0 honour both
+# `depends_on.condition: service_healthy` and `healthcheck.start_period`.
+version: "2.4"
+
 services:
   app:
     build:

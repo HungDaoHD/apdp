@@ -110,6 +110,24 @@ MONGO_INITDB_DATABASE=ap_workload
 > (`pydantic ValidationError` / Mongo auth failure). If that happens, that's
 > almost always the cause.
 >
+> **On hosts with only the legacy `docker-compose` v1 binary** (prod runs
+> 1.25.0), two things differ. `docker-compose.yml` is pinned to `version:
+> "2.4"` for its benefit — v1 cannot parse a version-less Compose Spec file
+> and reports the confusing `Unsupported config option for services: 'app'`,
+> and only the 2.x format lets it honour `depends_on.condition:
+> service_healthy` together with `healthcheck.start_period`. Second, if that
+> build predates `--env-file`, export the variables instead of passing the
+> flag — environment variables take precedence for `${...}` substitution
+> either way:
+>
+> ```bash
+> set -a; . app/.env; set +a
+> docker-compose up -d
+> docker-compose logs -f app
+> ```
+>
+> `deploy.sh` does this itself, so it works unchanged on both v1 and v2 hosts.
+>
 > `mongo-init.js` runs once (only on an empty data volume) to create the
 > `apdp_app` user scoped to `readWrite` on `ap_workload` only — the app never
 > authenticates as `apdp_root`, so a compromised app process can't touch any
