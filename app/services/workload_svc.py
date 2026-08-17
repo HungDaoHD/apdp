@@ -1,12 +1,21 @@
 """Workload management — projects, their tasks, and the team calendar.
 
-Backed by SQLite rather than the JSON files the rest of this app uses. The
-usage log only ever appends, so a lock plus a JSONL file is enough there; the
-workload data is edited in place by several people at once (a member flipping a
-task to complete while the admin reassigns another), and the container runs two
-Gunicorn workers. A read-modify-write over a JSON file across two processes
-silently drops one of the two updates. sqlite3 is stdlib, and WAL mode makes
-concurrent readers plus a single writer safe across processes.
+Backed by MongoDB (via Motor, the async driver) rather than the JSON files
+the rest of this app uses. The usage log only ever appends, so a lock plus a
+JSONL file is enough there; the workload data is edited in place by several
+people at once (a member flipping a task to complete while the admin
+reassigns another), and the container runs two Gunicorn workers. A
+read-modify-write over a JSON file across two processes silently drops one of
+the two updates — Mongo's server handles concurrent writers itself.
+
+Every document write here is a single `update_one`/`insert_one` call, which
+Mongo guarantees is atomic on its own; there is no multi-document transaction
+wrapping e.g. "insert a project, then insert its seed tasks". A standalone
+MongoDB instance (no replica set) can't do multi-document transactions at
+all, and setting one up is more operational overhead than a 4-person tool
+warrants. Where that gap matters (create_project can leave an orphan project
+if the task insert that follows it fails) a compensating delete cleans up
+after itself — see the comment there.
 
 Permission rules live here as pure predicates (`can_edit_tasks`); the FastAPI
 dependencies in `dependencies.py` build on them, so importing that module here
@@ -15,16 +24,16 @@ would be circular — same arrangement as `authz.py`.
 from __future__ import annotations
 
 import re
-import sqlite3
 import uuid
-from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
-from typing import Iterator
+from functools import lru_cache
+
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from pymongo import UpdateOne
 
 from services.authz import WORKLOAD_MEMBERS, is_workload_admin
 
-# VN + 4 digits, e.g. VN0001 — the human-facing project identifier, distinct
+# VNxxxx (VN + 4 digits) — the human-facing project identifier, distinct
 # from the internal `id` primary key used in URLs and joins.
 _PROJECT_CODE_RE = re.compile(r"^VN\d{4}$")
 
@@ -41,61 +50,21 @@ DEFAULT_TASKS: tuple[str, ...] = (
     "Deliver topline OE",
 )
 
-# Suggested values only — `project_type` is a free-text column, so a new type
+# Suggested values only — `project_type` is a free-text field, so a new type
 # can be typed in and will show up in the dropdown afterwards (see
 # `project_types()`).
 DEFAULT_PROJECT_TYPES: tuple[str, ...] = (
-    "U&A", "CLT", "HUT", "Tracking", "Ad-hoc", "Brand Health", "Concept Test",
+    "U&A", "CLT", "HUT", "D2D", "Tracking", "Ad-hoc", "Brand Health", "Concept Test",
 )
 
-# Task status — unchanged since the original spec (criterion 9).
-STATUSES: tuple[str, ...] = ("pending", "complete", "cancel")
+# Task status. Kept as its own tuple, independent from PROJECT_STATUSES below
+# — the two domains happen to share the same four words today, but that's
+# coincidence, not a shared type; one can change without silently affecting
+# the other.
+STATUSES: tuple[str, ...] = ("pending", "ongoing", "complete", "cancel")
 
-# Project status is a separate domain from task status: a project can be
-# "ongoing" while individual tasks under it are pending/complete/cancel.
-PROJECT_STATUSES: tuple[str, ...] = ("pending", "ongoing", "complete")
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS projects (
-    id           TEXT PRIMARY KEY,
-    project_code TEXT,
-    name         TEXT NOT NULL,
-    client       TEXT NOT NULL DEFAULT '',
-    project_type TEXT NOT NULL DEFAULT '',
-    status       TEXT NOT NULL DEFAULT 'pending',
-    start_date   TEXT,
-    end_date     TEXT,
-    note         TEXT NOT NULL DEFAULT '',
-    created_by   TEXT NOT NULL DEFAULT '',
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS project_members (
-    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    email      TEXT NOT NULL,
-    PRIMARY KEY (project_id, email)
-);
-
-CREATE TABLE IF NOT EXISTS tasks (
-    id           TEXT PRIMARY KEY,
-    project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    title        TEXT NOT NULL,
-    assignee     TEXT NOT NULL DEFAULT '',
-    due_date     TEXT,
-    status       TEXT NOT NULL DEFAULT 'pending',
-    note         TEXT NOT NULL DEFAULT '',
-    sort_order   INTEGER NOT NULL DEFAULT 0,
-    completed_at TEXT,
-    created_by   TEXT NOT NULL DEFAULT '',
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_tasks_due      ON tasks(due_date);
-CREATE INDEX IF NOT EXISTS idx_tasks_project  ON tasks(project_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee);
-"""
+# Project status — a separate domain from task status.
+PROJECT_STATUSES: tuple[str, ...] = ("pending", "ongoing", "complete", "cancel")
 
 
 class WorkloadError(Exception):
@@ -104,64 +73,42 @@ class WorkloadError(Exception):
 
 # ── Connection ────────────────────────────────────────────────────────────────
 
-def _db_path() -> Path:
-    """Resolve DATA_DIR the same way usage_log_svc does, then add workload.db."""
-    from config import settings
-    p = Path(settings.DATA_DIR)
-    if not p.is_absolute():
-        from config import _APP_DIR
-        p = _APP_DIR / p
-    p.mkdir(parents=True, exist_ok=True)
-    return p / "workload.db"
+@lru_cache(maxsize=1)
+def _client() -> AsyncIOMotorClient:
+    """A single long-lived client, reused for the app's lifetime.
 
-
-@contextmanager
-def _conn() -> Iterator[sqlite3.Connection]:
-    """A short-lived connection per operation.
-
-    isolation_level=None puts sqlite3 in autocommit mode, so the explicit
-    BEGIN IMMEDIATE in `_tx()` is the only transaction boundary — no hidden
-    transaction is opened behind our back on the first INSERT.
+    Unlike the short-lived-connection-per-call pattern used for SQLite
+    elsewhere in this app, Motor's client owns its own connection pool and is
+    explicitly meant to be created once and shared — creating one per request
+    would defeat that pooling.
     """
-    con = sqlite3.connect(_db_path(), timeout=10.0, isolation_level=None)
-    con.row_factory = sqlite3.Row
-    try:
-        con.execute("PRAGMA journal_mode=WAL")
-        con.execute("PRAGMA busy_timeout=5000")
-        con.execute("PRAGMA foreign_keys=ON")
-        yield con
-    finally:
-        con.close()
+    from config import settings
+    return AsyncIOMotorClient(settings.MONGODB_URI)
 
 
-@contextmanager
-def _tx(con: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
-    """BEGIN IMMEDIATE so a concurrent writer in the other worker waits here
-    (up to busy_timeout) instead of failing partway through with SQLITE_BUSY."""
-    con.execute("BEGIN IMMEDIATE")
-    try:
-        yield con
-    except Exception:
-        con.execute("ROLLBACK")
-        raise
-    con.execute("COMMIT")
+def _db() -> AsyncIOMotorDatabase:
+    from config import settings
+    return _client()[settings.MONGODB_DB]
 
 
-def init_db() -> None:
-    """Create the schema if absent, and migrate older databases. Safe to call
-    on every startup."""
-    with _conn() as con:
-        con.executescript(_SCHEMA)
-        # CREATE TABLE IF NOT EXISTS above is a no-op against a database that
-        # already has a `projects` table from before project_code existed —
-        # add the column by hand so upgrading doesn't require wiping the DB.
-        # The index is created afterwards either way, once the column is
-        # guaranteed to exist — indexing it inside _SCHEMA would run before
-        # this ALTER TABLE and fail on exactly that older database.
-        cols = {r["name"] for r in con.execute("PRAGMA table_info(projects)")}
-        if "project_code" not in cols:
-            con.execute("ALTER TABLE projects ADD COLUMN project_code TEXT")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_projects_code ON projects(project_code)")
+def _projects():
+    return _db()["projects"]
+
+
+def _tasks():
+    return _db()["tasks"]
+
+
+async def init_db() -> None:
+    """Create indexes if absent. Safe to call on every startup — Mongo's
+    create_index is a no-op when an equivalent index already exists, so no
+    schema-migration bookkeeping is needed the way SQLite required."""
+    await _projects().create_index("project_code", unique=True)
+    await _projects().create_index("created_at")
+    await _tasks().create_index("project_id")
+    await _tasks().create_index("due_date")
+    await _tasks().create_index("start_date")
+    await _tasks().create_index("assignees")
 
 
 def _now() -> str:
@@ -170,6 +117,36 @@ def _now() -> str:
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:16]
+
+
+def _out(doc: dict | None) -> dict | None:
+    """Mongo's `_id` -> our public `id`, keeping the API response shape
+    identical to the SQLite version so the frontend needed no changes."""
+    if doc is None:
+        return None
+    doc = dict(doc)
+    doc["id"] = doc.pop("_id")
+    return doc
+
+
+def _out_task(doc: dict | None) -> dict | None:
+    """`_out()`, plus migrating documents written before multi-assignee
+    support: a lone `assignee` string becomes a one-item `assignees` list
+    (or an empty one) instead of leaving `assignees` missing entirely, which
+    would otherwise crash frontend code that expects an array."""
+    d = _out(doc)
+    if d is None:
+        return None
+    if "assignees" not in d:
+        old = d.pop("assignee", "")
+        d["assignees"] = [old] if old else []
+    else:
+        d.pop("assignee", None)
+    if "start_date" not in d:
+        # Documents written before start/end spans existed are single-day —
+        # their start is their due date.
+        d["start_date"] = d.get("due_date")
+    return d
 
 
 # ── Validation ────────────────────────────────────────────────────────────────
@@ -190,6 +167,23 @@ def _check_date(value: str | None, field: str) -> str | None:
         raise WorkloadError(f"{field} must be a YYYY-MM-DD date, got {value!r}")
 
 
+def _check_span(start: str | None, due: str | None) -> str | None:
+    """A task's real range is [start_date, due_date] — due_date remains the
+    single field everything else (sorting, the unscheduled bucket, calendar
+    filtering) keys off, so start_date only ever matters paired with it:
+    no due_date means unscheduled, and start_date along with it is meaningless.
+    Returns the effective start_date: `due` itself for a single-day task
+    (start omitted or equal to due), None for an unscheduled task.
+    """
+    if not due:
+        return None
+    if not start:
+        return due
+    if start > due:
+        raise WorkloadError("start_date must be on or before due_date")
+    return start
+
+
 def _check_member(email: str | None, field: str = "assignee") -> str:
     """Empty means unassigned; anything else must be on the workload roster."""
     e = (email or "").strip().lower()
@@ -200,84 +194,87 @@ def _check_member(email: str | None, field: str = "assignee") -> str:
     return e
 
 
+def _check_members(emails: list[str] | None, field: str = "assignee") -> list[str]:
+    """A task can have several assignees — validate each, dedupe, sorted."""
+    return sorted({e for e in (_check_member(m, field) for m in (emails or [])) if e})
+
+
+def _check_task_assignees(emails: list[str] | None, project_members: list[str]) -> list[str]:
+    """Task PIC must always be a subset of project PIC: validate roster
+    membership (via `_check_members`) and then that each is already on the
+    project's own member list."""
+    checked = _check_members(emails)
+    invalid = [e for e in checked if e not in project_members]
+    if invalid:
+        raise WorkloadError(
+            f"{', '.join(invalid)} must be added to the project before being assigned to its tasks"
+        )
+    return checked
+
+
 def _check_project_code(value: str) -> str:
-    """Normalise to uppercase, then require VN + 4 digits (e.g. VN0001)."""
+    """Normalise to uppercase, then require the VNxxxx pattern (VN + 4 digits)."""
     v = (value or "").strip().upper()
     if not _PROJECT_CODE_RE.match(v):
-        raise WorkloadError(f"Project ID must be VN followed by 4 digits (e.g. VN0001), got {value!r}")
+        raise WorkloadError(f"Project ID must match VNxxxx (VN + 4 digits), got {value!r}")
     return v
 
 
 # ── Projects ──────────────────────────────────────────────────────────────────
 
-def _project_rows_to_dicts(con: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict]:
-    """Attach members and per-status task counts to each project row.
+_UNDATED_SORT_KEY = "9999"  # sorts after any real ISO date, matching the old SQLite COALESCE trick
 
-    Two extra queries for the whole page rather than two per project — the
-    obvious per-row version turns a 30-project list into 60 round trips.
-    """
-    ids = [r["id"] for r in rows]
+
+async def _attach_task_counts(projects: list[dict]) -> list[dict]:
+    """Per-status task counts for each project, in one aggregation query
+    rather than one query per project — the obvious per-row version turns a
+    30-project list into 30 round trips."""
+    ids = [p["_id"] for p in projects]
     if not ids:
         return []
-    marks = ",".join("?" * len(ids))
-
-    members: dict[str, list[str]] = {i: [] for i in ids}
-    for m in con.execute(
-        f"SELECT project_id, email FROM project_members WHERE project_id IN ({marks}) ORDER BY email",
-        ids,
-    ):
-        members[m["project_id"]].append(m["email"])
-
     counts: dict[str, dict[str, int]] = {i: {s: 0 for s in STATUSES} for i in ids}
-    for c in con.execute(
-        f"SELECT project_id, status, COUNT(*) AS n FROM tasks "
-        f"WHERE project_id IN ({marks}) GROUP BY project_id, status",
-        ids,
-    ):
-        if c["status"] in counts[c["project_id"]]:
-            counts[c["project_id"]][c["status"]] = c["n"]
+    cursor = _tasks().aggregate([
+        {"$match": {"project_id": {"$in": ids}}},
+        {"$group": {"_id": {"project_id": "$project_id", "status": "$status"}, "n": {"$sum": 1}}},
+    ])
+    async for row in cursor:
+        pid, status = row["_id"]["project_id"], row["_id"]["status"]
+        if pid in counts and status in counts[pid]:
+            counts[pid][status] = row["n"]
 
     out = []
-    for r in rows:
-        d = dict(r)
-        d["members"] = members[r["id"]]
-        d["member_names"] = [e.split("@", 1)[0] for e in members[r["id"]]]
-        d["task_counts"] = counts[r["id"]]
-        d["task_total"] = sum(counts[r["id"]].values())
+    for p in projects:
+        d = _out(p)
+        d["task_counts"] = counts[p["_id"]]
+        d["task_total"] = sum(counts[p["_id"]].values())
         out.append(d)
     return out
 
 
-def list_projects() -> list[dict]:
+async def list_projects() -> list[dict]:
     """Every project, newest first. Visible to all workload members (criterion 5)."""
-    with _conn() as con:
-        rows = con.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
-        return _project_rows_to_dicts(con, rows)
+    rows = await _projects().find().sort("created_at", -1).to_list(length=None)
+    return await _attach_task_counts(rows)
 
 
-def get_project(project_id: str) -> dict | None:
-    with _conn() as con:
-        row = con.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
-        if row is None:
-            return None
-        project = _project_rows_to_dicts(con, [row])[0]
-        project["tasks"] = [
-            dict(t) for t in con.execute(
-                "SELECT * FROM tasks WHERE project_id = ? "
-                "ORDER BY sort_order, COALESCE(due_date, '9999'), created_at",
-                (project_id,),
-            )
-        ]
-        return project
+async def get_project(project_id: str) -> dict | None:
+    row = await _projects().find_one({"_id": project_id})
+    if row is None:
+        return None
+    project = (await _attach_task_counts([row]))[0]
+    task_rows = await _tasks().find({"project_id": project_id}).to_list(length=None)
+    task_rows.sort(key=lambda t: (t["sort_order"], t["due_date"] or _UNDATED_SORT_KEY, t["created_at"]))
+    project["tasks"] = [_out_task(t) for t in task_rows]
+    return project
 
 
-def create_project(
+async def create_project(
     *,
     project_code: str,
     name: str,
     client: str = "",
     project_type: str = "",
-    status: str = "pending",
+    status: str = "ongoing",
     note: str = "",
     members: list[str] | None = None,
     tasks: list[str] | None = None,
@@ -294,39 +291,54 @@ def create_project(
     _check_status(status, PROJECT_STATUSES)
     emails = [_check_member(m, "member") for m in (members or [])]
     emails = sorted({e for e in emails if e})
+    # Normalised on the way in — `can_edit_project` compares against it, and
+    # a casing mismatch there would silently lock a creator out of their own
+    # project.
+    created_by = (created_by or "").strip().lower()
     task_titles = [t.strip() for t in (DEFAULT_TASKS if tasks is None else tasks) if t and t.strip()]
 
     pid = _new_id()
     ts = _now()
-    with _conn() as con, _tx(con):
-        if con.execute("SELECT 1 FROM projects WHERE project_code = ?", (code,)).fetchone():
+    try:
+        await _projects().insert_one({
+            "_id": pid, "project_code": code, "name": name, "client": client.strip(),
+            "project_type": project_type.strip(), "status": status, "note": note.strip(),
+            "members": emails, "created_by": created_by, "created_at": ts, "updated_at": ts,
+        })
+    except Exception as exc:
+        # The unique index on project_code is the actual race-proof guard;
+        # this duplicate-key error is what it looks like when it fires.
+        if "E11000" in str(exc):
             raise WorkloadError(f"Project ID {code} is already in use")
-        con.execute(
-            "INSERT INTO projects (id, project_code, name, client, project_type, status,"
-            " note, created_by, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (pid, code, name, client.strip(), project_type.strip(), status,
-             note.strip(), created_by, ts, ts),
-        )
-        con.executemany(
-            "INSERT INTO project_members (project_id, email) VALUES (?,?)",
-            [(pid, e) for e in emails],
-        )
-        if task_titles:
-            con.executemany(
-                "INSERT INTO tasks (id, project_id, title, assignee, due_date, status, note,"
-                " sort_order, created_by, created_at, updated_at)"
-                " VALUES (?,?,?,'',NULL,'pending','',?,?,?,?)",
-                [(_new_id(), pid, title, i, created_by, ts, ts)
-                 for i, title in enumerate(task_titles)],
-            )
-    return get_project(pid)  # type: ignore[return-value]
+        raise
+
+    if task_titles:
+        # Every project member is auto-assigned to every seed task — tasks
+        # can carry multiple assignees, so there's no ambiguity to resolve
+        # the way there was with a single-assignee field.
+        try:
+            await _tasks().insert_many([
+                {
+                    "_id": _new_id(), "project_id": pid, "title": title, "assignees": list(emails),
+                    "due_date": None, "status": "ongoing", "note": "", "sort_order": i,
+                    "completed_at": None, "created_by": created_by, "created_at": ts, "updated_at": ts,
+                }
+                for i, title in enumerate(task_titles)
+            ])
+        except Exception:
+            # No multi-document transaction here (see module docstring) — if
+            # seeding tasks fails partway through, remove the project rather
+            # than leave an orphan with an inconsistent task list.
+            await _projects().delete_one({"_id": pid})
+            await _tasks().delete_many({"project_id": pid})
+            raise
+    return await get_project(pid)  # type: ignore[return-value]
 
 
 _PROJECT_FIELDS = {"project_code", "name", "client", "project_type", "status", "note"}
 
 
-def update_project(project_id: str, fields: dict, members: list[str] | None = None) -> dict:
+async def update_project(project_id: str, fields: dict, members: list[str] | None = None) -> dict:
     """Patch a project. Only keys present in *fields* are touched.
 
     *members* is replace-the-whole-list rather than add/remove, matching how the
@@ -342,94 +354,122 @@ def update_project(project_id: str, fields: dict, members: list[str] | None = No
         if not patch["name"]:
             raise WorkloadError("Project name is required")
 
-    emails = None
     if members is not None:
-        emails = sorted({e for e in (_check_member(m, "member") for m in members) if e})
+        patch["members"] = sorted({e for e in (_check_member(m, "member") for m in members) if e})
 
-    with _conn() as con, _tx(con):
-        row = con.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
-        if row is None:
+    if not patch:
+        if await _projects().find_one({"_id": project_id}, {"_id": 1}) is None:
             raise WorkloadError("Project not found")
+        return await get_project(project_id)  # type: ignore[return-value]
 
-        if "project_code" in patch:
-            dupe = con.execute(
-                "SELECT 1 FROM projects WHERE project_code = ? AND id <> ?",
-                (patch["project_code"], project_id),
-            ).fetchone()
-            if dupe:
-                raise WorkloadError(f"Project ID {patch['project_code']} is already in use")
+    patch["updated_at"] = _now()
+    try:
+        result = await _projects().update_one({"_id": project_id}, {"$set": patch})
+    except Exception as exc:
+        if "E11000" in str(exc):
+            raise WorkloadError(f"Project ID {patch['project_code']} is already in use")
+        raise
+    if result.matched_count == 0:
+        raise WorkloadError("Project not found")
 
-        if patch:
-            patch["updated_at"] = _now()
-            sets = ", ".join(f"{k} = ?" for k in patch)
-            con.execute(f"UPDATE projects SET {sets} WHERE id = ?",
-                        [*patch.values(), project_id])
-        if emails is not None:
-            con.execute("DELETE FROM project_members WHERE project_id = ?", (project_id,))
-            con.executemany("INSERT INTO project_members (project_id, email) VALUES (?,?)",
-                            [(project_id, e) for e in emails])
-    return get_project(project_id)  # type: ignore[return-value]
+    if "members" in patch:
+        # Task PIC must stay a subset of project PIC — dropping someone from
+        # the project also drops them from that project's tasks.
+        await _prune_task_assignees(project_id, patch["members"])
 
-
-def delete_project(project_id: str) -> None:
-    """Hard delete — ON DELETE CASCADE removes the project's tasks and members."""
-    with _conn() as con, _tx(con):
-        cur = con.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-        if cur.rowcount == 0:
-            raise WorkloadError("Project not found")
+    return await get_project(project_id)  # type: ignore[return-value]
 
 
-def project_types() -> list[str]:
+async def _prune_task_assignees(project_id: str, allowed_members: list[str]) -> None:
+    """Trim every task's assignees down to *allowed_members* — called after a
+    project's own member roster shrinks, to keep task PIC ⊆ project PIC."""
+    allowed = set(allowed_members)
+    task_rows = await _tasks().find({"project_id": project_id}, {"assignees": 1}).to_list(length=None)
+    ts = _now()
+    ops = []
+    for t in task_rows:
+        current = t.get("assignees") or []
+        kept = sorted(set(current) & allowed)
+        if kept != sorted(current):
+            ops.append(UpdateOne({"_id": t["_id"]}, {"$set": {"assignees": kept, "updated_at": ts}}))
+    if ops:
+        await _tasks().bulk_write(ops)
+
+
+async def delete_project(project_id: str) -> None:
+    """Hard delete, including the project's tasks.
+
+    Two separate deletes, not one atomic operation (see module docstring) —
+    the project is removed first, so a crash between the two calls can leave
+    orphan tasks but never a project that outlives its own deletion.
+    """
+    result = await _projects().delete_one({"_id": project_id})
+    if result.deleted_count == 0:
+        raise WorkloadError("Project not found")
+    await _tasks().delete_many({"project_id": project_id})
+
+
+async def project_types() -> list[str]:
     """Suggested types plus any that have actually been typed in."""
-    with _conn() as con:
-        used = {
-            r["project_type"] for r in
-            con.execute("SELECT DISTINCT project_type FROM projects WHERE project_type <> ''")
-        }
+    used = set(await _projects().distinct("project_type", {"project_type": {"$ne": ""}}))
     return [*DEFAULT_PROJECT_TYPES, *sorted(used - set(DEFAULT_PROJECT_TYPES))]
 
 
-def clients() -> list[str]:
+async def clients() -> list[str]:
     """Every client/corporate name used so far, for the combobox — no fixed
     suggestions here since, unlike project types, there's no sensible default list."""
-    with _conn() as con:
-        rows = con.execute("SELECT DISTINCT client FROM projects WHERE client <> '' ORDER BY client")
-        return [r["client"] for r in rows]
+    used = await _projects().distinct("client", {"client": {"$ne": ""}})
+    return sorted(used)
 
 
 # ── Permissions ───────────────────────────────────────────────────────────────
 
-def can_edit_tasks(email: str, project_id: str) -> bool:
+async def can_edit_tasks(email: str, project_id: str) -> bool:
     """True if *email* may add/edit/delete tasks in *project_id*.
 
-    Admins everywhere; members only inside projects they are assigned to
-    (criterion 5: everyone reads every project, members write only their own).
+    Three ways in: the workload admin (everywhere), whoever created the
+    project, or anyone on that project's member list. The member case is what
+    lets someone self-assign to a task on a project they handle without
+    needing the admin to do it for them.
     """
-    if is_workload_admin(email):
+    who = (email or "").strip().lower()
+    if is_workload_admin(who):
         return True
-    with _conn() as con:
-        row = con.execute(
-            "SELECT 1 FROM project_members WHERE project_id = ? AND email = ?",
-            (project_id, (email or "").strip().lower()),
-        ).fetchone()
+    row = await _projects().find_one(
+        {"_id": project_id, "$or": [{"members": who}, {"created_by": who}]}, {"_id": 1}
+    )
+    return row is not None
+
+
+async def can_edit_project(email: str, project_id: str) -> bool:
+    """True if *email* may rename/re-scope/delete the project itself.
+
+    Narrower than `can_edit_tasks`: being on a project lets you work its
+    tasks, but only its creator (or the admin) can change or delete the
+    project record — otherwise any member could delete a project out from
+    under everyone else working it.
+    """
+    who = (email or "").strip().lower()
+    if is_workload_admin(who):
+        return True
+    row = await _projects().find_one({"_id": project_id, "created_by": who}, {"_id": 1})
     return row is not None
 
 
 # ── Tasks ─────────────────────────────────────────────────────────────────────
 
-def get_task(task_id: str) -> dict | None:
-    with _conn() as con:
-        row = con.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-    return dict(row) if row else None
+async def get_task(task_id: str) -> dict | None:
+    return _out_task(await _tasks().find_one({"_id": task_id}))
 
 
-def create_task(
+async def create_task(
     *,
     project_id: str,
     title: str,
-    assignee: str = "",
+    assignees: list[str] | None = None,
     due_date: str | None = None,
-    status: str = "pending",
+    start_date: str | None = None,
+    status: str = "ongoing",
     note: str = "",
     created_by: str = "",
 ) -> dict:
@@ -438,66 +478,107 @@ def create_task(
         raise WorkloadError("Task title is required")
     _check_status(status)
     due = _check_date(due_date, "due_date")
-    who = _check_member(assignee)
+    start = _check_span(_check_date(start_date, "start_date"), due)
+
+    project = await _projects().find_one({"_id": project_id})
+    if project is None:
+        raise WorkloadError("Project not found")
+    who = _check_task_assignees(assignees, project.get("members", []))
+
+    last = await _tasks().find({"project_id": project_id}).sort("sort_order", -1).limit(1).to_list(length=1)
+    nxt = (last[0]["sort_order"] + 1) if last else 0
 
     tid = _new_id()
     ts = _now()
-    with _conn() as con, _tx(con):
-        if con.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is None:
-            raise WorkloadError("Project not found")
-        nxt = con.execute(
-            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM tasks WHERE project_id = ?",
-            (project_id,),
-        ).fetchone()["n"]
-        con.execute(
-            "INSERT INTO tasks (id, project_id, title, assignee, due_date, status, note,"
-            " sort_order, completed_at, created_by, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (tid, project_id, title, who, due, status, note.strip(), nxt,
-             ts if status == "complete" else None, created_by, ts, ts),
-        )
-    return get_task(tid)  # type: ignore[return-value]
+    await _tasks().insert_one({
+        "_id": tid, "project_id": project_id, "title": title, "assignees": who,
+        "due_date": due, "start_date": start,
+        "status": status, "note": note.strip(), "sort_order": nxt,
+        "completed_at": ts if status == "complete" else None,
+        "created_by": created_by, "created_at": ts, "updated_at": ts,
+    })
+    return await get_task(tid)  # type: ignore[return-value]
 
 
-_TASK_FIELDS = {"title", "assignee", "due_date", "status", "note"}
+_TASK_FIELDS = {"title", "assignees", "due_date", "start_date", "status", "note"}
 
 
-def update_task(task_id: str, fields: dict) -> dict:
+async def update_task(task_id: str, fields: dict) -> dict:
     patch = {k: v for k, v in fields.items() if k in _TASK_FIELDS}
     if "status" in patch:
         _check_status(patch["status"])
     if "due_date" in patch:
         patch["due_date"] = _check_date(patch["due_date"], "due_date")
-    if "assignee" in patch:
-        patch["assignee"] = _check_member(patch["assignee"])
+    if "start_date" in patch:
+        patch["start_date"] = _check_date(patch["start_date"], "start_date")
     if "title" in patch:
         patch["title"] = (patch["title"] or "").strip()
         if not patch["title"]:
             raise WorkloadError("Task title is required")
 
-    with _conn() as con, _tx(con):
-        row = con.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        if row is None:
-            raise WorkloadError("Task not found")
-        if "status" in patch and patch["status"] != row["status"]:
-            # Stamped on the transition into 'complete' and cleared on the way
-            # out, so re-opening a task doesn't leave a stale completion time.
-            patch["completed_at"] = _now() if patch["status"] == "complete" else None
-        if patch:
-            patch["updated_at"] = _now()
-            sets = ", ".join(f"{k} = ?" for k in patch)
-            con.execute(f"UPDATE tasks SET {sets} WHERE id = ?", [*patch.values(), task_id])
-    return get_task(task_id)  # type: ignore[return-value]
+    row = await _tasks().find_one({"_id": task_id})
+    if row is None:
+        raise WorkloadError("Task not found")
+
+    if "due_date" in patch or "start_date" in patch:
+        # Re-validate the pair together, not each field alone — moving
+        # due_date earlier than an unchanged start_date (or vice versa) has
+        # to be caught even though only one of the two was actually sent.
+        eff_due = patch["due_date"] if "due_date" in patch else row.get("due_date")
+        eff_start = patch["start_date"] if "start_date" in patch else row.get("start_date")
+        patch["start_date"] = _check_span(eff_start, eff_due)
+
+    if "assignees" in patch:
+        # Task PIC must be a subset of project PIC — look up the parent
+        # project's own member list to validate against.
+        project = await _projects().find_one({"_id": row["project_id"]}, {"members": 1})
+        patch["assignees"] = _check_task_assignees(patch["assignees"], (project or {}).get("members", []))
+
+    if "status" in patch and patch["status"] != row["status"]:
+        # Stamped on the transition into 'complete' and cleared on the way
+        # out, so re-opening a task doesn't leave a stale completion time.
+        patch["completed_at"] = _now() if patch["status"] == "complete" else None
+
+    if patch:
+        patch["updated_at"] = _now()
+        await _tasks().update_one({"_id": task_id}, {"$set": patch})
+    return await get_task(task_id)  # type: ignore[return-value]
 
 
-def delete_task(task_id: str) -> None:
-    with _conn() as con, _tx(con):
-        cur = con.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-        if cur.rowcount == 0:
-            raise WorkloadError("Task not found")
+async def delete_task(task_id: str) -> None:
+    result = await _tasks().delete_one({"_id": task_id})
+    if result.deleted_count == 0:
+        raise WorkloadError("Task not found")
 
 
-def list_tasks(
+async def bulk_set_task_assignee(project_id: str, email: str, add: bool) -> int:
+    """Add or remove *email* across every task in the project in one action.
+
+    *email* must already be a project member — enforced here the same way as
+    a single-task edit, so this can't be used to smuggle in a non-member
+    assignee project-wide. Returns how many tasks actually changed.
+    """
+    project = await _projects().find_one({"_id": project_id})
+    if project is None:
+        raise WorkloadError("Project not found")
+    who = _check_member(email, "member")
+    if not who or who not in project.get("members", []):
+        raise WorkloadError(f"{email!r} is not a member of this project")
+
+    task_rows = await _tasks().find({"project_id": project_id}, {"assignees": 1}).to_list(length=None)
+    ts = _now()
+    ops = []
+    for t in task_rows:
+        current = set(t.get("assignees") or [])
+        updated = (current | {who}) if add else (current - {who})
+        if updated != current:
+            ops.append(UpdateOne({"_id": t["_id"]}, {"$set": {"assignees": sorted(updated), "updated_at": ts}}))
+    if ops:
+        await _tasks().bulk_write(ops)
+    return len(ops)
+
+
+async def list_tasks(
     *,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -508,44 +589,69 @@ def list_tasks(
 ) -> list[dict]:
     """Tasks joined with their project, for the calendar and list views.
 
-    A date range filters on `due_date`; `include_undated` additionally keeps
-    tasks with no due date (the scaffolded ones nobody has scheduled yet),
-    which the UI shows in a separate 'unscheduled' bucket.
+    A [date_from, date_to] window matches on *overlap* with each task's own
+    [start_date, due_date] span, not on `due_date` alone — a task can run
+    across several days now, and it belongs on every one of them, not just
+    the day it ends. `include_undated` additionally keeps tasks with no due
+    date at all (the scaffolded ones nobody has scheduled yet), which the UI
+    shows in a separate 'unscheduled' bucket.
     """
-    where: list[str] = []
-    args: list[str] = []
+    query: dict = {}
 
     frm = _check_date(date_from, "date_from")
     to = _check_date(date_to, "date_to")
     if frm and to:
-        clause = "(t.due_date BETWEEN ? AND ?)"
-        args += [frm, to]
+        # $expr (not a plain field match) because a task's *effective* start
+        # is start_date if set, else due_date — and older documents written
+        # before start_date existed have no such field to compare against at
+        # all, which a plain {"start_date": {"$lte": ...}} would silently
+        # (and wrongly) exclude.
+        overlap = {"$expr": {"$and": [
+            {"$lte": [{"$ifNull": ["$start_date", "$due_date"]}, to]},
+            {"$gte": ["$due_date", frm]},
+        ]}}
         if include_undated:
-            clause = f"({clause} OR t.due_date IS NULL)"
-        where.append(clause)
+            query["$or"] = [overlap, {"due_date": None}]
+        else:
+            query.update(overlap)
     elif frm:
-        where.append("t.due_date >= ?"); args.append(frm)
+        query["due_date"] = {"$gte": frm}
     elif to:
-        where.append("t.due_date <= ?"); args.append(to)
+        query["due_date"] = {"$lte": to}
 
     if assignee:
-        where.append("t.assignee = ?"); args.append(_check_member(assignee))
+        # Matching a scalar against an array field is Mongo's native "does
+        # this array contain this value" — no $elemMatch needed for a
+        # single-value equality check.
+        query["assignees"] = _check_member(assignee)
     if project_id:
-        where.append("t.project_id = ?"); args.append(project_id)
+        query["project_id"] = project_id
     if status:
-        where.append("t.status = ?"); args.append(_check_status(status))
+        query["status"] = _check_status(status)
 
-    sql = (
-        "SELECT t.*, p.name AS project_name, p.client AS project_client,"
-        " p.project_type AS project_type, p.status AS project_status"
-        " FROM tasks t JOIN projects p ON p.id = t.project_id"
-    )
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY COALESCE(t.due_date, '9999'), p.name, t.sort_order"
+    task_rows = await _tasks().find(query).to_list(length=None)
+    if not task_rows:
+        return []
 
-    with _conn() as con:
-        return [dict(r) for r in con.execute(sql, args)]
+    project_ids = {t["project_id"] for t in task_rows}
+    project_rows = await _projects().find({"_id": {"$in": list(project_ids)}}).to_list(length=None)
+    projects_by_id = {p["_id"]: p for p in project_rows}
+
+    out = []
+    for t in task_rows:
+        p = projects_by_id.get(t["project_id"])
+        d = _out_task(t)
+        d["project_name"] = p["name"] if p else ""
+        d["project_code"] = p.get("project_code", "") if p else ""
+        d["project_client"] = p["client"] if p else ""
+        d["project_type"] = p["project_type"] if p else ""
+        d["project_status"] = p["status"] if p else ""
+        d["project_members"] = p.get("members", []) if p else []
+        d["project_created_by"] = p.get("created_by", "") if p else ""
+        out.append(d)
+
+    out.sort(key=lambda t: (t["due_date"] or _UNDATED_SORT_KEY, t["project_name"], t["sort_order"]))
+    return out
 
 
 # ── Calendar ──────────────────────────────────────────────────────────────────
@@ -573,10 +679,10 @@ def calendar_range(view: str, anchor: str) -> tuple[str, str]:
     raise WorkloadError(f"Invalid view {view!r} — expected day, week or month")
 
 
-def calendar(view: str, anchor: str, **filters) -> dict:
+async def calendar(view: str, anchor: str, **filters) -> dict:
     """Everything the calendar page needs for one screen, in one round trip."""
     frm, to = calendar_range(view, anchor)
-    tasks = list_tasks(date_from=frm, date_to=to, include_undated=True, **filters)
+    tasks = await list_tasks(date_from=frm, date_to=to, include_undated=True, **filters)
     dated = [t for t in tasks if t["due_date"]]
     undated = [t for t in tasks if not t["due_date"]]
     return {
@@ -586,5 +692,5 @@ def calendar(view: str, anchor: str, **filters) -> dict:
         "to": to,
         "tasks": dated,
         "unscheduled": undated,
-        "projects": list_projects(),
+        "projects": await list_projects(),
     }

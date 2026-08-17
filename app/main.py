@@ -75,9 +75,9 @@ async def on_startup() -> None:
     """Restore persisted sessions from disk so users don't need to re-login after restart."""
     from services.mcp_client import init_sessions
     init_sessions()
-    # Creates workload.db + schema on first boot; a no-op on every boot after.
+    # Creates the MongoDB indexes on first boot; a no-op on every boot after.
     from services.workload_svc import init_db
-    init_db()
+    await init_db()
     # H-4: warn if SECURE_COOKIES is off (risky on non-localhost deployments)
     if not settings.SECURE_COOKIES:
         logging.getLogger(__name__).warning(

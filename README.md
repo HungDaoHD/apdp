@@ -74,7 +74,18 @@ AWS_S3_BUCKET=your-bucket
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
+
+# MongoDB (workload module — projects/tasks)
+MONGODB_URI=mongodb+srv://user:password@your-cluster.mongodb.net/
+MONGODB_DB=ap_workload
 ```
+
+> MongoDB is a managed [Atlas](https://www.mongodb.com/atlas) cluster, not a
+> container this app runs itself — `docker-compose.yml` has no `mongo`
+> service. Set `MONGODB_URI`/`MONGODB_DB` in `app/.env` (used both locally and
+> by Docker Compose, since it reads the same file). On Atlas, remember to add
+> whichever server the app runs on to **Network Access** — a new deploy
+> target that isn't whitelisted there will time out connecting.
 
 ---
 

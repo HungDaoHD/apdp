@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID:     Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
 
+    # MongoDB — workload module only (projects/tasks). A managed Atlas cluster
+    # in practice; the localhost default here is only a fallback for anyone
+    # running a local mongod without an app/.env override.
+    MONGODB_URI: str = "mongodb://localhost:27017"
+    MONGODB_DB:  str = "surveyflow"
+
     model_config = SettingsConfigDict(
         env_file=str(_APP_DIR / ".env"),
         env_file_encoding="utf-8",

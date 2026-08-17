@@ -1,8 +1,10 @@
 """Workload API — team projects, their tasks, and the calendar views.
 
 Read routes are open to every workload member (criterion 5: everyone sees every
-project). Write routes split two ways: projects are admin-only, tasks are
-editable by the admin or by any member assigned to that project.
+project). Write routes split two ways: a project record is editable by whoever
+created it (plus the admin), while its tasks are editable by anyone on the
+project — creator, admin, or assigned member — so a member can schedule and
+self-assign their own work without going through the admin.
 """
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from dependencies import require_csrf, require_workload, require_workload_admin
+from dependencies import require_csrf, require_workload
 from services import workload_svc
 from services.authz import WORKLOAD_ADMINS, WORKLOAD_MEMBERS, display_name
 from services.workload_svc import WorkloadError
@@ -21,19 +23,19 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workload", tags=["workload"])
 
-Status = Literal["pending", "complete", "cancel"]          # tasks
-ProjectStatus = Literal["pending", "ongoing", "complete"]   # projects — a distinct domain
+Status = Literal["pending", "ongoing", "complete", "cancel"]          # tasks
+ProjectStatus = Literal["pending", "ongoing", "complete", "cancel"]    # projects — a distinct domain
 View = Literal["month", "week", "day"]
 
 
 # ── Request bodies ────────────────────────────────────────────────────────────
 
 class ProjectCreate(BaseModel):
-    project_code: str = Field(min_length=1, max_length=20, description="VN + 4 digits, e.g. VN0001")
+    project_code: str = Field(min_length=1, max_length=20, description="VNxxxx (VN + 4 digits)")
     name:         str = Field(min_length=1, max_length=200)
     client:       str = Field(default="", max_length=200)
     project_type: str = Field(default="", max_length=100)
-    status:       ProjectStatus = "pending"
+    status:       ProjectStatus = "ongoing"
     note:         str = Field(default="", max_length=2000)
     members:      list[str] = Field(default_factory=list, max_length=50)
     tasks:        list[str] = Field(default_factory=lambda: list(workload_svc.DEFAULT_TASKS), max_length=20)
@@ -54,19 +56,26 @@ class ProjectUpdate(BaseModel):
 
 
 class TaskCreate(BaseModel):
-    title:    str = Field(min_length=1, max_length=200)
-    assignee: str = Field(default="", max_length=120)
-    due_date: str | None = None
-    status:   Status = "pending"
-    note:     str = Field(default="", max_length=2000)
+    title:      str = Field(min_length=1, max_length=200)
+    assignees:  list[str] = Field(default_factory=list, max_length=10)
+    due_date:   str | None = None
+    start_date: str | None = None
+    status:     Status = "ongoing"
+    note:       str = Field(default="", max_length=2000)
 
 
 class TaskUpdate(BaseModel):
-    title:    str | None = Field(default=None, min_length=1, max_length=200)
-    assignee: str | None = Field(default=None, max_length=120)
-    due_date: str | None = None
-    status:   Status | None = None
-    note:     str | None = Field(default=None, max_length=2000)
+    title:      str | None = Field(default=None, min_length=1, max_length=200)
+    assignees:  list[str] | None = Field(default=None, max_length=10)
+    due_date:   str | None = None
+    start_date: str | None = None
+    status:     Status | None = None
+    note:       str | None = Field(default=None, max_length=2000)
+
+
+class BulkAssignee(BaseModel):
+    email: str = Field(min_length=1, max_length=120)
+    add:   bool
 
 
 def _patch(body: BaseModel, *, drop: set[str] = frozenset()) -> dict:
@@ -84,9 +93,14 @@ def _bad(exc: WorkloadError) -> HTTPException:
     return HTTPException(422, str(exc))
 
 
-def _require_task_editor(email: str, project_id: str) -> None:
-    if not workload_svc.can_edit_tasks(email, project_id):
+async def _require_task_editor(email: str, project_id: str) -> None:
+    if not await workload_svc.can_edit_tasks(email, project_id):
         raise HTTPException(403, "You can only edit tasks in projects assigned to you")
+
+
+async def _require_project_editor(email: str, project_id: str) -> None:
+    if not await workload_svc.can_edit_project(email, project_id):
+        raise HTTPException(403, "You can only edit projects you created")
 
 
 # ── Meta ──────────────────────────────────────────────────────────────────────
@@ -105,8 +119,8 @@ async def meta(email: str = Depends(require_workload)):
             {"email": m, "name": display_name(m), "is_admin": m in WORKLOAD_ADMINS}
             for m in WORKLOAD_MEMBERS
         ],
-        "project_types": workload_svc.project_types(),
-        "clients":       workload_svc.clients(),
+        "project_types": await workload_svc.project_types(),
+        "clients":       await workload_svc.clients(),
         "default_tasks": list(workload_svc.DEFAULT_TASKS),
         "statuses":      list(workload_svc.STATUSES),
     }
@@ -116,33 +130,37 @@ async def meta(email: str = Depends(require_workload)):
 
 @router.get("/projects")
 async def list_projects(email: str = Depends(require_workload)):
-    return workload_svc.list_projects()
+    return await workload_svc.list_projects()
 
 
 @router.get("/projects/{project_id}")
 async def get_project(project_id: str, email: str = Depends(require_workload)):
-    project = workload_svc.get_project(project_id)
+    project = await workload_svc.get_project(project_id)
     if project is None:
         raise HTTPException(404, "Project not found")
-    project["can_edit_tasks"] = workload_svc.can_edit_tasks(email, project_id)
+    project["can_edit_tasks"]   = await workload_svc.can_edit_tasks(email, project_id)
+    project["can_edit_project"] = await workload_svc.can_edit_project(email, project_id)
     return project
 
 
 @router.post("/projects", dependencies=[Depends(require_csrf)])
-async def create_project(body: ProjectCreate, email: str = Depends(require_workload_admin)):
+async def create_project(body: ProjectCreate, email: str = Depends(require_workload)):
+    """Any workload member may start a project — they become its owner, which
+    is what `can_edit_project` keys the later edit/delete checks on."""
     try:
-        return workload_svc.create_project(**body.model_dump(), created_by=email)
+        return await workload_svc.create_project(**body.model_dump(), created_by=email)
     except WorkloadError as exc:
         raise _bad(exc)
 
 
 @router.patch("/projects/{project_id}", dependencies=[Depends(require_csrf)])
 async def update_project(
-    project_id: str, body: ProjectUpdate, email: str = Depends(require_workload_admin)
+    project_id: str, body: ProjectUpdate, email: str = Depends(require_workload)
 ):
+    await _require_project_editor(email, project_id)
     sent = _patch(body)
     try:
-        return workload_svc.update_project(
+        return await workload_svc.update_project(
             project_id, sent, members=sent.get("members")
         )
     except WorkloadError as exc:
@@ -150,9 +168,10 @@ async def update_project(
 
 
 @router.delete("/projects/{project_id}", dependencies=[Depends(require_csrf)])
-async def delete_project(project_id: str, email: str = Depends(require_workload_admin)):
+async def delete_project(project_id: str, email: str = Depends(require_workload)):
+    await _require_project_editor(email, project_id)
     try:
-        workload_svc.delete_project(project_id)
+        await workload_svc.delete_project(project_id)
     except WorkloadError as exc:
         raise HTTPException(404, str(exc))
     return {"ok": True}
@@ -164,9 +183,9 @@ async def delete_project(project_id: str, email: str = Depends(require_workload_
 async def create_task(
     project_id: str, body: TaskCreate, email: str = Depends(require_workload)
 ):
-    _require_task_editor(email, project_id)
+    await _require_task_editor(email, project_id)
     try:
-        return workload_svc.create_task(
+        return await workload_svc.create_task(
             project_id=project_id, created_by=email, **body.model_dump()
         )
     except WorkloadError as exc:
@@ -175,24 +194,35 @@ async def create_task(
 
 @router.patch("/tasks/{task_id}", dependencies=[Depends(require_csrf)])
 async def update_task(task_id: str, body: TaskUpdate, email: str = Depends(require_workload)):
-    task = workload_svc.get_task(task_id)
+    task = await workload_svc.get_task(task_id)
     if task is None:
         raise HTTPException(404, "Task not found")
-    _require_task_editor(email, task["project_id"])
+    await _require_task_editor(email, task["project_id"])
     try:
-        return workload_svc.update_task(task_id, _patch(body))
+        return await workload_svc.update_task(task_id, _patch(body))
     except WorkloadError as exc:
         raise _bad(exc)
 
 
 @router.delete("/tasks/{task_id}", dependencies=[Depends(require_csrf)])
 async def delete_task(task_id: str, email: str = Depends(require_workload)):
-    task = workload_svc.get_task(task_id)
+    task = await workload_svc.get_task(task_id)
     if task is None:
         raise HTTPException(404, "Task not found")
-    _require_task_editor(email, task["project_id"])
-    workload_svc.delete_task(task_id)
+    await _require_task_editor(email, task["project_id"])
+    await workload_svc.delete_task(task_id)
     return {"ok": True}
+
+
+@router.post("/projects/{project_id}/tasks/bulk-assignee", dependencies=[Depends(require_csrf)])
+async def bulk_assignee(project_id: str, body: BulkAssignee, email: str = Depends(require_workload)):
+    """Add or remove one person across every task in the project at once."""
+    await _require_task_editor(email, project_id)
+    try:
+        n = await workload_svc.bulk_set_task_assignee(project_id, body.email, body.add)
+    except WorkloadError as exc:
+        raise _bad(exc)
+    return {"ok": True, "updated": n}
 
 
 @router.get("/tasks")
@@ -205,7 +235,7 @@ async def list_tasks(
     status:     Status | None = Query(default=None),
 ):
     try:
-        return workload_svc.list_tasks(
+        return await workload_svc.list_tasks(
             date_from=date_from, date_to=date_to, assignee=assignee,
             project_id=project_id, status=status,
         )
@@ -229,6 +259,6 @@ async def calendar(
                {"assignee": assignee, "project_id": project_id, "status": status}.items()
                if v}
     try:
-        return workload_svc.calendar(view, anchor, **filters)
+        return await workload_svc.calendar(view, anchor, **filters)
     except WorkloadError as exc:
         raise _bad(exc)

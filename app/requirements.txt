@@ -13,3 +13,4 @@ python-multipart>=0.0.9
 aiosmtplib>=3.0.0
 scipy>=1.10
 numpy>=1.24
+motor>=3.5
