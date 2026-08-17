@@ -76,8 +76,19 @@ async def on_startup() -> None:
     from services.mcp_client import init_sessions
     init_sessions()
     # Creates the MongoDB indexes on first boot; a no-op on every boot after.
-    from services.workload_svc import init_db
-    await init_db()
+    # Deliberately non-fatal: only /workload needs Mongo, so an unreachable
+    # database must not take Surveys and the pipeline down with it. Logged at
+    # ERROR so a misconfigured deploy is still obvious in journalctl — the
+    # workload routes will then fail per-request instead of at boot.
+    try:
+        from services.workload_svc import init_db
+        await init_db()
+    except Exception:
+        logging.getLogger(__name__).error(
+            "MongoDB unreachable at startup — /workload will not work until it is fixed. "
+            "Check MONGODB_URI in app/.env and that the mongo container is running.",
+            exc_info=True,
+        )
     # H-4: warn if SECURE_COOKIES is off (risky on non-localhost deployments)
     if not settings.SECURE_COOKIES:
         logging.getLogger(__name__).warning(
