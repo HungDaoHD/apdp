@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "apdp-dev",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["C:\\Users\\PC\\OneDrive\\DevZone\\PyPackages\\apdp\\app\\main.py"],
+      "port": 8000
+    }
+  ]
+}

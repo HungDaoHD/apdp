@@ -32,17 +32,38 @@ def _token_dir() -> Path:
     return Path(os.getenv("DATA_DIR", "data"))
 
 
+class TokenEncryptionRequired(Exception):
+    """TOKEN_SECRET_KEY is missing/broken in a deployment that requires it (SEC-005).
+
+    Only raised when SECURE_COOKIES=True (production) — local dev keeps the old
+    fall-back-to-plaintext behavior so a fresh checkout still runs without extra
+    config, matching the existing SECURE_COOKIES=False dev-mode posture.
+    """
+
+
 def _get_fernet():
-    """Return a Fernet instance if TOKEN_SECRET_KEY is configured, else None."""
+    """Return a Fernet instance if TOKEN_SECRET_KEY is configured.
+
+    Fail-closed in production: a missing/invalid key must never result in
+    tokens being written to disk unencrypted, so this raises instead of
+    silently falling back to None there.
+    """
+    from config import settings
+    if not settings.TOKEN_SECRET_KEY:
+        if settings.SECURE_COOKIES:
+            raise TokenEncryptionRequired(
+                "TOKEN_SECRET_KEY is not set — refusing to store QMe credentials "
+                "unencrypted. Set TOKEN_SECRET_KEY in the server's app/.env."
+            )
+        return None
     try:
-        from config import settings
-        if not settings.TOKEN_SECRET_KEY:
-            return None
         import base64, hashlib
         from cryptography.fernet import Fernet
         key = base64.urlsafe_b64encode(hashlib.sha256(settings.TOKEN_SECRET_KEY.encode()).digest())
         return Fernet(key)
-    except Exception:
+    except Exception as exc:
+        if settings.SECURE_COOKIES:
+            raise TokenEncryptionRequired(f"Failed to initialize token encryption: {exc}") from exc
         return None
 
 
@@ -235,6 +256,9 @@ class MemoryTokenStorage:
             except Exception:
                 _restrict_windows(tmp)
             tmp.replace(f)
+        except TokenEncryptionRequired as e:
+            log.error("Refusing to persist QMe token unencrypted (session=%s…): %s",
+                       self._session_id[:8], e)
         except Exception as e:
             log.warning("Could not save token to disk: %s", e)
 

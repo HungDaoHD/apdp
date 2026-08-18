@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     PORT: int = 8000
     SECURE_COOKIES: bool = True   # Set False only for local HTTP development
     TOKEN_SECRET_KEY: str = ""    # Derive Fernet key to encrypt token files at rest
+    ALLOWED_HOSTS: str = "fw.retail.qand.me"  # comma-separated; enforced only when SECURE_COOKIES=True
 
     # Storage
     DATA_DIR:         str = "data"

@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from routers import surveys, pipeline, qme_auth, usage_log, price_check, workload
 from config import Settings
@@ -37,6 +38,18 @@ app = FastAPI(
     redoc_url=None if _IS_PROD else "/redoc",
     openapi_url=None if _IS_PROD else "/openapi.json",
 )
+
+# SEC-015: reject requests with a spoofed/unexpected Host header. Enforced
+# whenever SECURE_COOKIES=True — which is this app's "real deployment" signal
+# and also this Settings field's own default, so it's on even for `python
+# main.py` run locally without a `.env` override. 127.0.0.1 and localhost
+# always stay allowed regardless: the Docker healthcheck (docker-compose.yml)
+# curls http://127.0.0.1:8000/healthz directly bypassing the real domain, and
+# anyone running the server directly hits it via localhost/127.0.0.1 too —
+# without both, either would 400 with "Invalid host header".
+if _IS_PROD:
+    _allowed_hosts = [h.strip() for h in settings.ALLOWED_HOSTS.split(",") if h.strip()]
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts + ["127.0.0.1", "localhost"])
 
 # M-6: Explicit CORS policy — deny all cross-origin requests (same-origin only)
 app.add_middleware(
@@ -127,6 +140,20 @@ async def get_version():
 
 _NO_CACHE = {"Cache-Control": "no-store"}
 
+# SEC-015 (CSP): applied only to pages already migrated off inline
+# <script>/onclick=… (their JS now lives in static/*.js siblings — see
+# price_check.js, log.js). style-src keeps 'unsafe-inline': inline style=""
+# attributes are still in use there and are a much weaker XSS vector than
+# inline script, so tightening script-src first covers the real risk without
+# requiring every style="" to be rewritten too. Rolled out page-by-page —
+# pages without this header keep today's behavior (no CSP) until migrated.
+_CSP_STRICT = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    ),
+}
+
 
 @app.get("/healthz", include_in_schema=False)
 async def healthz():
@@ -150,7 +177,7 @@ async def editor():
 
 @app.get("/log", response_class=HTMLResponse)
 async def log_page():
-    return HTMLResponse((_STATIC / "log.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
+    return HTMLResponse((_STATIC / "log.html").read_text(encoding="utf-8"), headers={**_NO_CACHE, **_CSP_STRICT})
 
 
 @app.get("/workload", response_class=HTMLResponse)
@@ -160,7 +187,7 @@ async def workload_page():
 
 @app.get("/price-check", response_class=HTMLResponse)
 async def price_check_page():
-    return HTMLResponse((_STATIC / "price_check.html").read_text(encoding="utf-8"), headers=_NO_CACHE)
+    return HTMLResponse((_STATIC / "price_check.html").read_text(encoding="utf-8"), headers={**_NO_CACHE, **_CSP_STRICT})
 
 
 if __name__ == "__main__":

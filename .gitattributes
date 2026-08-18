@@ -1,0 +1,4 @@
+# Must stay LF regardless of the checkout platform's core.autocrlf — this file
+# is COPYed straight into a Linux container and run via its #!/bin/sh shebang;
+# a CRLF-mangled shebang (#!/bin/sh\r) fails to exec on Windows checkouts.
+docker-entrypoint.sh text eol=lf
