@@ -101,6 +101,10 @@ def _tasks():
     return _db()["tasks"]
 
 
+def _activity():
+    return _db()["activity"]
+
+
 async def init_db() -> None:
     """Create indexes if absent. Safe to call on every startup — Mongo's
     create_index is a no-op when an equivalent index already exists, so no
@@ -111,6 +115,9 @@ async def init_db() -> None:
     await _tasks().create_index("due_date")
     await _tasks().create_index("start_date")
     await _tasks().create_index("assignees")
+    # The log is only ever read newest-first, optionally narrowed to one person.
+    await _activity().create_index([("at", -1)])
+    await _activity().create_index("actor")
 
 
 def _now() -> str:
@@ -414,6 +421,19 @@ async def delete_project(project_id: str) -> None:
     await _tasks().delete_many({"project_id": project_id})
 
 
+async def project_label(project_id: str) -> tuple[str, str]:
+    """(project_code, name) in one projected query.
+
+    `get_project` would do for this, but it also runs a task-count aggregation
+    and loads every task — needless work on a path (logging a task edit) that
+    runs on every drag-and-drop of a calendar chip.
+    """
+    row = await _projects().find_one({"_id": project_id}, {"project_code": 1, "name": 1})
+    if not row:
+        return "", ""
+    return row.get("project_code", ""), row.get("name", "")
+
+
 async def project_types() -> list[str]:
     """Suggested types plus any that have actually been typed in."""
     used = set(await _projects().distinct("project_type", {"project_type": {"$ne": ""}}))
@@ -701,3 +721,111 @@ async def calendar(view: str, anchor: str, **filters) -> dict:
         "unscheduled": undated,
         "projects": await list_projects(),
     }
+
+
+# ── Activity log ──────────────────────────────────────────────────────────────
+# Append-only: who did what, to which project/task, and what changed. Written
+# from the router layer, which is where the acting account is actually known —
+# the functions above are called by tests and scripts with no session attached.
+#
+# Never deleted or expired. A team of four generates a few hundred entries a
+# month at a few hundred bytes each, so unbounded growth is not a practical
+# concern here, and silently expiring an audit trail would be a worse surprise
+# than the disk it costs.
+
+ACTIVITY_ACTIONS: tuple[str, ...] = (
+    "project.create", "project.update", "project.delete",
+    "task.create", "task.update", "task.delete", "task.bulk_assignee",
+)
+
+# Fields whose before/after is worth recording. Anything not listed (e.g.
+# updated_at, which changes on literally every edit) would be noise.
+_LOGGED_PROJECT_FIELDS = ("project_code", "name", "client", "project_type", "status", "note", "members")
+_LOGGED_TASK_FIELDS = ("title", "assignees", "due_date", "start_date", "status", "note")
+
+
+def diff_fields(before: dict | None, after: dict | None, fields: tuple[str, ...]) -> list[dict]:
+    """Which of *fields* actually changed, as [{field, from, to}].
+
+    Compared against the stored documents rather than the request body: a
+    PATCH that re-sends a task's existing status shouldn't read as a change,
+    and the server normalises some values (a start date filled in from a due
+    date) that the request never mentioned but the log should show.
+    """
+    b, a = before or {}, after or {}
+    return [
+        {"field": f, "from": b.get(f), "to": a.get(f)}
+        for f in fields
+        if b.get(f) != a.get(f)
+    ]
+
+
+def diff_project(before: dict | None, after: dict | None) -> list[dict]:
+    return diff_fields(before, after, _LOGGED_PROJECT_FIELDS)
+
+
+def diff_task(before: dict | None, after: dict | None) -> list[dict]:
+    return diff_fields(before, after, _LOGGED_TASK_FIELDS)
+
+
+async def log_activity(
+    *,
+    actor: str,
+    action: str,
+    target: str = "",
+    project_id: str | None = None,
+    project_code: str = "",
+    project_name: str = "",
+    task_id: str | None = None,
+    changes: list[dict] | None = None,
+) -> None:
+    """Append one entry. Callers are not expected to handle failures — see
+    `routers.workload._log`, which swallows them: losing a log line must never
+    turn a successful edit into an error the user sees."""
+    await _activity().insert_one({
+        "_id": _new_id(),
+        "at": _now(),
+        "actor": (actor or "").strip().lower(),
+        "action": action,
+        "target": target,
+        "project_id": project_id,
+        "project_code": project_code,
+        "project_name": project_name,
+        "task_id": task_id,
+        "changes": changes or [],
+    })
+
+
+async def list_activity(
+    *,
+    limit: int = 300,
+    actor: str | None = None,
+    action: str | None = None,
+    after: str | None = None,
+    before: str | None = None,
+) -> list[dict]:
+    """The most recent entries, newest first.
+
+    *after* / *before* are full ISO-8601 instants, not calendar dates: the
+    caller's day boundaries are in their own timezone, and converting them
+    here would need a timezone the server doesn't know. Every stored `at` is
+    UTC ISO-8601, a format whose lexical order matches chronological order,
+    so a plain string range compare is exact.
+    """
+    query: dict = {}
+    if actor:
+        query["actor"] = _check_member(actor, "actor")
+    if action:
+        if action not in ACTIVITY_ACTIONS:
+            raise WorkloadError(f"Unknown action {action!r}")
+        query["action"] = action
+    if after or before:
+        at: dict = {}
+        if after:
+            at["$gte"] = after
+        if before:
+            at["$lte"] = before
+        query["at"] = at
+
+    rows = await _activity().find(query).sort("at", -1).limit(max(1, min(limit, 2000))).to_list(length=None)
+    return [_out(r) for r in rows]

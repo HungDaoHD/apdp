@@ -349,6 +349,33 @@ textarea.inp{resize:vertical;min-height:56px}
 .sumtbl tbody tr:hover{background:#f8f9fb}
 .sumtbl .un{display:inline-flex;align-items:center;gap:6px}
 
+/* ── Log tab ── */
+.logwrap{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow-x:auto}
+.logtbl{width:100%;border-collapse:collapse;min-width:820px}
+.logtbl th{font-size:10.5px;font-weight:700;color:#999;text-align:left;padding:9px 12px;
+  border-bottom:1px solid #e0e4ea;letter-spacing:.3px;text-transform:uppercase;
+  background:#f8f9fb;position:sticky;top:0;z-index:1}
+.logtbl td{font-size:12px;padding:8px 12px;border-bottom:1px solid #f5f6f8;vertical-align:top}
+.logtbl tr:last-child td{border-bottom:none}
+.logtbl tbody tr:hover{background:#fafbfc}
+.log-when{white-space:nowrap;color:#888;font-size:11.5px;width:132px}
+.log-who{white-space:nowrap;width:120px}
+.log-tgt{max-width:280px}
+.log-tgt .uproj-c{margin-right:5px}
+/* One pill per action kind — created/updated/deleted read very differently at
+   a glance, and the verb is the first thing you scan a log for. */
+.act{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid;white-space:nowrap}
+.act-create{background:#e6f4ea;color:#1e8449;border-color:#b7dfbf}
+.act-update{background:#e3f2fd;color:#1565c0;border-color:#90caf9}
+.act-delete{background:#fce8e6;color:#c0392b;border-color:#f5c6c0}
+.act-other{background:#f1f2f4;color:#666;border-color:#dfe2e6}
+.chg{display:flex;flex-direction:column;gap:3px}
+.chg-r{font-size:11px;color:#555;line-height:1.5}
+.chg-f{font-weight:700;color:#333}
+.chg-o{color:#c0392b;text-decoration:line-through;opacity:.75}
+.chg-n{color:#1e8449;font-weight:600}
+.chg-e{color:#bbb;font-style:italic}
+
 /* ── Toast (calendar has no status bar of its own) ── */
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);
   background:#16213e;color:white;font-size:12.5px;padding:10px 18px;border-radius:8px;
@@ -444,6 +471,7 @@ textarea.inp{resize:vertical;min-height:56px}
     <button id="tabProj"           onclick="switchTab('proj')">📁 Projects</button>
     <button id="tabUsers"          onclick="switchTab('users')">👥 Users</button>
     <button id="tabSummary"        onclick="switchTab('summary')">📊 Summary</button>
+    <button id="tabLog"            onclick="switchTab('log')">🕘 Log</button>
   </div>
 
   <!-- ══ CALENDAR TAB ══ -->
@@ -545,6 +573,36 @@ textarea.inp{resize:vertical;min-height:56px}
       <div class="gap"></div>
     </div>
     <div id="summaryArea"><div class="loading"><div class="spin"></div> Loading summary…</div></div>
+  </div>
+
+  <!-- ══ LOG TAB ══ -->
+  <div id="paneLog" style="display:none">
+    <div class="tbar">
+      <div class="ssel filt" id="lMemberWrap" style="width:158px">
+        <input class="inp" autocomplete="off" placeholder="All members">
+        <div class="ssel-panel"></div>
+      </div>
+      <div class="ssel filt" id="lActionWrap" style="width:180px">
+        <input class="inp" autocomplete="off" placeholder="Any action">
+        <div class="ssel-panel"></div>
+      </div>
+      <!-- Dates are the viewer's own local days; loadLog() converts each to
+           the UTC instant the server actually stores. -->
+      <div class="dr" title="Filter by when the action happened (your local time)">
+        <span class="dr-l">📅</span>
+        <input class="sel dr-i" type="date" id="lFrom" onchange="loadLog()">
+        <span class="dr-s">→</span>
+        <input class="sel dr-i" type="date" id="lTo" onchange="loadLog()">
+        <button class="dr-x" onclick="clearRange('lFrom','lTo',loadLog)" title="Clear dates">✕</button>
+      </div>
+      <select class="sel" id="lLimit" onchange="loadLog()" title="How far back to load">
+        <option value="300">Last 300</option>
+        <option value="1000">Last 1000</option>
+        <option value="2000">Last 2000</option>
+      </select>
+      <div class="gap"></div>
+    </div>
+    <div id="logArea"><div class="loading"><div class="spin"></div> Loading log…</div></div>
   </div>
 </div>
 
@@ -770,6 +828,7 @@ let TAB       = 'cal';
 let DETAIL    = null;      // project currently open in the detail dialog
 let EDITING   = null;      // project being edited in the project dialog (null = create)
 let ALL_TASKS = [];        // every task, joined with its project — powers the Users tab
+let LOG       = [];        // most recent activity entries — powers the Log tab
 let _csrfToken = null;
 let _newTaskAssignees = []; // pending selection in the detail dialog's "add task" row
 let _taskDlgCtx = null;    // task open in the calendar's task editor
@@ -1069,6 +1128,18 @@ async function boot(){
   ssInit(document.getElementById('sMemberWrap'), {
     getOptions: memberFilterOptions, allowCustom: false, initial: '', onChange: renderSummary,
   });
+  // The Log tab's two filters refetch (the server holds far more history than
+  // one page shows), unlike the purely client-side filters above.
+  ssInit(document.getElementById('lMemberWrap'), {
+    getOptions: memberFilterOptions, allowCustom: false, initial: '', onChange: loadLog,
+  });
+  ssInit(document.getElementById('lActionWrap'), {
+    // Driven by the server's own list, so a newly logged action can't go
+    // missing from the filter.
+    getOptions: () => [{value:'', label:'Any action'},
+      ...(META.activity_actions || []).map(a => ({value: a, label: ACTION_LABEL[a] || a}))],
+    allowCustom: false, initial: '', onChange: loadLog,
+  });
 
   document.getElementById('pfMembers').innerHTML = META.members.map(m => `
     <label class="chk" style="border-left:3px solid ${memberColor(m.email)}"
@@ -1102,12 +1173,14 @@ async function refreshAll(){
   document.getElementById('projArea').innerHTML    = loadingBox('projects');
   document.getElementById('usersArea').innerHTML   = loadingBox('users');
   document.getElementById('summaryArea').innerHTML = loadingBox('summary');
+  document.getElementById('logArea').innerHTML     = loadingBox('log');
   try {
     await loadProjects();
     await loadCalendar();
     await loadAllTasks(true);
     renderUsers();
     renderSummary();
+    await loadLog();
     toast('Refreshed', 'ok');
   } catch(e){
     toast(e.message, 'err');
@@ -2089,6 +2162,124 @@ function renderSummary(){
 }
 
 // ════════════════════════════════════════════════════
+// ACTIVITY LOG
+// ════════════════════════════════════════════════════
+const ACTION_LABEL = {
+  'project.create':     'Created project',
+  'project.update':     'Edited project',
+  'project.delete':     'Deleted project',
+  'task.create':        'Added task',
+  'task.update':        'Edited task',
+  'task.delete':        'Deleted task',
+  'task.bulk_assignee': 'Bulk assign',
+};
+function actionClass(a){
+  if (a.endsWith('.create')) return 'act-create';
+  if (a.endsWith('.update')) return 'act-update';
+  if (a.endsWith('.delete')) return 'act-delete';
+  return 'act-other';
+}
+
+const FIELD_LABEL = {
+  project_code: 'Project ID', name: 'Name', client: 'Client', project_type: 'Type',
+  status: 'Status', note: 'Note', members: 'Members',
+  title: 'Title', assignees: 'Assignees', due_date: 'Due date', start_date: 'Start date',
+  tasks_removed: 'Tasks removed',
+};
+
+/** Timestamps are stored UTC; people read them in their own time. */
+function fmtWhen(isoInstant){
+  const d = new Date(isoInstant);
+  if (isNaN(d)) return isoInstant || '—';
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function fmtChangeValue(field, v){
+  if (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length))
+    return '<span class="chg-e">(empty)</span>';
+  if (Array.isArray(v)) return esc(v.map(e => e.split('@')[0]).join(', '));
+  if (field === 'due_date' || field === 'start_date') return esc(fmtFull(v));
+  if (field === 'status') return esc(STATUS_LABEL[v] || v);
+  // Notes can be long; the log is a scan surface, not a document viewer.
+  const s = String(v);
+  return esc(s.length > 90 ? s.slice(0, 90) + '…' : s);
+}
+
+async function loadLog(){
+  if (!META) return;
+  const q = new URLSearchParams({limit: document.getElementById('lLimit').value});
+  const who = ssValue(document.getElementById('lMemberWrap'));
+  const act = ssValue(document.getElementById('lActionWrap'));
+  const from = document.getElementById('lFrom').value;
+  const to   = document.getElementById('lTo').value;
+  if (who) q.set('actor', who);
+  if (act) q.set('action', act);
+  // The date inputs mean whole local days; the server compares against UTC
+  // instants, so convert here rather than hand it a bare date it would read
+  // as midnight UTC — up to 7 hours off for this team.
+  if (from) q.set('after',  new Date(`${from}T00:00:00`).toISOString());
+  if (to)   q.set('before', new Date(`${to}T23:59:59.999`).toISOString());
+
+  document.getElementById('logArea').innerHTML = loadingBox('log');
+  try {
+    LOG = await api('/api/workload/activity?' + q);
+  } catch(e){
+    if (e.status === 403) return showDeny(e.message);
+    document.getElementById('logArea').innerHTML = errBox(e.message);
+    return;
+  }
+  renderLog();
+}
+
+function renderLog(){
+  if (!META) return;
+  if (!LOG.length){
+    document.getElementById('logArea').innerHTML =
+      `<div class="empty"><div class="empty-ico">🕘</div><h3>Nothing logged yet</h3>
+        <p>Every project and task change is recorded here from now on — who did it,
+           when, and what changed.</p></div>`;
+    return;
+  }
+
+  document.getElementById('logArea').innerHTML = `<div class="logwrap">
+    <table class="logtbl">
+      <thead><tr>
+        <th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Changes</th>
+      </tr></thead>
+      <tbody>${LOG.map(e => {
+        const name = display(e.actor);
+        // A deleted project has no detail page left to open.
+        const alive = PROJECTS.some(p => p.id === e.project_id);
+        const open = alive ? ` onclick="openDetail('${e.project_id}')" style="cursor:pointer"` : '';
+        const changes = (e.changes || []).map(c => `<div class="chg-r">
+          <span class="chg-f">${esc(FIELD_LABEL[c.field] || c.field)}:</span>
+          ${fmtChangeValue(c.field, c.from)} → <span class="chg-n">${fmtChangeValue(c.field, c.to)}</span>
+        </div>`).join('');
+        return `<tr>
+          <td class="log-when">${esc(fmtWhen(e.at))}</td>
+          <td class="log-who">${assigneeTag(e.actor, name)} ${esc(name)}</td>
+          <td><span class="act ${actionClass(e.action)}">${esc(ACTION_LABEL[e.action] || e.action)}</span></td>
+          <td class="log-tgt"${open}>
+            ${e.project_code ? `<span class="uproj-c">${esc(e.project_code)}</span>` : ''}
+            ${esc(e.target || e.project_name || '—')}
+          </td>
+          <td>${changes ? `<div class="chg">${changes}</div>` : '<span class="chg-e">—</span>'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>
+  </div>
+  <div class="hint" style="margin-top:8px">Showing ${LOG.length} entr${LOG.length === 1 ? 'y' : 'ies'},
+    newest first. Times are your local time.</div>`;
+}
+
+/** Roster display name for an email, falling back to the local part for an
+ *  actor who has since left the roster — old log entries must still read. */
+function display(email){
+  return (META.members.find(m => m.email === email) || {}).name || String(email || '').split('@')[0];
+}
+
+// ════════════════════════════════════════════════════
 // PROJECTS RENDER
 // ════════════════════════════════════════════════════
 function renderProjects(){
@@ -2184,7 +2375,7 @@ function jumpToDay(d){ ANCHOR = d; setView('day'); }
 function switchTab(t){
   TAB = t;
   [['tabCal','paneCal','cal'], ['tabProj','paneProj','proj'], ['tabUsers','paneUsers','users'],
-   ['tabSummary','paneSummary','summary']]
+   ['tabSummary','paneSummary','summary'], ['tabLog','paneLog','log']]
     .forEach(([tab, pane, key]) => {
       document.getElementById(tab).classList.toggle('on', t === key);
       document.getElementById(pane).style.display = t === key ? '' : 'none';
@@ -2196,6 +2387,10 @@ function switchTab(t){
   if (t === 'users') loadUsers();
   if (t === 'summary') loadSummary();
   if (t === 'proj') loadAllTasks().then(renderProjects).catch(() => {});
+  // Always refetched: the point of a log is to show what just happened, and
+  // it changes on every edit anyone makes — a cached copy would be stale on
+  // arrival in a way the other tabs are not.
+  if (t === 'log') loadLog();
 }
 
 // ════════════════════════════════════════════════════

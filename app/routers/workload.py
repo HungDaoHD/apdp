@@ -103,6 +103,29 @@ async def _require_project_editor(email: str, project_id: str) -> None:
         raise HTTPException(403, "You can only edit projects you created")
 
 
+# ── Activity log ──────────────────────────────────────────────────────────────
+# Recorded here rather than in the service layer, which has no notion of a
+# signed-in account — every mutating route already knows who is calling.
+
+async def _log(**kw) -> None:
+    """Append one activity entry, swallowing any failure.
+
+    The edit itself has already succeeded and been persisted by the time this
+    runs; turning a logging hiccup into a 500 would tell the user their change
+    failed when it did not.
+    """
+    try:
+        await workload_svc.log_activity(**kw)
+    except Exception:
+        log.exception("Failed to write workload activity entry (%s)", kw.get("action"))
+
+
+def _plabel(project: dict | None) -> tuple[str, str]:
+    """(project_code, name) for a project doc already in hand."""
+    p = project or {}
+    return p.get("project_code", ""), p.get("name", "")
+
+
 # ── Meta ──────────────────────────────────────────────────────────────────────
 
 @router.get("/meta")
@@ -123,6 +146,9 @@ async def meta(email: str = Depends(require_workload)):
         "clients":       await workload_svc.clients(),
         "default_tasks": list(workload_svc.DEFAULT_TASKS),
         "statuses":      list(workload_svc.STATUSES),
+        # So the log tab's action filter can't drift out of sync with what the
+        # routes below actually record.
+        "activity_actions": list(workload_svc.ACTIVITY_ACTIONS),
     }
 
 
@@ -148,9 +174,15 @@ async def create_project(body: ProjectCreate, email: str = Depends(require_workl
     """Any workload member may start a project — they become its owner, which
     is what `can_edit_project` keys the later edit/delete checks on."""
     try:
-        return await workload_svc.create_project(**body.model_dump(), created_by=email)
+        created = await workload_svc.create_project(**body.model_dump(), created_by=email)
     except WorkloadError as exc:
         raise _bad(exc)
+    code, name = _plabel(created)
+    await _log(
+        actor=email, action="project.create", target=name,
+        project_id=created["id"], project_code=code, project_name=name,
+    )
+    return created
 
 
 @router.patch("/projects/{project_id}", dependencies=[Depends(require_csrf)])
@@ -159,21 +191,40 @@ async def update_project(
 ):
     await _require_project_editor(email, project_id)
     sent = _patch(body)
+    # Read before writing so the log can record what actually changed, rather
+    # than echoing back a request body that may re-send unchanged values.
+    before = await workload_svc.get_project(project_id)
     try:
-        return await workload_svc.update_project(
+        updated = await workload_svc.update_project(
             project_id, sent, members=sent.get("members")
         )
     except WorkloadError as exc:
         raise _bad(exc)
+    changes = workload_svc.diff_project(before, updated)
+    if changes:
+        code, name = _plabel(updated)
+        await _log(
+            actor=email, action="project.update", target=name,
+            project_id=project_id, project_code=code, project_name=name, changes=changes,
+        )
+    return updated
 
 
 @router.delete("/projects/{project_id}", dependencies=[Depends(require_csrf)])
 async def delete_project(project_id: str, email: str = Depends(require_workload)):
     await _require_project_editor(email, project_id)
+    # Captured before the delete — afterwards there is nothing left to name it by.
+    doomed = await workload_svc.get_project(project_id)
     try:
         await workload_svc.delete_project(project_id)
     except WorkloadError as exc:
         raise HTTPException(404, str(exc))
+    code, name = _plabel(doomed)
+    await _log(
+        actor=email, action="project.delete", target=name,
+        project_id=project_id, project_code=code, project_name=name,
+        changes=[{"field": "tasks_removed", "from": len(doomed.get("tasks", []) if doomed else []), "to": 0}],
+    )
     return {"ok": True}
 
 
@@ -185,11 +236,17 @@ async def create_task(
 ):
     await _require_task_editor(email, project_id)
     try:
-        return await workload_svc.create_task(
+        created = await workload_svc.create_task(
             project_id=project_id, created_by=email, **body.model_dump()
         )
     except WorkloadError as exc:
         raise _bad(exc)
+    code, name = await workload_svc.project_label(project_id)
+    await _log(
+        actor=email, action="task.create", target=created["title"],
+        project_id=project_id, project_code=code, project_name=name, task_id=created["id"],
+    )
+    return created
 
 
 @router.patch("/tasks/{task_id}", dependencies=[Depends(require_csrf)])
@@ -199,9 +256,18 @@ async def update_task(task_id: str, body: TaskUpdate, email: str = Depends(requi
         raise HTTPException(404, "Task not found")
     await _require_task_editor(email, task["project_id"])
     try:
-        return await workload_svc.update_task(task_id, _patch(body))
+        updated = await workload_svc.update_task(task_id, _patch(body))
     except WorkloadError as exc:
         raise _bad(exc)
+    changes = workload_svc.diff_task(task, updated)
+    if changes:
+        code, name = await workload_svc.project_label(task["project_id"])
+        await _log(
+            actor=email, action="task.update", target=updated["title"],
+            project_id=task["project_id"], project_code=code, project_name=name,
+            task_id=task_id, changes=changes,
+        )
+    return updated
 
 
 @router.delete("/tasks/{task_id}", dependencies=[Depends(require_csrf)])
@@ -210,7 +276,12 @@ async def delete_task(task_id: str, email: str = Depends(require_workload)):
     if task is None:
         raise HTTPException(404, "Task not found")
     await _require_task_editor(email, task["project_id"])
+    code, name = await workload_svc.project_label(task["project_id"])
     await workload_svc.delete_task(task_id)
+    await _log(
+        actor=email, action="task.delete", target=task["title"],
+        project_id=task["project_id"], project_code=code, project_name=name, task_id=task_id,
+    )
     return {"ok": True}
 
 
@@ -222,7 +293,42 @@ async def bulk_assignee(project_id: str, body: BulkAssignee, email: str = Depend
         n = await workload_svc.bulk_set_task_assignee(project_id, body.email, body.add)
     except WorkloadError as exc:
         raise _bad(exc)
+    if n:
+        code, name = await workload_svc.project_label(project_id)
+        who = display_name(body.email)
+        await _log(
+            actor=email, action="task.bulk_assignee",
+            target=f"{'Assigned' if body.add else 'Unassigned'} {who} across {n} task(s)",
+            project_id=project_id, project_code=code, project_name=name,
+            changes=[{"field": "assignees", "from": None if body.add else who,
+                      "to": who if body.add else None}],
+        )
     return {"ok": True, "updated": n}
+
+
+# ── Activity log ──────────────────────────────────────────────────────────────
+
+@router.get("/activity")
+async def activity(
+    email: str = Depends(require_workload),
+    limit:  int = Query(default=300, ge=1, le=2000),
+    actor:  str | None = Query(default=None),
+    action: str | None = Query(default=None),
+    after:  str | None = Query(default=None, description="ISO-8601 instant, inclusive"),
+    before: str | None = Query(default=None, description="ISO-8601 instant, inclusive"),
+):
+    """Who changed what, newest first.
+
+    Open to every workload member, matching the rest of this module: everyone
+    already sees every project and task, so restricting only the record of who
+    touched them would protect nothing.
+    """
+    try:
+        return await workload_svc.list_activity(
+            limit=limit, actor=actor, action=action, after=after, before=before
+        )
+    except WorkloadError as exc:
+        raise _bad(exc)
 
 
 @router.get("/tasks")
