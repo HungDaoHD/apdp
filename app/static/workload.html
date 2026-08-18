@@ -40,6 +40,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .sel{padding:6px 10px;border:1px solid #dde1e7;border-radius:7px;background:white;font-size:12px;color:#444;outline:none;font-family:inherit;cursor:pointer;max-width:190px}
 .sel:focus{border-color:#f36a17}
 
+/* ── Date-range filter ── */
+/* Grouped in one bordered shell so the pair reads as a single control rather
+   than two unrelated date boxes that happen to sit next to each other. */
+.dr{display:inline-flex;align-items:center;gap:5px;background:white;border:1px solid #dde1e7;border-radius:7px;padding:2px 7px}
+.dr-l{font-size:12px;opacity:.65}
+.dr-s{font-size:11px;color:#aaa}
+.dr-i{border:none;padding:4px 2px;max-width:124px;background:transparent}
+.dr-i:focus{border:none}
+.dr-x{border:none;background:none;cursor:pointer;color:#bbb;font-size:11px;padding:2px 4px;border-radius:4px;line-height:1}
+.dr-x:hover{color:#c0392b;background:#fce8e6}
+/* Spins only while a refresh is in flight — a static ↻ the rest of the time. */
+#refreshBtn.busy #refreshIco{display:inline-block;animation:spin .8s linear infinite}
+
 /* ── Tabs ── */
 .tabs{display:flex;gap:2px;border-bottom:1px solid #e0e4ea;margin-bottom:16px}
 .tabs button{padding:9px 18px;border:none;background:none;font-size:13px;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;font-family:inherit;margin-bottom:-1px}
@@ -306,11 +319,35 @@ textarea.inp{resize:vertical;min-height:56px}
 .ustat b{display:block;font-size:16px;line-height:1.3}
 .ustat span{font-size:9.5px;color:#999;letter-spacing:.2px;text-transform:uppercase}
 .ustat.warn b{color:#c0392b}
-.uprojs{display:flex;flex-direction:column;gap:4px;max-height:190px;overflow-y:auto}
+/* Only the 3 most recent projects on the card — the rest are one click away
+   behind "More", so a card's height no longer depends on how many projects
+   someone happens to be on. */
+.uprojs{display:flex;flex-direction:column;gap:4px}
 .uproj{display:flex;align-items:center;gap:7px;font-size:11.5px;padding:4px 7px;border-radius:6px;cursor:pointer}
 .uproj:hover{background:#fff4ee}
 .uproj-n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .uproj-c{font-size:10px;color:#999;font-family:monospace;flex-shrink:0}
+.umore{border:1px dashed #dde1e7;background:none;cursor:pointer;color:#888;font-size:11px;font-weight:600;
+  padding:5px;border-radius:6px;font-family:inherit;margin-top:2px}
+.umore:hover{border-color:#f36a17;color:#f36a17;background:#fff4ee}
+/* task-count triplet — total / complete / overdue */
+.tcnt{display:inline-flex;gap:4px;flex-shrink:0;font-size:10px;font-weight:700}
+.tcnt i{font-style:normal;padding:1px 6px;border-radius:9px;border:1px solid}
+.tcnt .t-all{background:#f1f2f4;color:#666;border-color:#dfe2e6}
+.tcnt .t-ok{background:#e6f4ea;color:#1e8449;border-color:#b7dfbf}
+.tcnt .t-late{background:#fce8e6;color:#c0392b;border-color:#f5c6c0}
+.tcnt .t-late.zero{background:#f1f2f4;color:#aaa;border-color:#dfe2e6}
+
+/* ── Summary tab ── */
+.sumgrid-top{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.sumcard{background:white;border:1px solid #e0e4ea;border-radius:10px;padding:15px 17px;display:flex;flex-direction:column;gap:10px}
+.sumcard-hd{font-size:13.5px;font-weight:700}
+.sumtbl{width:100%;border-collapse:collapse}
+.sumtbl th{font-size:10.5px;font-weight:700;color:#999;text-align:left;padding:6px 8px;border-bottom:1px solid #e0e4ea;letter-spacing:.3px;text-transform:uppercase}
+.sumtbl td{font-size:12.5px;padding:7px 8px;border-bottom:1px solid #f5f6f8;vertical-align:middle}
+.sumtbl td.warn{color:#c0392b;font-weight:700}
+.sumtbl tbody tr:hover{background:#f8f9fb}
+.sumtbl .un{display:inline-flex;align-items:center;gap:6px}
 
 /* ── Toast (calendar has no status bar of its own) ── */
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(80px);
@@ -352,6 +389,13 @@ textarea.inp{resize:vertical;min-height:56px}
     <a href="/workload" class="on">📅 Workload</a>
   </nav>
   <div class="gap"></div>
+  <!-- One refresh for the whole page. Every tab reads from the same three
+       fetches (projects / calendar / all tasks), so per-tab refresh buttons
+       were four ways to do the same thing while each left the other tabs
+       stale. -->
+  <button id="refreshBtn" class="btn btn-gho" onclick="refreshAll()" title="Reload projects, calendar and tasks">
+    <span id="refreshIco">↻</span> Refresh
+  </button>
   <button id="newProjBtn" class="btn btn-pri" style="display:none" onclick="openProjectDlg(null)">＋ New Project</button>
   <button id="qmeBtn" class="btn btn-gho" onclick="connectQme()" style="font-size:11px;gap:5px">
     <span id="qmeDot" style="width:7px;height:7px;border-radius:50%;background:#666;display:inline-block"></span>
@@ -399,6 +443,7 @@ textarea.inp{resize:vertical;min-height:56px}
     <button id="tabCal"   class="on" onclick="switchTab('cal')">📅 Calendar</button>
     <button id="tabProj"           onclick="switchTab('proj')">📁 Projects</button>
     <button id="tabUsers"          onclick="switchTab('users')">👥 Users</button>
+    <button id="tabSummary"        onclick="switchTab('summary')">📊 Summary</button>
   </div>
 
   <!-- ══ CALENDAR TAB ══ -->
@@ -441,7 +486,7 @@ textarea.inp{resize:vertical;min-height:56px}
   <!-- ══ PROJECTS TAB ══ -->
   <div id="paneProj" style="display:none">
     <div class="tbar">
-      <input class="inp" id="pFilter" style="max-width:300px" placeholder="Filter by project name / client…" oninput="renderProjects()">
+      <input class="inp" id="pFilter" style="max-width:260px" placeholder="Filter by project name / client…" oninput="renderProjects()">
       <select class="sel" id="pStatus" onchange="renderProjects()">
         <option value="">Any status</option>
         <option value="pending">Pending</option>
@@ -449,8 +494,21 @@ textarea.inp{resize:vertical;min-height:56px}
         <option value="complete">Complete</option>
         <option value="cancel">Cancel</option>
       </select>
+      <div class="ssel filt" id="pMemberWrap" style="width:158px">
+        <input class="inp" autocomplete="off" placeholder="All members">
+        <div class="ssel-panel"></div>
+      </div>
+      <!-- Date range works on task dates, not created_at: "which projects are
+           running in September" is the question this tab gets asked, and a
+           project's own row carries no schedule of its own. -->
+      <div class="dr" title="Keep projects with at least one task in this date range">
+        <span class="dr-l">📅</span>
+        <input class="sel dr-i" type="date" id="pFrom" onchange="renderProjects()">
+        <span class="dr-s">→</span>
+        <input class="sel dr-i" type="date" id="pTo" onchange="renderProjects()">
+        <button class="dr-x" onclick="clearRange('pFrom','pTo',renderProjects)" title="Clear dates">✕</button>
+      </div>
       <div class="gap"></div>
-      <button class="btn btn-lt" onclick="loadProjects()">↻ Refresh</button>
     </div>
     <div id="projArea"><div class="loading"><div class="spin"></div> Loading projects…</div></div>
   </div>
@@ -466,9 +524,27 @@ textarea.inp{resize:vertical;min-height:56px}
         <option value="cancel">Cancel</option>
       </select>
       <div class="gap"></div>
-      <button class="btn btn-lt" onclick="loadUsers()">↻ Refresh</button>
     </div>
     <div id="usersArea"><div class="loading"><div class="spin"></div> Loading users…</div></div>
+  </div>
+
+  <!-- ══ SUMMARY TAB ══ -->
+  <div id="paneSummary" style="display:none">
+    <div class="tbar">
+      <div class="ssel filt" id="sMemberWrap" style="width:158px">
+        <input class="inp" autocomplete="off" placeholder="All members">
+        <div class="ssel-panel"></div>
+      </div>
+      <div class="dr" title="Count only tasks falling in this date range">
+        <span class="dr-l">📅</span>
+        <input class="sel dr-i" type="date" id="sFrom" onchange="renderSummary()">
+        <span class="dr-s">→</span>
+        <input class="sel dr-i" type="date" id="sTo" onchange="renderSummary()">
+        <button class="dr-x" onclick="clearRange('sFrom','sTo',renderSummary)" title="Clear dates">✕</button>
+      </div>
+      <div class="gap"></div>
+    </div>
+    <div id="summaryArea"><div class="loading"><div class="spin"></div> Loading summary…</div></div>
   </div>
 </div>
 
@@ -661,6 +737,20 @@ textarea.inp{resize:vertical;min-height:56px}
     <div class="mft">
       <div class="mft-status" id="dfStatusMsg" style="display:none"></div>
       <button class="btn btn-lt" onclick="closeDayDlg()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ USER PROJECTS — the "More" button on a Users-tab card ══ -->
+<div class="mov" id="userDlg" style="display:none;z-index:1040">
+  <div class="mdlg wide">
+    <div class="mhd">
+      <strong id="userDlgTitle">Projects</strong>
+      <button class="mbtn-close" onclick="closeUserDlg()">✕</button>
+    </div>
+    <div class="mbody" id="userDlgBody"></div>
+    <div class="mft">
+      <button class="btn btn-lt" onclick="closeUserDlg()">Close</button>
     </div>
   </div>
 </div>
@@ -971,6 +1061,15 @@ async function boot(){
     allowCustom: false, initial: '', onChange: loadCalendar,
   });
 
+  // Per-tab member filters. Purely client-side (they re-render from data
+  // already in memory), unlike the calendar's, which refetches.
+  ssInit(document.getElementById('pMemberWrap'), {
+    getOptions: memberFilterOptions, allowCustom: false, initial: '', onChange: renderProjects,
+  });
+  ssInit(document.getElementById('sMemberWrap'), {
+    getOptions: memberFilterOptions, allowCustom: false, initial: '', onChange: renderSummary,
+  });
+
   document.getElementById('pfMembers').innerHTML = META.members.map(m => `
     <label class="chk" style="border-left:3px solid ${memberColor(m.email)}"
            onclick="setTimeout(()=>this.classList.toggle('on', this.querySelector('input').checked),0)">
@@ -980,6 +1079,51 @@ async function boot(){
 
   await loadProjects();
   await loadCalendar();
+}
+
+// ════════════════════════════════════════════════════
+// GLOBAL REFRESH
+// ════════════════════════════════════════════════════
+// One button in the header instead of one per tab: every tab is a view over
+// the same three fetches, so refreshing "the page" is what people actually
+// mean — and a per-tab button always left the other three showing stale data.
+function loadingBox(what){ return `<div class="loading"><div class="spin"></div> Loading ${what}…</div>`; }
+
+async function refreshAll(){
+  if (!META) return;
+  const btn = document.getElementById('refreshBtn');
+  if (btn.disabled) return;              // ignore a second click while one is in flight
+  btn.disabled = true;
+  btn.classList.add('busy');
+  // Every pane shows its spinner, not just the visible one: switching tabs
+  // mid-refresh must not reveal data the refresh is about to replace.
+  document.getElementById('calArea').innerHTML     = loadingBox('calendar');
+  document.getElementById('unsched').innerHTML     = '';
+  document.getElementById('projArea').innerHTML    = loadingBox('projects');
+  document.getElementById('usersArea').innerHTML   = loadingBox('users');
+  document.getElementById('summaryArea').innerHTML = loadingBox('summary');
+  try {
+    await loadProjects();
+    await loadCalendar();
+    await loadAllTasks(true);
+    renderUsers();
+    renderSummary();
+    toast('Refreshed', 'ok');
+  } catch(e){
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('busy');
+  }
+}
+
+/** Fetch every task in the system — the Users and Summary tabs both work off
+ *  this one list. Cached after the first call; `force` re-fetches. */
+let _allTasksLoaded = false;
+async function loadAllTasks(force){
+  if (_allTasksLoaded && !force) return;
+  ALL_TASKS = await api('/api/workload/tasks');
+  _allTasksLoaded = true;
 }
 
 async function loadCalendar(){
@@ -1666,17 +1810,83 @@ function closeDayDlg(){
 }
 
 // ════════════════════════════════════════════════════
+// SHARED FILTER HELPERS  (Projects + Summary tabs)
+// ════════════════════════════════════════════════════
+function memberFilterOptions(){
+  return [{value:'', label:'All members'},
+    ...META.members.map(m => ({value: m.email, label: m.name + (m.is_admin ? ' (admin)' : '')}))];
+}
+/** The projects *email* works on — assigned to it, or its owner. Same rule
+ *  `canEdit` uses, so "on a project" means one thing everywhere. */
+function isOnProject(p, email){ return p.members.includes(email) || p.created_by === email; }
+
+function clearRange(fromId, toId, rerender){
+  document.getElementById(fromId).value = '';
+  document.getElementById(toId).value = '';
+  rerender();
+}
+
+/** True if *t*'s scheduled span overlaps [from, to]; either bound may be
+ *  blank (open-ended). An undated task belongs to no range at all, so it is
+ *  filtered out the moment either bound is set. */
+function taskInRange(t, from, to){
+  if (!from && !to) return true;
+  const s = taskStart(t), e = t.due_date;
+  if (!s || !e) return false;
+  if (from && e < from) return false;
+  if (to   && s > to)   return false;
+  return true;
+}
+
+/** Overdue: past its due date and still open. Cancelled work isn't late, it's gone. */
+function isOverdue(t, today){
+  return !!t.due_date && t.due_date < today && t.status !== 'complete' && t.status !== 'cancel';
+}
+
+/** total / complete / overdue for one set of tasks, as three coloured pills. */
+function taskCountPills(tasks, today){
+  const done = tasks.filter(t => t.status === 'complete').length;
+  const late = tasks.filter(t => isOverdue(t, today)).length;
+  return `<span class="tcnt" title="${tasks.length} task(s) · ${done} complete · ${late} overdue">
+    <i class="t-all">${tasks.length}</i>
+    <i class="t-ok">${done}</i>
+    <i class="t-late${late ? '' : ' zero'}">${late}</i>
+  </span>`;
+}
+
+// ════════════════════════════════════════════════════
 // USERS RENDER
 // ════════════════════════════════════════════════════
 async function loadUsers(){
   try {
-    ALL_TASKS = await api('/api/workload/tasks');
+    await loadAllTasks();
   } catch(e){
     if (e.status === 403) return showDeny(e.message);
     document.getElementById('usersArea').innerHTML = errBox(e.message);
     return;
   }
   renderUsers();
+}
+
+/** Newest first. created_at is an ISO timestamp, so a plain string compare
+ *  orders it correctly without parsing. */
+function projectsForUser(email){
+  return PROJECTS.filter(p => isOnProject(p, email))
+    .slice()
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+}
+
+const USER_CARD_PROJECTS = 3;   // the rest live behind the card's "More" button
+
+function uprojRow(p, email, tasks, today){
+  const mine = tasks.filter(t => t.project_id === p.id);
+  return `<div class="uproj" onclick="openDetail('${p.id}')" title="${esc(p.name)}">
+    ${p.project_code ? `<span class="uproj-c">${esc(p.project_code)}</span>` : ''}
+    <span class="uproj-n">${esc(p.name)}</span>
+    ${p.created_by === email ? '<span class="ttag" style="font-size:9px">owner</span>' : ''}
+    <span class="stag stag-${p.status}">${PROJECT_STATUS_LABEL[p.status]}</span>
+    ${taskCountPills(mine, today)}
+  </div>`;
 }
 
 function renderUsers(){
@@ -1687,15 +1897,14 @@ function renderUsers(){
 
   document.getElementById('usersArea').innerHTML = `<div class="ugrid">${META.members.map(m => {
     const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
-    // "On a project" means assigned to it or its owner — the same two ways
-    // `canEdit` lets someone work a project's tasks.
-    const projects = PROJECTS.filter(p => p.members.includes(m.email) || p.created_by === m.email);
+    const projects = projectsForUser(m.email);
+    const projComplete = projects.filter(p => p.status === 'complete').length;
     const counts = {pending:0, ongoing:0, complete:0, cancel:0};
     mine.forEach(t => counts[t.status]++);
-    // Overdue: past its date and still open. Cancelled work isn't late, it's gone.
-    const overdue = mine.filter(t =>
-      t.due_date && t.due_date < today && t.status !== 'complete' && t.status !== 'cancel').length;
+    const overdue = mine.filter(t => isOverdue(t, today)).length;
     const color = memberColor(m.email);
+    const shown = projects.slice(0, USER_CARD_PROJECTS);
+    const rest  = projects.length - shown.length;
 
     return `<div class="ucard" style="border-top:3px solid ${color}">
       <div class="ucard-hd">
@@ -1704,8 +1913,9 @@ function renderUsers(){
         ${m.is_admin ? '<span class="ttag">admin</span>' : ''}
         ${m.email === META.me.email ? '<span class="stag stag-ongoing">you</span>' : ''}
       </div>
-      <div class="ustats">
+      <div class="ustats" style="grid-template-columns:repeat(5,1fr)">
         <div class="ustat"><b>${projects.length}</b><span>Projects</span></div>
+        <div class="ustat"><b>${projComplete}</b><span>Proj. done</span></div>
         <div class="ustat"><b>${mine.length}</b><span>Tasks</span></div>
         <div class="ustat"><b>${counts.complete}</b><span>Done</span></div>
         <div class="ustat${overdue ? ' warn' : ''}"><b>${overdue}</b><span>Overdue</span></div>
@@ -1716,29 +1926,199 @@ function renderUsers(){
         <i class="b-pending"  style="width:${counts.pending  / mine.length * 100}%"></i>
         <i class="b-cancel"   style="width:${counts.cancel   / mine.length * 100}%"></i>
       </div>` : ''}
-      <div class="uprojs">${projects.length
-        ? projects.map(p => {
-            const n = mine.filter(t => t.project_id === p.id).length;
-            return `<div class="uproj" onclick="openDetail('${p.id}')" title="${esc(p.name)}">
-              ${p.project_code ? `<span class="uproj-c">${esc(p.project_code)}</span>` : ''}
-              <span class="uproj-n">${esc(p.name)}</span>
-              ${p.created_by === m.email ? '<span class="ttag" style="font-size:9px">owner</span>' : ''}
-              <span class="stag stag-${p.status}">${n} task(s)</span>
-            </div>`;
-          }).join('')
+      <div class="uprojs">${shown.length
+        ? shown.map(p => uprojRow(p, m.email, mine, today)).join('')
         : '<div class="hint">Not on any project yet.</div>'}</div>
+      ${projects.length ? `<button class="umore" onclick="openUserDlg('${esc(m.email)}')">
+        ${rest > 0 ? `＋ ${rest} more — see all ${projects.length} projects` : `See all ${projects.length} project(s)`}
+      </button>` : ''}
     </div>`;
   }).join('')}</div>`;
+}
+
+/** All of one member's projects, each with their task total / complete /
+ *  overdue. Counts are that member's own tasks, not the project's — this is
+ *  a view of one person's load, and a project-wide total would read the same
+ *  on everybody's card. */
+function openUserDlg(email){
+  const m = META.members.find(x => x.email === email);
+  if (!m) return;
+  const today = todayISO();
+  const st = document.getElementById('uStatus').value;
+  const tasks = (st ? ALL_TASKS.filter(t => t.status === st) : ALL_TASKS)
+    .filter(t => (t.assignees || []).includes(email));
+  const projects = projectsForUser(email);
+
+  document.getElementById('userDlgTitle').innerHTML =
+    `${assigneeTag(email, m.name)} ${esc(m.name)} — ${projects.length} project(s)`;
+  document.getElementById('userDlgBody').innerHTML = projects.length
+    ? `<table class="sumtbl">
+        <thead><tr>
+          <th>Project</th><th>Client</th><th>Status</th>
+          <th>Tasks</th><th>Complete</th><th>Overdue</th>
+        </tr></thead>
+        <tbody>${projects.map(p => {
+          const mine = tasks.filter(t => t.project_id === p.id);
+          const done = mine.filter(t => t.status === 'complete').length;
+          const late = mine.filter(t => isOverdue(t, today)).length;
+          return `<tr style="cursor:pointer" onclick="closeUserDlg();openDetail('${p.id}')">
+            <td>
+              ${p.project_code ? `<span class="uproj-c">${esc(p.project_code)}</span> ` : ''}${esc(p.name)}
+              ${p.created_by === email ? '<span class="ttag" style="font-size:9px">owner</span>' : ''}
+            </td>
+            <td>${esc(p.client || '—')}</td>
+            <td><span class="stag stag-${p.status}">${PROJECT_STATUS_LABEL[p.status]}</span></td>
+            <td>${mine.length}</td>
+            <td>${done}</td>
+            <td${late ? ' class="warn"' : ''}>${late}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+      <div class="hint">Task counts are ${esc(m.name)}'s own assigned tasks${st ? ` (status: ${STATUS_LABEL[st]})` : ''}, not the project totals.</div>`
+    : '<div class="hint">Not on any project yet.</div>';
+  document.getElementById('userDlg').style.display = 'flex';
+}
+function closeUserDlg(){ document.getElementById('userDlg').style.display = 'none'; }
+
+// ════════════════════════════════════════════════════
+// SUMMARY RENDER
+// ════════════════════════════════════════════════════
+async function loadSummary(){
+  try {
+    await loadAllTasks();
+  } catch(e){
+    if (e.status === 403) return showDeny(e.message);
+    document.getElementById('summaryArea').innerHTML = errBox(e.message);
+    return;
+  }
+  renderSummary();
+}
+
+function statusStatCard(title, counts, total, labels){
+  return `<div class="sumcard">
+    <div class="sumcard-hd">${title}</div>
+    <div class="ustats" style="grid-template-columns:repeat(4,1fr)">
+      ${['pending', 'ongoing', 'complete', 'cancel'].map(k =>
+        `<div class="ustat"><b>${counts[k]}</b><span>${labels[k]}</span></div>`).join('')}
+    </div>
+    ${total ? `<div class="bar">
+      <i class="b-complete" style="width:${counts.complete / total * 100}%"></i>
+      <i class="b-ongoing"  style="width:${counts.ongoing  / total * 100}%"></i>
+      <i class="b-pending"  style="width:${counts.pending  / total * 100}%"></i>
+      <i class="b-cancel"   style="width:${counts.cancel   / total * 100}%"></i>
+    </div>` : ''}
+    <div class="hint">${total} total</div>
+  </div>`;
+}
+
+function renderSummary(){
+  if (!META) return;
+  const today = todayISO();
+  const from = document.getElementById('sFrom').value;
+  const to   = document.getElementById('sTo').value;
+  const who  = ssValue(document.getElementById('sMemberWrap'));
+
+  // Tasks first: both the date range and the member filter are properties of
+  // a task, and the project counts below are derived from what survives here.
+  let tasks = ALL_TASKS.filter(t => taskInRange(t, from, to));
+  if (who) tasks = tasks.filter(t => (t.assignees || []).includes(who));
+
+  // Projects: the member filter is a membership question, but a date range
+  // has no meaning for a project on its own — so a range narrows the list to
+  // projects that actually have a task inside it.
+  const inRange = new Set(tasks.map(t => t.project_id));
+  const projects = PROJECTS.filter(p =>
+    (!who || isOnProject(p, who)) && (!(from || to) || inRange.has(p.id)));
+
+  // ── 1. Projects by status ──
+  const pCounts = {pending:0, ongoing:0, complete:0, cancel:0};
+  projects.forEach(p => pCounts[p.status]++);
+
+  // ── 2. Tasks by status ──
+  const tCounts = {pending:0, ongoing:0, complete:0, cancel:0};
+  tasks.forEach(t => tCounts[t.status]++);
+
+  // ── 3. By user ── one row per member; narrowed to the selected member when
+  // the member filter is on, since every other row would then read zero.
+  const rows = who ? META.members.filter(m => m.email === who) : META.members;
+  const byUser = rows.map(m => {
+    const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
+    const theirs = projects.filter(p => isOnProject(p, m.email));
+    const counts = {pending:0, ongoing:0, complete:0, cancel:0};
+    mine.forEach(t => counts[t.status]++);
+    return {
+      m, projTotal: theirs.length,
+      projComplete: theirs.filter(p => p.status === 'complete').length,
+      taskTotal: mine.length, counts,
+      overdue: mine.filter(t => isOverdue(t, today)).length,
+    };
+  });
+
+  const scope = [
+    (from || to) ? `${from ? fmtFull(from) : '…'} → ${to ? fmtFull(to) : '…'}` : '',
+    who ? (META.members.find(m => m.email === who) || {}).name : '',
+  ].filter(Boolean).join(' · ');
+
+  document.getElementById('summaryArea').innerHTML = `
+    ${scope ? `<div class="hint" style="margin-bottom:10px">Filtered: <strong>${esc(scope)}</strong>
+      ${(from || to) ? ' — undated tasks are excluded while a date range is set.' : ''}</div>` : ''}
+    <div class="sumgrid-top">
+      ${statusStatCard('📁 Projects by status', pCounts, projects.length, PROJECT_STATUS_LABEL)}
+      ${statusStatCard('✅ Tasks by status', tCounts, tasks.length, STATUS_LABEL)}
+    </div>
+    <div class="sumcard">
+      <div class="sumcard-hd">👥 By user</div>
+      <table class="sumtbl">
+        <thead><tr>
+          <th>User</th><th>Projects</th><th>Proj. complete</th><th>Tasks</th>
+          <th>Pending</th><th>Ongoing</th><th>Complete</th><th>Cancel</th><th>Overdue</th>
+        </tr></thead>
+        <tbody>${byUser.map(u => `<tr>
+          <td><span class="un">${assigneeTag(u.m.email, u.m.name)} ${esc(u.m.name)}</span></td>
+          <td>${u.projTotal}</td>
+          <td>${u.projComplete}</td>
+          <td>${u.taskTotal}</td>
+          <td>${u.counts.pending}</td>
+          <td>${u.counts.ongoing}</td>
+          <td>${u.counts.complete}</td>
+          <td>${u.counts.cancel}</td>
+          <td${u.overdue ? ' class="warn"' : ''}>${u.overdue}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
 }
 
 // ════════════════════════════════════════════════════
 // PROJECTS RENDER
 // ════════════════════════════════════════════════════
 function renderProjects(){
-  const q  = (document.getElementById('pFilter').value || '').toLowerCase();
-  const st = document.getElementById('pStatus').value;
+  const q    = (document.getElementById('pFilter').value || '').toLowerCase();
+  const st   = document.getElementById('pStatus').value;
+  const from = document.getElementById('pFrom').value;
+  const to   = document.getElementById('pTo').value;
+  const who  = ssValue(document.getElementById('pMemberWrap'));
+
+  // A date range asks "which projects are running then", and only the tasks
+  // carry dates — so it resolves to the set of projects owning a task in the
+  // window. Needs ALL_TASKS, which the Projects tab doesn't otherwise fetch.
+  let inRange = null;
+  if (from || to){
+    // Filtering against a not-yet-fetched task list would match nothing and
+    // read as "no projects" rather than "still loading".
+    if (!_allTasksLoaded){
+      document.getElementById('projArea').innerHTML = loadingBox('projects');
+      loadAllTasks().then(renderProjects).catch(e => {
+        document.getElementById('projArea').innerHTML = errBox(e.message);
+      });
+      return;
+    }
+    inRange = new Set(ALL_TASKS.filter(t => taskInRange(t, from, to)).map(t => t.project_id));
+  }
+
   const list = PROJECTS.filter(p => {
     if (st && p.status !== st) return false;
+    if (who && !isOnProject(p, who)) return false;
+    if (inRange && !inRange.has(p.id)) return false;
     if (!q) return true;
     return `${p.name} ${p.client} ${p.project_type}`.toLowerCase().includes(q);
   });
@@ -1803,14 +2183,19 @@ function goToday(){ ANCHOR = todayISO(); loadCalendar(); }
 function jumpToDay(d){ ANCHOR = d; setView('day'); }
 function switchTab(t){
   TAB = t;
-  [['tabCal','paneCal','cal'], ['tabProj','paneProj','proj'], ['tabUsers','paneUsers','users']]
+  [['tabCal','paneCal','cal'], ['tabProj','paneProj','proj'], ['tabUsers','paneUsers','users'],
+   ['tabSummary','paneSummary','summary']]
     .forEach(([tab, pane, key]) => {
       document.getElementById(tab).classList.toggle('on', t === key);
       document.getElementById(pane).style.display = t === key ? '' : 'none';
     });
-  // Fetched on demand: the Users tab is the only view that needs every task
-  // in the system, and most sessions never open it.
+  // ALL_TASKS is fetched on demand and then cached (refreshAll re-fetches):
+  // most sessions live on the calendar and never need the full task list.
+  // Projects needs it too — its date filter resolves through task dates —
+  // but only once the tab is actually open.
   if (t === 'users') loadUsers();
+  if (t === 'summary') loadSummary();
+  if (t === 'proj') loadAllTasks().then(renderProjects).catch(() => {});
 }
 
 // ════════════════════════════════════════════════════
