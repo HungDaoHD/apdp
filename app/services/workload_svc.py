@@ -43,8 +43,9 @@ _PROJECT_CODE_RE = re.compile(r"^VN\d{4}$")
 DEFAULT_TASKS: tuple[str, ...] = (
     "Script survey link",
     "Update survey link",
+    "Final survey link",
     "Check data logic",
-    "Check base of data (hole count, handcount)",
+    "Check data base",
     "Prepare data tabspec",
     "Deliver topline CE",
     "Deliver topline OE",
@@ -54,7 +55,8 @@ DEFAULT_TASKS: tuple[str, ...] = (
 # can be typed in and will show up in the dropdown afterwards (see
 # `project_types()`).
 DEFAULT_PROJECT_TYPES: tuple[str, ...] = (
-    "U&A", "CLT", "HUT", "D2D", "Tracking", "Ad-hoc", "Brand Health", "Concept Test",
+    "U&A", "CLT", "HUT", "D2D", "Retail Audit", "Tracking", "Ad-hoc",
+    "Brand Health", "Concept Test",
 )
 
 # Task status. Kept as its own tuple, independent from PROJECT_STATUSES below
@@ -167,21 +169,24 @@ def _check_date(value: str | None, field: str) -> str | None:
         raise WorkloadError(f"{field} must be a YYYY-MM-DD date, got {value!r}")
 
 
-def _check_span(start: str | None, due: str | None) -> str | None:
-    """A task's real range is [start_date, due_date] — due_date remains the
-    single field everything else (sorting, the unscheduled bucket, calendar
-    filtering) keys off, so start_date only ever matters paired with it:
-    no due_date means unscheduled, and start_date along with it is meaningless.
-    Returns the effective start_date: `due` itself for a single-day task
-    (start omitted or equal to due), None for an unscheduled task.
+def _check_span(start: str | None, due: str | None) -> tuple[str | None, str | None]:
+    """Normalise a task's [start_date, due_date] range, returning both.
+
+    The two ends default to each other, so supplying either one alone
+    schedules a single-day task — setting just a start date is the common
+    way to put work on the calendar, and leaving it unscheduled because the
+    due date was blank would be surprising. Only when both are empty is the
+    task genuinely unscheduled.
     """
+    if not start and not due:
+        return None, None
     if not due:
-        return None
+        return start, start
     if not start:
-        return due
+        return due, due
     if start > due:
         raise WorkloadError("start_date must be on or before due_date")
-    return start
+    return start, due
 
 
 def _check_member(email: str | None, field: str = "assignee") -> str:
@@ -477,8 +482,9 @@ async def create_task(
     if not title:
         raise WorkloadError("Task title is required")
     _check_status(status)
-    due = _check_date(due_date, "due_date")
-    start = _check_span(_check_date(start_date, "start_date"), due)
+    start, due = _check_span(
+        _check_date(start_date, "start_date"), _check_date(due_date, "due_date")
+    )
 
     project = await _projects().find_one({"_id": project_id})
     if project is None:
@@ -521,12 +527,13 @@ async def update_task(task_id: str, fields: dict) -> dict:
         raise WorkloadError("Task not found")
 
     if "due_date" in patch or "start_date" in patch:
-        # Re-validate the pair together, not each field alone — moving
+        # Re-normalise the pair together, not each field alone — moving
         # due_date earlier than an unchanged start_date (or vice versa) has
-        # to be caught even though only one of the two was actually sent.
+        # to be caught even though only one of the two was actually sent, and
+        # setting one end on a previously unscheduled task fills in the other.
         eff_due = patch["due_date"] if "due_date" in patch else row.get("due_date")
         eff_start = patch["start_date"] if "start_date" in patch else row.get("start_date")
-        patch["start_date"] = _check_span(eff_start, eff_due)
+        patch["start_date"], patch["due_date"] = _check_span(eff_start, eff_due)
 
     if "assignees" in patch:
         # Task PIC must be a subset of project PIC — look up the parent

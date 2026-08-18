@@ -46,97 +46,131 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .tabs button.on{color:#f36a17;border-bottom-color:#f36a17}
 
 /* ── Calendar grid ── */
-/* Every size below is a fixed constant, never `min-*` driven by content: a
-   week row, a day cell, a chip, a Gantt bar are all a fixed height/line-count
-   regardless of how many tasks land on a day or how long their titles are.
-   Overflow is handled by capping what JS renders (MAX_CHIPS_PER_DAY,
-   MAX_BAR_TRACKS below) plus a "+N more" link, backed by `overflow:hidden`
-   as a defensive net — the calendar's own footprint must never move when
-   tasks are added, edited, or dragged around. */
+/* Every size here is a fixed constant, never `min-*` driven by content: the
+   day cell and the chip are a fixed height regardless of how many tasks land
+   on a day or how long their titles are. Overflow is capped in JS
+   (MAX_CHIPS_PER_DAY) plus a "+N more" link, backed by `overflow:hidden` as
+   a defensive net — the calendar's footprint must never move when tasks are
+   added, edited, or dragged around.
+
+   A multi-day task is drawn as one ordinary chip on each day it covers
+   (labelled 2/4, 3/4 …) rather than a bar spanning columns. That keeps every
+   task in the same single list per day, so nothing is privileged into a
+   reserved band above everything else. */
 .cal{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow:hidden}
 .cal-hd{display:grid;grid-template-columns:repeat(7,1fr);background:#f8f9fb;border-bottom:1px solid #e0e4ea}
 .cal-hd div{padding:8px 10px;font-size:11px;font-weight:700;color:#888;text-align:center;letter-spacing:.4px}
 .cal-hd div.wknd{color:#c0392b}
-.cal-week{position:relative;height:150px;border-bottom:1px solid #eef0f3}
-.cal-week:last-child{border-bottom:none}
-.cal-week-days{position:absolute;inset:0;display:grid;grid-template-columns:repeat(7,1fr);z-index:1}
-/* The bar strip overlays the day grid beneath it, starting right under the
-   day-number line — both grids are absolutely positioned to the exact same
-   box, so their 7 column tracks line up pixel-for-pixel regardless of any
-   border/padding either one's own cells carry. */
-.cal-week-bars{position:absolute;left:0;right:0;top:18px;height:38px;
-  display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:18px;row-gap:2px;
-  padding:0 1px;pointer-events:none;z-index:2}
-.cell{min-width:0;border-right:1px solid #eef0f3;padding:0 5px 3px;display:flex;flex-direction:column;overflow:hidden}
+.cal-body{display:grid;grid-template-columns:repeat(7,1fr)}
+.cell{height:150px;min-width:0;border-right:1px solid #eef0f3;border-bottom:1px solid #eef0f3;
+  padding:0 5px 3px;display:flex;flex-direction:column;overflow:hidden}
 .cell:nth-child(7n){border-right:none}
 .cell.out{background:#fafbfc}
-.cell.today{background:#fff8f3;box-shadow:inset 0 0 0 2px #f36a17}
+/* Today is blue, not orange: orange is reserved for the selection ring
+   (.chip.sel / .day-row.sel), and two orange cues on the same grid are
+   impossible to tell apart. */
+.cell.today{background:#eaf3fd;box-shadow:inset 0 0 0 2px #1565c0}
 .cell-n{height:18px;flex-shrink:0;font-size:11px;font-weight:700;color:#999;display:flex;align-items:center;justify-content:space-between}
 .cell.out .cell-n{color:#ccc}
-.cell.today .cell-n{color:#f36a17}
+.cell.today .cell-n{color:#1565c0}
 .cell-add{opacity:0;border:none;background:none;cursor:pointer;color:#f36a17;font-size:13px;font-weight:700;line-height:1;padding:0 2px}
 .cell:hover .cell-add{opacity:1}
-.cell-bar-gap{height:38px;flex-shrink:0}          /* reserves the room .cal-week-bars floats over */
 .cell-chips{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;overflow:hidden}
 .more{font-size:10px;color:#888;cursor:pointer;padding:1px 4px;flex-shrink:0}
 .more:hover{color:#f36a17;text-decoration:underline}
 
-/* ── Task chip (single-day only — a multi-day task renders as a .gbar
-   instead, see below) ── */
-.chip{height:18px;line-height:16px;flex-shrink:0;border-radius:4px;padding:1px 6px;font-size:10px;
-  cursor:pointer;border-left:3px solid;display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ── Task chip ── */
+/* A flex row so the day counter stays pinned and visible while only the
+   title takes the ellipsis — putting the counter in the same text flow
+   would let a long title push the one bit that says "this runs 4 days"
+   out of sight. */
+.chip{height:18px;flex-shrink:0;border-radius:4px;padding:1px 6px;font-size:10px;line-height:16px;
+  cursor:pointer;border-left:3px solid;display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
 .chip:hover{filter:brightness(.94)}
 .chip[draggable="true"]{cursor:grab}
 .chip[draggable="true"]:active{cursor:grabbing}
+.chip .ctitle{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip .cday{flex-shrink:0;font-size:9px;font-weight:700;opacity:.65;font-variant-numeric:tabular-nums}
 /* Assignee pills sit inline inside a chip, so they shrink to keep the chip
    on one line alongside the project code and title. */
 .chip .atag{padding:0 4px;font-size:9px;margin-right:3px;border-radius:7px;line-height:1.5}
 .chip .ccode{font-family:monospace;font-weight:700;letter-spacing:.2px;opacity:.85;margin-right:3px}
 .chip .cproj{opacity:.75}
 
+/* Selected item, in every view. An *inset* ring rather than outline/outer
+   box-shadow: the cell lists clip with overflow:hidden, which would cut an
+   outer ring off at the edges, and an inset one also costs no layout space
+   so the item's fixed size is untouched. */
+/* Deliberately loud: the click that selects an item also opens the task
+   editor, which covers the calendar while it's up, so the marker has to be
+   obvious the moment the dialog closes. The orange wash is a background-IMAGE
+   layered over the project's background-COLOR, which keeps the project colour
+   underneath instead of replacing it. */
+.chip.is-sel,.day-row.is-sel{
+  box-shadow:inset 0 0 0 2px #f36a17;
+  background-image:linear-gradient(rgba(243,106,23,.22),rgba(243,106,23,.22));
+}
+.chip.is-sel{border-left-color:#f36a17}
+.chip.is-sel .ctitle,.day-row.is-sel .day-row-t{font-weight:700}
+
 /* Drop target feedback while dragging a task onto a day. */
 .drop-on{box-shadow:inset 0 0 0 2px #f36a17;background:#fff4ee !important}
-.chip-pending{background:#fff8e1;border-color:#f5a623;color:#8a5a00}
-.chip-ongoing{background:#e3f2fd;border-color:#1565c0;color:#0d47a1}
-.chip-complete{background:#e6f4ea;border-color:#1e8449;color:#14663a}
-.chip-cancel{background:#f1f2f4;border-color:#aeb4bd;color:#8a8f97;text-decoration:line-through}
-
-/* ── Gantt bar (multi-day task) — literally one element spanning every
-   column from its start day to its end day, so it is unmistakably one item
-   and reads as a straight, unbroken bar rather than several aligned pieces. */
-.gbar{display:block;height:18px;line-height:16px;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;
-  cursor:pointer;border-left:3px solid;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;pointer-events:auto}
-.gbar:hover{filter:brightness(.94)}
-.gbar[draggable="true"]{cursor:grab}
-.gbar .atag{padding:0 4px;font-size:9px;margin-right:3px;border-radius:7px;line-height:1.5}
-.gbar .ccode{font-family:monospace;font-weight:700;letter-spacing:.2px;opacity:.85;margin-right:3px}
-.gbar .cproj{opacity:.75}
-.gbar-more{display:block;height:18px;line-height:16px;border-radius:4px;padding:1px 6px;font-size:9.5px;color:#888;
-  background:#eef0f3;cursor:pointer;text-align:center;pointer-events:auto}
-.gbar-more:hover{background:#e2e5ea;color:#333}
+/* Two independent signals on one chip: the fill is the *project* (set inline
+   from projectColor, so tasks of the same project read as a group across the
+   whole calendar), and the left stripe is the *status*. Cancel/complete also
+   get a text treatment, since a 3px stripe alone is easy to miss. */
+.chip-pending{border-color:#f5a623}
+.chip-ongoing{border-color:#1565c0}
+.chip-complete{border-color:#1e8449}
+.chip-complete .ctitle{opacity:.72}
+.chip-cancel{border-color:#aeb4bd;opacity:.6}
+.chip-cancel .ctitle{text-decoration:line-through}
 
 /* ── Week view ── */
 .wk{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow:auto}
-.wk table{width:100%;border-collapse:collapse;min-width:920px}
+.wk table{width:100%;border-collapse:collapse;min-width:920px;table-layout:fixed}
 .wk th{background:#f8f9fb;font-size:11px;font-weight:700;color:#888;padding:8px 10px;text-align:center;border-bottom:1px solid #e0e4ea;border-right:1px solid #eef0f3}
 .wk th.who{text-align:left;width:130px;position:sticky;left:0;background:#f8f9fb;z-index:2}
-.wk th.today-col{background:#fff1e7;color:#f36a17}
-.wk td{border-right:1px solid #eef0f3;border-bottom:1px solid #eef0f3;padding:5px;vertical-align:top;min-width:110px}
+.wk th.today-col{background:#dceafb;color:#1565c0}
+.wk td{border-right:1px solid #eef0f3;border-bottom:1px solid #eef0f3;padding:5px;vertical-align:top;overflow:hidden}
 .wk td.who{position:sticky;left:0;background:white;z-index:1;font-size:12px;font-weight:600;color:#333;vertical-align:middle;border-right:1px solid #e0e4ea}
 .wk td.who small{display:block;font-weight:400;color:#aaa;font-size:10px;margin-top:1px}
-.wk td.today-col{background:#fffaf6}
-.wk-bar-td{padding:3px 4px}
+.wk td.today-col{background:#f4f9fe}
 .wk-cell{height:44px;overflow:hidden;display:flex;flex-direction:column;gap:2px;min-width:0}
+
+/* ── By-user view — people across, dates down ── */
+/* Header and date column are sticky so a long month stays readable while
+   scrolling; the row height is fixed like every other view so the grid's
+   footprint doesn't move as tasks are added. */
+.uv{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow:auto;max-height:calc(100vh - 210px)}
+.uv table{width:100%;border-collapse:separate;border-spacing:0;min-width:760px;table-layout:fixed}
+.uv th{background:#f8f9fb;font-size:11px;font-weight:700;color:#666;padding:7px 9px;text-align:center;
+  border-bottom:1px solid #e0e4ea;border-right:1px solid #eef0f3;position:sticky;top:0;z-index:3;white-space:nowrap}
+.uv th.uv-who{display:table-cell}
+.uv th.uv-who .atag{margin-right:5px}
+.uv th.uv-who span{vertical-align:middle}
+.uv th.uv-date{left:0;z-index:4;text-align:left;width:74px}
+.uv td{border-bottom:1px solid #f2f4f7;border-right:1px solid #f2f4f7;padding:3px 4px;vertical-align:top;overflow:hidden}
+.uv td.uv-date{position:sticky;left:0;background:white;z-index:2;width:74px;white-space:nowrap;
+  font-size:12px;color:#444;vertical-align:middle;border-right:1px solid #e0e4ea}
+.uv td.uv-date strong{font-size:13px;font-variant-numeric:tabular-nums}
+.uv td.uv-date small{color:#aaa;margin-left:5px;font-size:10.5px}
+.uv tr.uv-wknd td.uv-date{background:#fbfcfd;color:#c0392b}
+.uv tr.uv-wknd td{background:#fcfdfe}
+.uv tr.uv-today td{background:#f4f9fe}
+.uv tr.uv-today td.uv-date{background:#dceafb;color:#1565c0;font-weight:700;box-shadow:inset 3px 0 0 #1565c0}
+.uv tr:hover td.uv-date .cell-add{opacity:1}
+.uv-cell{height:44px;overflow:hidden;display:flex;flex-direction:column;gap:2px;min-width:0}
 
 /* ── Day view ── */
 .day-grp{background:white;border:1px solid #e0e4ea;border-radius:10px;margin-bottom:12px;overflow:hidden}
 .day-grp-hd{padding:10px 14px;background:#f8f9fb;border-bottom:1px solid #eef0f3;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .day-grp-hd strong{font-size:13px}
-.day-row{padding:9px 14px;border-bottom:1px solid #f5f6f8;display:flex;align-items:center;gap:10px;cursor:pointer}
+.day-row{height:40px;padding:0 14px;border-bottom:1px solid #f5f6f8;display:flex;align-items:center;gap:10px;cursor:pointer;overflow:hidden}
 .day-row:last-child{border-bottom:none}
 .day-row:hover{background:#fffaf6}
-.day-row-t{flex:1;font-size:12.5px}
-.day-row-w{font-size:11px;color:#888;font-family:monospace}
+.day-row-t{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.day-row-w{flex-shrink:0;font-size:11px;color:#888;font-family:monospace;display:flex;gap:3px;align-items:center}
 
 /* ── Project cards ── */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
@@ -204,6 +238,10 @@ textarea.inp{resize:vertical;min-height:56px}
 
 /* ── Searchable combobox ── */
 .ssel{position:relative}
+/* Toolbar variant — matches .sel's compact sizing so the calendar filter row
+   still reads as one set of controls. */
+.ssel.filt .inp{padding:6px 10px;font-size:12px;border-radius:7px;color:#444}
+.ssel.filt .inp::placeholder{color:#444;opacity:1}   /* "All members" is a real state, not a hint */
 .ssel-panel{display:none;position:absolute;top:100%;left:0;right:0;margin-top:4px;background:white;
   border:1px solid #dde1e7;border-radius:8px;max-height:190px;overflow-y:auto;
   box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50}
@@ -240,6 +278,14 @@ textarea.inp{resize:vertical;min-height:56px}
 
 .hint{font-size:11px;color:#999;line-height:1.6}
 .badge-ro{font-size:10px;background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6;padding:2px 8px;border-radius:10px;font-weight:700}
+
+/* ── Unscheduled tray — pinned above the calendar ── */
+/* Sticky so it stays available as a drag source and drop target no matter how
+   far down the calendar you've scrolled. Its own height is capped and scrolls
+   internally; otherwise a long backlog would cover the grid it sits over. */
+#unsched{position:sticky;top:0;z-index:6;background:#f0f2f5;padding-bottom:10px}
+#unsched .day-grp{max-height:26vh;overflow-y:auto;margin-bottom:0}
+#unsched .day-grp-hd{position:sticky;top:0;z-index:1}
 
 /* ── Unscheduled, grouped per project ── */
 .uns-row{display:flex;gap:10px;align-items:flex-start;padding:8px 14px;border-bottom:1px solid #f5f6f8}
@@ -362,23 +408,34 @@ textarea.inp{resize:vertical;min-height:56px}
         <button id="vMonth" class="on" onclick="setView('month')">Month</button>
         <button id="vWeek"           onclick="setView('week')">Week</button>
         <button id="vDay"            onclick="setView('day')">Day</button>
+        <button id="vUser"           onclick="setView('user')">User</button>
       </div>
       <button class="nav-btn" onclick="shift(-1)">‹</button>
       <button class="btn btn-lt" onclick="goToday()">Today</button>
       <button class="nav-btn" onclick="shift(1)">›</button>
       <div class="period" id="periodLbl">—</div>
       <div class="gap"></div>
-      <select class="sel" id="fMember" onchange="loadCalendar()"><option value="">All members</option></select>
-      <select class="sel" id="fProject" onchange="loadCalendar()"><option value="">All projects</option></select>
-      <select class="sel" id="fStatus" onchange="loadCalendar()">
-        <option value="">Any status</option>
-        <option value="pending">Pending</option>
-        <option value="complete">Complete</option>
-        <option value="cancel">Cancel</option>
-      </select>
+      <!-- Type-to-filter comboboxes (see ssInit), not plain <select>s: the
+           project list grows past what's comfortable to scroll, and typing a
+           few letters beats hunting. Options are built in boot() so the
+           status list can't drift out of sync with STATUS_LABEL. -->
+      <div class="ssel filt" id="fMemberWrap" style="width:158px">
+        <input class="inp" autocomplete="off" placeholder="All members">
+        <div class="ssel-panel"></div>
+      </div>
+      <div class="ssel filt" id="fProjectWrap" style="width:190px">
+        <input class="inp" autocomplete="off" placeholder="All projects">
+        <div class="ssel-panel"></div>
+      </div>
+      <div class="ssel filt" id="fStatusWrap" style="width:132px">
+        <input class="inp" autocomplete="off" placeholder="Any status">
+        <div class="ssel-panel"></div>
+      </div>
     </div>
-    <div id="calArea"><div class="loading"><div class="spin"></div> Loading calendar…</div></div>
+    <!-- Unscheduled sits above the calendar and sticks to the top while the
+         calendar scrolls, so it stays reachable as a drag source/target. -->
     <div id="unsched"></div>
+    <div id="calArea"><div class="loading"><div class="spin"></div> Loading calendar…</div></div>
   </div>
 
   <!-- ══ PROJECTS TAB ══ -->
@@ -542,11 +599,11 @@ textarea.inp{resize:vertical;min-height:56px}
       <div class="row3">
         <div class="fld">
           <label>START DATE</label>
-          <input class="inp" type="date" id="tfStart" onchange="checkTaskDlgSpan()">
+          <input class="inp" type="date" id="tfStart" onchange="checkTaskDlgSpan('start')">
         </div>
         <div class="fld">
           <label>DUE DATE (END)</label>
-          <input class="inp" type="date" id="tfDue" onchange="checkTaskDlgSpan()">
+          <input class="inp" type="date" id="tfDue" onchange="checkTaskDlgSpan('due')">
         </div>
         <div class="fld">
           <label>STATUS</label>
@@ -628,6 +685,7 @@ let _newTaskAssignees = []; // pending selection in the detail dialog's "add tas
 let _taskDlgCtx = null;    // task open in the calendar's task editor
 let _dayDlgDate = null;    // date the [＋] day dialog is adding to
 let _dragTaskId = null;    // task being dragged across the calendar
+let SELECTED_TASK = null;  // task shown with the orange selection ring
 
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'};          // tasks
@@ -661,7 +719,9 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 function periodLabel(){
-  if (VIEW === 'month'){ const d = parseISO(ANCHOR); return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`; }
+  if (VIEW === 'month' || VIEW === 'user'){
+    const d = parseISO(ANCHOR); return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+  }
   if (VIEW === 'week'){
     const d = parseISO(ANCHOR);
     const mon = addDays(ANCHOR, -((d.getDay()+6)%7));
@@ -679,15 +739,27 @@ function periodLabel(){
 // (Client / Project Type can grow); when false (Status, a fixed enum) the
 // wrapper's stored value only ever reflects an option actually picked from
 // the list, so typing garbage can't produce an invalid status.
-function ssInit(wrap, {getOptions, allowCustom, initial}){
+function ssInit(wrap, {getOptions, allowCustom, initial, onChange}){
   const input = wrap.querySelector('.inp');
   const panel = wrap.querySelector('.ssel-panel');
 
   const labelFor = value => (getOptions().find(o => o.value === value) || {}).label ?? value;
   const setValue = value => { wrap.dataset.value = value; input.value = labelFor(value); };
+  // Fires only on a real user commit, never on the initial setValue below —
+  // otherwise wiring a filter up would trigger its own reload during boot.
+  const commit = value => {
+    const changed = wrap.dataset.value !== value;
+    setValue(value);
+    if (changed && onChange) onChange(value);
+  };
+
+  // The input displays the current selection's label while idle, so filtering
+  // by its contents on focus would narrow the list to just that one option
+  // and hide everything else. Only filter once the user actually types.
+  let typing = false;
 
   function render(){
-    const q = input.value.trim().toLowerCase();
+    const q = typing ? input.value.trim().toLowerCase() : '';
     const opts = getOptions();
     const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
     let html = filtered.map(o =>
@@ -701,10 +773,19 @@ function ssInit(wrap, {getOptions, allowCustom, initial}){
     panel.classList.add('show');
   }
 
-  input.addEventListener('focus', render);
-  input.addEventListener('input', () => { if (allowCustom) wrap.dataset.value = input.value.trim(); render(); });
+  input.addEventListener('focus', () => {
+    typing = false;
+    input.select();   // so the first keystroke replaces the label instead of appending to it
+    render();
+  });
+  input.addEventListener('input', () => {
+    typing = true;
+    if (allowCustom) wrap.dataset.value = input.value.trim();
+    render();
+  });
   input.addEventListener('blur', () => setTimeout(() => {
     panel.classList.remove('show');
+    typing = false;
     // Fixed-enum widgets (Status) can't be left on unmatched free text.
     if (!allowCustom) setValue(wrap.dataset.value || (getOptions()[0] || {}).value || '');
   }, 150));
@@ -712,7 +793,7 @@ function ssInit(wrap, {getOptions, allowCustom, initial}){
     const opt = e.target.closest('[data-value]');
     if (!opt) return;
     e.preventDefault();
-    setValue(opt.dataset.value);
+    commit(opt.dataset.value);
     panel.classList.remove('show');
   });
 
@@ -734,6 +815,29 @@ const MEMBER_COLOR_MAP = {
   'thang.la@asia-plus.net':   '#43a047', // Green
 };
 function memberColor(email){ return MEMBER_COLOR_MAP[email] || '#aeb4bd'; }
+
+// ── Per-project colour ────────────────────────────────────────────────────
+// Derived from the project id rather than stored on the record or assigned
+// by list position: a project keeps the same colour for its whole life, on
+// every machine, with no migration and nothing to configure — and adding or
+// deleting other projects never reshuffles everyone else's.
+const _projColorCache = {};
+function projectColor(projectId){
+  if (_projColorCache[projectId]) return _projColorCache[projectId];
+  let h = 2166136261;                       // FNV-1a, for a well-spread hash
+  for (let i = 0; i < projectId.length; i++){
+    h ^= projectId.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  const hue = h % 360;
+  // Pale enough that chip text stays readable, saturated enough to tell two
+  // projects apart at a glance.
+  return (_projColorCache[projectId] = {
+    bg:   `hsl(${hue},70%,93%)`,
+    text: `hsl(${hue},45%,29%)`,
+    line: `hsl(${hue},55%,70%)`,
+  });
+}
 /** Initials from a "first.last" local-part name, e.g.
  * "hung.dao" -> "HD", "tam.nguyen" -> "TN". Falls back to the first two
  * characters for anything that isn't dot-separated. */
@@ -847,8 +951,26 @@ async function boot(){
   // so the button is no longer admin-gated.
   document.getElementById('newProjBtn').style.display = '';
 
-  const fm = document.getElementById('fMember');
-  META.members.forEach(m => fm.add(new Option(m.name + (m.is_admin ? ' (admin)' : ''), m.email)));
+  // Calendar filters. getOptions is a live callback, so the project list
+  // picks up newly created projects without re-initialising the widget.
+  ssInit(document.getElementById('fMemberWrap'), {
+    getOptions: () => [{value:'', label:'All members'},
+      ...META.members.map(m => ({value: m.email, label: m.name + (m.is_admin ? ' (admin)' : '')}))],
+    allowCustom: false, initial: '', onChange: loadCalendar,
+  });
+  ssInit(document.getElementById('fProjectWrap'), {
+    getOptions: () => [{value:'', label:'All projects'},
+      ...PROJECTS.map(p => ({value: p.id, label: (p.project_code ? p.project_code + ' — ' : '') + p.name}))],
+    allowCustom: false, initial: '', onChange: loadCalendar,
+  });
+  ssInit(document.getElementById('fStatusWrap'), {
+    // Built from STATUS_LABEL rather than hardcoded, so a status added there
+    // can't go missing here the way "Ongoing" previously did.
+    getOptions: () => [{value:'', label:'Any status'},
+      ...Object.entries(STATUS_LABEL).map(([value, label]) => ({value, label}))],
+    allowCustom: false, initial: '', onChange: loadCalendar,
+  });
+
   document.getElementById('pfMembers').innerHTML = META.members.map(m => `
     <label class="chk" style="border-left:3px solid ${memberColor(m.email)}"
            onclick="setTimeout(()=>this.classList.toggle('on', this.querySelector('input').checked),0)">
@@ -863,10 +985,12 @@ async function boot(){
 async function loadCalendar(){
   if (!META) return;
   document.getElementById('periodLbl').textContent = periodLabel();
-  const q = new URLSearchParams({view: VIEW, anchor: ANCHOR});
-  const mem = document.getElementById('fMember').value;
-  const prj = document.getElementById('fProject').value;
-  const st  = document.getElementById('fStatus').value;
+  // 'user' is a client-side rendering of the same month range, so the server
+  // — which only knows day/week/month — is asked for 'month'.
+  const q = new URLSearchParams({view: VIEW === 'user' ? 'month' : VIEW, anchor: ANCHOR});
+  const mem = ssValue(document.getElementById('fMemberWrap'));
+  const prj = ssValue(document.getElementById('fProjectWrap'));
+  const st  = ssValue(document.getElementById('fStatusWrap'));
   if (mem) q.set('assignee', mem);
   if (prj) q.set('project_id', prj);
   if (st)  q.set('status', st);
@@ -887,11 +1011,14 @@ async function loadProjects(){
     document.getElementById('projArea').innerHTML = errBox(e.message);
     return;
   }
-  const sel = document.getElementById('fProject');
-  const keep = sel.value;
-  sel.innerHTML = '<option value="">All projects</option>';
-  PROJECTS.forEach(p => sel.add(new Option(p.name, p.id)));
-  sel.value = keep;
+  // The project filter reads PROJECTS live via its getOptions callback, so
+  // there's no option list to rebuild here — but a project that just got
+  // deleted must not stay selected as a stale filter.
+  const fp = document.getElementById('fProjectWrap');
+  if (fp && fp.dataset.value && !PROJECTS.some(p => p.id === fp.dataset.value)){
+    fp.dataset.value = '';
+    fp.querySelector('.inp').value = 'All projects';
+  }
   renderProjects();
 }
 
@@ -929,132 +1056,68 @@ function canEditProject(p){
 function taskStart(t){ return t.start_date || t.due_date; }
 function daysBetween(a, b){ return Math.round((parseISO(b) - parseISO(a)) / 86400000); }
 
-/** Calendar chip: [initials] [VNxxxx] - [Project] - [task] — for a
- *  single-day task only. A multi-day task never renders as a chip; it
- *  renders as one `.gbar` spanning every column it covers (see below), so
- *  it's unmistakably one item instead of several aligned look-alikes.
- *  Draggable when this account may edit the task's project.
- *  `compact` drops the project code/name — used where the surrounding
- *  block is already keyed by project (the unscheduled tray), so repeating
- *  it in every chip would be noise. */
-function chip(t, {compact = false} = {}){
+/** Calendar chip: [initials] [VNxxxx] - [Project] - [task], plus a k/N day
+ *  counter for a task that runs across several days.
+ *
+ *  A multi-day task is rendered as one of these on *every* day it covers,
+ *  exactly like a single-day one — there is no separate spanning-bar layer,
+ *  so every task in a cell sits in the same list with nothing privileged to
+ *  the top. The counter is what distinguishes "the same task, day 3 of 4"
+ *  from four unrelated tasks.
+ *
+ *  `day` is the grid day being rendered; pass null (day view, unscheduled
+ *  tray) to omit the counter. `compact` additionally drops the project
+ *  code/name, for blocks already keyed by project.
+ */
+function chip(t, day, {compact = false} = {}){
   const tags = (t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('');
   const code = (!compact && t.project_code) ? `<span class="ccode">${esc(t.project_code)}</span> - ` : '';
   const proj = (!compact && t.project_name) ? `<span class="cproj">${esc(t.project_name)}</span> - ` : '';
   const who  = (t.assignees || []).map(e => e.split('@')[0]).join(', ');
+
+  const start = taskStart(t), end = t.due_date;
+  const total = (start && end) ? daysBetween(start, end) + 1 : 1;
+  const nth   = (day && start) ? daysBetween(start, day) + 1 : 0;
+  const counter = (total > 1 && nth >= 1)
+    ? `<span class="cday">${nth}/${total}</span>` : '';
+
   const title = [t.project_code, t.project_name].filter(Boolean).join(' ')
-    + ` — ${t.title}${who ? ' · ' + who : ''} [${STATUS_LABEL[t.status]}]`;
+    + ` — ${t.title}${who ? ' · ' + who : ''} [${STATUS_LABEL[t.status]}]`
+    + (total > 1 ? ` (${fmtDM(start)} – ${fmtDM(end)}, ${total} ngày)` : '');
   const drag = canEdit(t.project_id)
     ? ` draggable="true" ondragstart="taskDragStart(event,'${t.id}')" ondragend="taskDragEnd(event)"`
     : '';
-  return `<span class="chip chip-${t.status}"${drag} title="${esc(title)}"
-    onclick="event.stopPropagation();openTaskEditor('${t.id}')">${tags}${code}${proj}${esc(t.title)}</span>`;
+  const pc = projectColor(t.project_id);
+  // data-task lets selectTask() re-ring every occurrence of a task (a
+  // multi-day one appears on each of its days) without a full re-render.
+  return `<span class="chip chip-${t.status}${t.id === SELECTED_TASK ? ' is-sel' : ''}"${drag}
+    data-task="${t.id}" title="${esc(title)}"
+    style="background-color:${pc.bg};color:${pc.text}"
+    onclick="event.stopPropagation();openTaskEditor('${t.id}')"
+    ><span class="ctitle">${tags}${code}${proj}${esc(t.title)}</span>${counter}</span>`;
 }
 
-/** Every visible day mapped to the *single-day* tasks occupying it — a
- *  multi-day task is deliberately excluded here; it's handled entirely by
- *  the Gantt-bar layer instead of being duplicated into every cell it spans. */
-function singleDayTasksByDate(){
+/** Every visible day mapped to the tasks occupying it. A multi-day task is
+ *  listed once per day across its [start_date, due_date] span, clipped to the
+ *  calendar's own window so a task running far outside the view doesn't loop
+ *  needlessly. */
+function tasksByDate(){
   const map = {};
   (CAL.tasks || []).forEach(t => {
-    if (t.due_date && taskStart(t) === t.due_date) (map[t.due_date] ||= []).push(t);
+    if (!t.due_date) return;
+    const from = taskStart(t) < CAL.from ? CAL.from : taskStart(t);
+    const to   = t.due_date  > CAL.to   ? CAL.to   : t.due_date;
+    for (let d = from; d <= to; d = addDays(d, 1)) (map[d] ||= []).push(t);
   });
   return map;
 }
 
-// ════════════════════════════════════════════════════
-// GANTT BARS — multi-day tasks, rendered as one spanning element
-// ════════════════════════════════════════════════════
-const MAX_CHIPS_PER_DAY = 2;   // single-day items shown per day cell before "+N more"
-const MAX_BAR_TRACKS = 2;      // stacked bar rows per week before they collapse into "+N more"
-
-/** Assigns each segment a zero-based "track" (stacking row) such that
- *  overlapping segments never share one, reusing the lowest free track
- *  otherwise — the standard greedy interval-graph-coloring behind every
- *  calendar UI that draws multi-day events as bars. `segments` need
- *  {colStart, colSpan} already set (1-indexed column, day count); mutated
- *  in place and returned, sorted by start column. */
-function layoutTracks(segments){
-  segments.sort((a, b) => a.colStart - b.colStart || (b.colSpan - a.colSpan));
-  const trackEnds = [];
-  segments.forEach(seg => {
-    let track = trackEnds.findIndex(end => end <= seg.colStart);
-    if (track === -1){ track = trackEnds.length; trackEnds.push(0); }
-    trackEnds[track] = seg.colStart + seg.colSpan;
-    seg.track = track;
-  });
-  return segments;
-}
-
-/** Multi-day tasks (start_date !== due_date) whose span overlaps the 7
- *  `days`, reduced to the column range visible within that week — a task
- *  running into an adjacent week gets a separate segment there, each a
- *  flat-edged continuation of the same bar in spirit, same as most
- *  calendar UIs (a row boundary is where one segment ends and the next
- *  begins). Returns `{task, colStart, colSpan}`, 1-indexed column. */
-function spanningSegmentsForWeek(days){
-  return (CAL.tasks || [])
-    .filter(t => t.due_date && taskStart(t) !== t.due_date)
-    .map(t => {
-      const s = taskStart(t) < days[0] ? days[0] : taskStart(t);
-      const e = t.due_date  > days[6] ? days[6] : t.due_date;
-      if (s > days[6] || e < days[0]) return null;
-      return {task: t, colStart: daysBetween(days[0], s) + 1, colSpan: daysBetween(s, e) + 1};
-    })
-    .filter(Boolean);
-}
-
-function gbarContent(t){
-  const tags = (t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('');
-  const code = t.project_code ? `<span class="ccode">${esc(t.project_code)}</span> - ` : '';
-  const proj = t.project_name ? `<span class="cproj">${esc(t.project_name)}</span> - ` : '';
-  const who  = (t.assignees || []).map(e => e.split('@')[0]).join(', ');
-  const title = [t.project_code, t.project_name].filter(Boolean).join(' ')
-    + ` — ${t.title}${who ? ' · ' + who : ''} [${STATUS_LABEL[t.status]}] (${fmtDM(taskStart(t))} – ${fmtDM(t.due_date)})`;
-  const drag = canEdit(t.project_id)
-    ? ` draggable="true" ondragstart="taskDragStart(event,'${t.id}')" ondragend="taskDragEnd(event)"`
-    : '';
-  return {html: `${tags}${code}${proj}${esc(t.title)}`, title: esc(title), drag};
-}
-
-/** A month-view bar: one element, positioned by CSS Grid coordinates so it
- *  physically spans every day column from its start to its end within this
- *  week — not several chips that merely look adjacent. */
-function gbar(t, colStart, colSpan, track){
-  const {html, title, drag} = gbarContent(t);
-  return `<span class="gbar chip-${t.status}"${drag} title="${title}"
-    style="grid-column:${colStart} / span ${colSpan};grid-row:${track + 1}"
-    onclick="event.stopPropagation();openTaskEditor('${t.id}')">${html}</span>`;
-}
-
-/** The week-view equivalent: no grid-column math needed because the caller
- *  places this inside an HTML `<td colspan>` that already spans the right
- *  columns — the bar itself just fills that cell. */
-function gbarTable(t){
-  const {html, title, drag} = gbarContent(t);
-  return `<span class="gbar"${drag} title="${title}"
-    onclick="event.stopPropagation();openTaskEditor('${t.id}')">${html}</span>`;
-}
-
-/** Renders one week's bar strip: up to MAX_BAR_TRACKS real bars; any further
- *  overlapping segments collapse into a single "+N more" line in the last
- *  slot instead of adding a track, so the strip's height never depends on
- *  how many multi-day tasks touch that week. */
-function renderBarStrip(days){
-  const segs = layoutTracks(spanningSegmentsForWeek(days));
-  if (!segs.length) return '';
-  const trackCount = Math.max(...segs.map(s => s.track)) + 1;
-  if (trackCount <= MAX_BAR_TRACKS){
-    return segs.map(s => gbar(s.task, s.colStart, s.colSpan, s.track)).join('');
-  }
-  const shown = segs.filter(s => s.track < MAX_BAR_TRACKS - 1);
-  const overflow = segs.filter(s => s.track >= MAX_BAR_TRACKS - 1);
-  const jumpDay = days[Math.max(0, (overflow[0]?.colStart || 1) - 1)];
-  return shown.map(s => gbar(s.task, s.colStart, s.colSpan, s.track)).join('')
-    + `<span class="gbar-more" style="grid-column:1 / span 7;grid-row:${MAX_BAR_TRACKS}"
-         onclick="event.stopPropagation();jumpToDay('${jumpDay}')">+${overflow.length} more spanning task(s)</span>`;
-}
-
+// Fixed geometry — the calendar's footprint must not move with content, so
+// the per-cell chip cap is derived from the cell height rather than guessed.
+const CELL_H = 150, DAYNUM_H = 18, CHIP_H = 18, CHIP_GAP = 2, CELL_PAD_B = 3;
+const MAX_CHIPS_PER_DAY = Math.max(
+  1, Math.floor((CELL_H - DAYNUM_H - CELL_PAD_B) / (CHIP_H + CHIP_GAP)));
+const MAX_CHIPS_PER_WEEKCELL = 2;   // week view rows are a fixed 44px
 
 /** Any task currently on screen — the calendar payload holds both buckets. */
 function findCalTask(taskId){
@@ -1098,26 +1161,25 @@ async function dropOnDate(e, isoDate){
 async function moveTaskToDate(taskId, isoDate){
   const t = findCalTask(taskId);
   if (!t) return;
-  if ((t.due_date || null) === isoDate) return;              // dropped where it already was
+  if ((taskStart(t) || null) === isoDate) return;            // dropped where it already starts
   if (!canEdit(t.project_id)) return toast('You can only move tasks in your own projects', 'err');
 
-  // Dropping any segment of a multi-day task always sets the drop target as
-  // the new due_date (end) and shifts start_date along with it, preserving
-  // the task's length — so a 3-day task stays a 3-day task after the move,
-  // wherever on its bar you happened to grab it.
-  const body = {due_date: isoDate};
-  if (isoDate && t.due_date){
-    const span = daysBetween(taskStart(t), t.due_date);
-    body.start_date = span > 0 ? addDays(isoDate, -span) : isoDate;
-  } else if (isoDate){
-    body.start_date = isoDate;
-  } else {
+  // The day you drop on becomes the task's START; the end shifts forward by
+  // the task's existing length, so a 3-day task stays 3 days long wherever
+  // you grabbed it. Dropping on the unscheduled tray clears both ends.
+  const body = {};
+  if (!isoDate){
     body.start_date = null;
+    body.due_date = null;
+  } else {
+    const span = (taskStart(t) && t.due_date) ? daysBetween(taskStart(t), t.due_date) : 0;
+    body.start_date = isoDate;
+    body.due_date = addDays(isoDate, span);
   }
 
   try {
     await api(`/api/workload/tasks/${taskId}`, {method:'PATCH', body});
-    toast(isoDate ? `Moved "${t.title}" to ${fmtFull(isoDate)}` : `"${t.title}" is now unscheduled`, 'ok');
+    toast(isoDate ? `Moved "${t.title}" to start ${fmtFull(isoDate)}` : `"${t.title}" is now unscheduled`, 'ok');
     await loadCalendar();
   } catch(e){ toast(e.message, 'err'); }
 }
@@ -1125,51 +1187,127 @@ async function moveTaskToDate(taskId, isoDate){
 function renderCalendar(){
   if (VIEW === 'month') renderMonth();
   else if (VIEW === 'week') renderWeek();
+  else if (VIEW === 'user') renderUserView();
   else renderDay();
   renderUnscheduled();
 }
 
+/** People across the top, dates down the side — the transpose of the week
+ *  view, over a whole month, for reading one person's month as a column.
+ *  Dropping a task into a cell sets its start date *and* puts that person on
+ *  it, since in this grid the column is the person; a member the project
+ *  hasn't been given gets the date change and an explanation rather than a
+ *  silent failure (see dropOnUserCell). */
+function renderUserView(){
+  const byDate = tasksByDate();
+  const today = todayISO();
+  const anchor = parseISO(ANCHOR);
+
+  // Only the anchor month's own days, unlike the month grid's padded 6x7 —
+  // a vertical list has no ragged-edge problem to pad away.
+  const first = `${anchor.getFullYear()}-${String(anchor.getMonth()+1).padStart(2,'0')}-01`;
+  const lastDay = new Date(anchor.getFullYear(), anchor.getMonth()+1, 0).getDate();
+  const days = Array.from({length: lastDay}, (_, i) => addDays(first, i));
+
+  const cols = META.members.map(m => ({key: m.email, label: m.name}));
+  cols.push({key: '', label: 'Unassigned'});
+
+  const heads = cols.map(c => `<th class="uv-who" style="${
+    c.key ? `border-bottom:3px solid ${memberColor(c.key)}` : ''}">
+    ${c.key ? assigneeTag(c.key, c.label) : ''}<span>${esc(c.label)}</span></th>`).join('');
+
+  const rows = days.map(d => {
+    const dd = parseISO(d);
+    const weekend = dd.getDay() === 0 || dd.getDay() === 6;
+    const tds = cols.map(c => {
+      const list = (byDate[d] || []).filter(t => c.key
+        ? (t.assignees || []).includes(c.key)
+        : !(t.assignees && t.assignees.length));
+      // Capped like every other view — the row height is fixed, so an
+      // unbounded list would just be clipped invisibly instead of counted.
+      const shown = list.slice(0, MAX_CHIPS_PER_WEEKCELL);
+      const rest  = list.length - shown.length;
+      return `<td ondragover="dropAllow(event)" ondragleave="dropLeave(event)"
+        ondrop="dropOnUserCell(event,'${d}','${esc(c.key)}')"
+        ><div class="uv-cell">${shown.map(t => chip(t, d)).join('')}
+          ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}</div></td>`;
+    }).join('');
+    return `<tr class="${d === today ? 'uv-today' : ''}${weekend ? ' uv-wknd' : ''}">
+      <td class="uv-date">
+        <strong>${String(dd.getDate()).padStart(2,'0')}</strong>
+        <small>${DOW[(dd.getDay()+6)%7]}</small>
+        <button class="cell-add" title="Add a task on this day" onclick="openDayAdd('${d}')">＋</button>
+      </td>${tds}</tr>`;
+  }).join('');
+
+  document.getElementById('calArea').innerHTML = `<div class="uv"><table>
+    <thead><tr><th class="uv-date">DATE</th>${heads}</tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+/** Drop handler for the by-user grid: sets the date (like every other view)
+ *  and additionally assigns the column's member when that's possible. */
+async function dropOnUserCell(e, isoDate, email){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drop-on');
+  const id = _dragTaskId || e.dataTransfer.getData('text/plain');
+  _dragTaskId = null;
+  if (!id) return;
+
+  const t = findCalTask(id);
+  if (!t) return;
+  if (!canEdit(t.project_id)) return toast('You can only move tasks in your own projects', 'err');
+
+  await moveTaskToDate(id, isoDate);
+  if (!email || (t.assignees || []).includes(email)) return;
+
+  // Task PIC must be a subset of project PIC, so someone who isn't on the
+  // project can't be assigned here — say so instead of letting the server
+  // 422 look like the whole drop failed.
+  if (!(t.project_members || []).includes(email)){
+    return toast(`${email.split('@')[0]} is not on ${t.project_code || 'this project'} — date moved, not assigned`, 'err');
+  }
+  try {
+    await api(`/api/workload/tasks/${id}`, {method:'PATCH',
+      body:{assignees: [...(t.assignees || []), email].sort()}});
+    toast(`Moved and assigned to ${email.split('@')[0]}`, 'ok');
+    await loadCalendar();
+  } catch(err){ toast(err.message, 'err'); }
+}
+
 function renderMonth(){
-  const byDate = singleDayTasksByDate();
+  const byDate = tasksByDate();
   const curMonth = parseISO(ANCHOR).getMonth();
   const today = todayISO();
-  const weeks = [];
-  for (let w = 0; w < 6; w++){
-    const days = Array.from({length:7}, (_, i) => addDays(CAL.from, w*7 + i));
 
-    const dayCells = days.map(d => {
-      const dd = parseISO(d);
-      const list = byDate[d] || [];
-      const shown = list.slice(0, MAX_CHIPS_PER_DAY);
-      const rest  = list.length - shown.length;
-      return `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}"
-        ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')">
-        <div class="cell-n">
-          <span style="cursor:pointer" title="View this day" onclick="jumpToDay('${d}')">${dd.getDate()}</span>
-          <button class="cell-add" title="Add a task on this day" onclick="openDayAdd('${d}')">＋</button></div>
-        <div class="cell-bar-gap"></div>
-        <div class="cell-chips">
-          ${shown.map(t => chip(t)).join('')}
-          ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}
-        </div>
-      </div>`;
-    }).join('');
-
-    // Multi-day tasks float over the day grid as bars, positioned by CSS
-    // Grid column — see renderBarStrip / .cal-week-bars.
-    weeks.push(`<div class="cal-week">
-      <div class="cal-week-days">${dayCells}</div>
-      <div class="cal-week-bars">${renderBarStrip(days)}</div>
-    </div>`);
+  let cells = '';
+  for (let i = 0; i < 42; i++){
+    const d = addDays(CAL.from, i);
+    const dd = parseISO(d);
+    const list = byDate[d] || [];
+    // When the list overflows, one slot goes to the "+N more" link itself.
+    const shown = list.slice(0, list.length > MAX_CHIPS_PER_DAY
+      ? Math.max(1, MAX_CHIPS_PER_DAY - 1) : MAX_CHIPS_PER_DAY);
+    const rest = list.length - shown.length;
+    cells += `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}"
+      ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')">
+      <div class="cell-n">
+        <span style="cursor:pointer" title="View this day" onclick="jumpToDay('${d}')">${dd.getDate()}</span>
+        <button class="cell-add" title="Add a task on this day" onclick="openDayAdd('${d}')">＋</button></div>
+      <div class="cell-chips">
+        ${shown.map(t => chip(t, d)).join('')}
+        ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}
+      </div>
+    </div>`;
   }
   document.getElementById('calArea').innerHTML = `<div class="cal">
     <div class="cal-hd">${DOW.map((n,i) => `<div class="${i>4?'wknd':''}">${n}</div>`).join('')}</div>
-    <div>${weeks.join('')}</div>
+    <div class="cal-body">${cells}</div>
   </div>`;
 }
 
 function renderWeek(){
-  const byDate = singleDayTasksByDate();
+  const byDate = tasksByDate();
   const days = Array.from({length:7}, (_, i) => addDays(CAL.from, i));
   const today = todayISO();
 
@@ -1179,64 +1317,25 @@ function renderWeek(){
   rows.push({key: '', label: 'Unassigned', sub: 'unassigned'});
 
   const body = rows.map(r => {
+    // A task with multiple assignees appears in every one of their rows; the
+    // "Unassigned" row only picks up tasks with no assignees at all. A
+    // multi-day task shows up on each day it covers, same as anywhere else.
     const matches = r.key
       ? (task => (task.assignees || []).includes(r.key))
       : (task => !(task.assignees && task.assignees.length));
 
-    // Multi-day tasks lay out into up to MAX_BAR_TRACKS colspan'd bar rows —
-    // same track-assignment algorithm as the month view, just rendered as
-    // real table rows instead of an absolutely-positioned overlay, since a
-    // <td colspan> already does exactly what's needed here. A member with
-    // 3+ tasks overlapping at once (rare on a small team) loses the bar for
-    // whatever doesn't fit in MAX_BAR_TRACKS — that overflow is folded into
-    // the chip row below instead of silently dropped, so nothing vanishes.
-    const segs = layoutTracks(spanningSegmentsForWeek(days).filter(s => matches(s.task)));
-    const overflowTasksByDay = {};
-    segs.filter(s => s.track >= MAX_BAR_TRACKS).forEach(s => {
-      const d = days[s.colStart - 1];
-      (overflowTasksByDay[d] ||= []).push(s.task);
-    });
-
-    // One array of <td> strings per bar track, so the who-cell (rowspan'd
-    // across every physical row for this member) can be prepended to just
-    // the first one without any HTML string surgery.
-    const barRowTds = [];
-    for (let track = 0; track < MAX_BAR_TRACKS; track++){
-      let tds = '', col = 1;
-      while (col <= 7){
-        const seg = segs.find(s => s.track === track && s.colStart === col);
-        if (seg){
-          const segDays = days.slice(seg.colStart - 1, seg.colStart - 1 + seg.colSpan);
-          tds += `<td class="wk-bar-td${segDays.includes(today) ? ' today-col' : ''}"
-            colspan="${seg.colSpan}">${gbarTable(seg.task)}</td>`;
-          col += seg.colSpan;
-        } else {
-          const d = days[col - 1];
-          tds += `<td class="wk-bar-td${d===today?' today-col':''}"
-            ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')"></td>`;
-          col += 1;
-        }
-      }
-      barRowTds.push(tds);
-    }
-
-    // Chip row: single-day tasks, plus any overflow spanning tasks that
-    // didn't fit in a bar track above — capped + "+more" either way.
-    const chipTds = days.map(d => {
-      const list = [...(byDate[d] || []).filter(matches), ...(overflowTasksByDay[d] || [])];
-      const shown = list.slice(0, MAX_CHIPS_PER_DAY);
+    const tds = days.map(d => {
+      const list = (byDate[d] || []).filter(matches);
+      const shown = list.slice(0, MAX_CHIPS_PER_WEEKCELL);
       const rest  = list.length - shown.length;
       return `<td class="${d===today?'today-col':''}"
         ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')"
-        ><div class="wk-cell">${shown.map(t => chip(t)).join('')}
+        ><div class="wk-cell">${shown.map(t => chip(t, d)).join('')}
           ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}</div></td>`;
     }).join('');
 
     const accent = r.key ? `border-left:3px solid ${memberColor(r.key)}` : '';
-    const whoCell = `<td class="who" rowspan="${MAX_BAR_TRACKS + 1}" style="${accent}">${esc(r.label)}<small>${r.sub}</small></td>`;
-    return `<tr>${whoCell}${barRowTds[0]}</tr>
-      ${barRowTds.slice(1).map(tds => `<tr>${tds}</tr>`).join('')}
-      <tr>${chipTds}</tr>`;
+    return `<tr><td class="who" style="${accent}">${esc(r.label)}<small>${r.sub}</small></td>${tds}</tr>`;
   }).join('');
 
   // The [＋] lives in the column header here — in the week grid every day is a
@@ -1287,7 +1386,8 @@ function renderDay(){
         <button class="btn btn-lt" style="font-size:11px" onclick="openDetail('${pid}')">Open project →</button>
       </div>
       ${g.tasks.map(t => `
-        <div class="day-row" onclick="openTaskEditor('${t.id}')"
+        <div class="day-row${t.id === SELECTED_TASK ? ' is-sel' : ''}" data-task="${t.id}"
+             onclick="openTaskEditor('${t.id}')"
              ${canEdit(t.project_id) ? `draggable="true" ondragstart="taskDragStart(event,'${t.id}')" ondragend="taskDragEnd(event)"` : ''}>
           <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
           <span class="day-row-t">${esc(t.title)}${taskStart(t) !== t.due_date
@@ -1320,7 +1420,7 @@ function renderUnscheduled(){
   // Still rendered when empty: it doubles as the drop target for un-scheduling
   // a task, which has to exist before there is anything unscheduled to show.
   const groups = groupByProject(list);
-  box.innerHTML = `<div class="day-grp" style="margin-top:14px"
+  box.innerHTML = `<div class="day-grp"
     ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,null)">
     <div class="day-grp-hd">
       <strong>🗓 Unscheduled</strong>
@@ -1336,7 +1436,7 @@ function renderUnscheduled(){
           </div>
           <div class="pcard-sub">${g.tasks.length} task(s)${g.client ? ' · ' + esc(g.client) : ''}</div>
         </div>
-        <div class="uns-chips">${g.tasks.map(t => chip(t, {compact:true})).join('')}</div>
+        <div class="uns-chips">${g.tasks.map(t => chip(t, null, {compact:true})).join('')}</div>
       </div>`).join('')}
   </div>`;
 }
@@ -1347,9 +1447,21 @@ function renderUnscheduled(){
 // Everything is edited locally and committed in one PATCH on Save, rather
 // than a request per field: a field-at-a-time save would re-render the
 // calendar under the open dialog after every keystroke's change event.
+/** Ring the given task in every view it currently appears in. Applied by
+ *  toggling a class rather than re-rendering, so selecting never disturbs
+ *  scroll position or the grid; renderers read SELECTED_TASK themselves so
+ *  the ring survives a reload too. */
+function selectTask(taskId){
+  SELECTED_TASK = taskId;
+  document.querySelectorAll('.is-sel').forEach(el => el.classList.remove('is-sel'));
+  if (taskId) document.querySelectorAll(`[data-task="${taskId}"]`)
+    .forEach(el => el.classList.add('is-sel'));
+}
+
 function openTaskEditor(taskId){
   const t = findCalTask(taskId);
   if (!t) return;
+  selectTask(taskId);   // every calendar item click lands here, in all views
   const rw = canEdit(t.project_id);
   _taskDlgCtx = {
     id: t.id,
@@ -1388,10 +1500,22 @@ function openTaskEditor(taskId){
  *  before a round trip, not instead of the server check. An empty start
  *  date is always fine (defaults to the due date), so this only flags an
  *  explicit start that's actually after the due date. */
-function checkTaskDlgSpan(){
-  const start = document.getElementById('tfStart').value;
-  const due = document.getElementById('tfDue').value;
-  const bad = !!(start && due && start > due);
+/** Mirrors the server's `_check_span`: the two ends default to each other,
+ *  so picking a start date on its own schedules a single-day task. Fills
+ *  only the *other* field and only when it's empty, and only when the field
+ *  that changed actually has a value — so clearing a date never re-fills it,
+ *  which is what makes "clear both to unschedule" still work.
+ *  `changed` is 'start' or 'due' — whichever the user just edited. */
+function autoFillSpan(startEl, dueEl, changed){
+  if (changed === 'start' && startEl.value && !dueEl.value) dueEl.value = startEl.value;
+  if (changed === 'due' && dueEl.value && !startEl.value) startEl.value = dueEl.value;
+}
+
+function checkTaskDlgSpan(changed){
+  const startEl = document.getElementById('tfStart');
+  const dueEl = document.getElementById('tfDue');
+  if (changed) autoFillSpan(startEl, dueEl, changed);
+  const bad = !!(startEl.value && dueEl.value && startEl.value > dueEl.value);
   document.getElementById('tfSpanWarn').style.display = bad ? '' : 'none';
   document.getElementById('tfSaveBtn').disabled = bad;
   return !bad;
@@ -1501,11 +1625,11 @@ function renderDayDlgUnscheduled(){
         </div>
       </div>
       <div class="uns-chips">${g.tasks.map(t => canEdit(t.project_id)
-        ? `<span class="chip chip-${t.status}" style="display:inline-block"
+        ? `<span class="chip chip-${t.status}" style="display:inline-flex;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text}"
              title="Schedule on this day" onclick="scheduleOnDay('${t.id}')"
-             >${(t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('')}${esc(t.title)}</span>`
-        : `<span class="chip chip-${t.status}" style="display:inline-block;opacity:.5;cursor:not-allowed"
-             title="You can't edit this project">${esc(t.title)}</span>`).join('')}</div>
+             ><span class="ctitle">${(t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('')}${esc(t.title)}</span></span>`
+        : `<span class="chip chip-${t.status}" style="display:inline-flex;opacity:.5;cursor:not-allowed;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text}"
+             title="You can't edit this project"><span class="ctitle">${esc(t.title)}</span></span>`).join('')}</div>
     </div>`).join('');
 }
 
@@ -1635,7 +1759,10 @@ function renderProjects(){
 function projCard(p){
   const c = p.task_counts, total = p.task_total || 0;
   const pct = k => total ? (c[k] / total * 100) : 0;
-  return `<div class="pcard" onclick="openDetail('${p.id}')">
+  // Same colour the project's chips carry on the calendar, so a card and its
+  // tasks are recognisably the same project.
+  const pc = projectColor(p.id);
+  return `<div class="pcard" onclick="openDetail('${p.id}')" style="border-top:3px solid ${pc.line}">
     <div class="pcard-top">
       ${p.project_code ? `<span class="pcode">${esc(p.project_code)}</span>` : ''}
       <div class="pcard-title">${esc(p.name)}</div>
@@ -1661,12 +1788,13 @@ function projCard(p){
 // ════════════════════════════════════════════════════
 function setView(v){
   VIEW = v;
-  ['Month','Week','Day'].forEach(x =>
-    document.getElementById('v'+x).classList.toggle('on', x.toLowerCase() === v));
+  [['vMonth','month'], ['vWeek','week'], ['vDay','day'], ['vUser','user']].forEach(([id, key]) =>
+    document.getElementById(id).classList.toggle('on', key === v));
   loadCalendar();
 }
 function shift(n){
-  ANCHOR = VIEW === 'month' ? addMonths(ANCHOR, n)
+  // 'user' spans a whole month like the month view, so it pages by month too.
+  ANCHOR = (VIEW === 'month' || VIEW === 'user') ? addMonths(ANCHOR, n)
          : VIEW === 'week'  ? addDays(ANCHOR, 7*n)
          : addDays(ANCHOR, n);
   loadCalendar();
@@ -1857,8 +1985,10 @@ function renderDetail(focusTaskId){
       <input class="inp" id="newTaskTitle" style="flex:1;min-width:200px" list="taskTpl" placeholder="New task title…"
              onkeydown="if(event.key==='Enter')addTask()">
       <datalist id="taskTpl">${META.default_tasks.map(t => `<option value="${esc(t)}">`).join('')}</datalist>
-      <input class="inp" id="newTaskStart" type="date" title="Start date (optional)" style="width:140px">
-      <input class="inp" id="newTaskDue" type="date" title="Due date (end)" style="width:140px">
+      <input class="inp" id="newTaskStart" type="date" title="Start date" style="width:140px"
+             onchange="autoFillSpan(this, document.getElementById('newTaskDue'), 'start')">
+      <input class="inp" id="newTaskDue" type="date" title="Due date (end) — defaults to the start date" style="width:140px"
+             onchange="autoFillSpan(document.getElementById('newTaskStart'), this, 'due')">
       <div class="atag-row editable" id="newTaskAssigneeRow" style="border:1px solid #dde1e7;border-radius:6px;min-width:130px"
            title="Click to set assignees" onclick="openNewTaskAssigneePicker()">${renderAssigneeTags(_newTaskAssignees, projMembers)}</div>
       <button class="btn btn-suc" onclick="addTask()">＋ Add task</button>
