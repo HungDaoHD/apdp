@@ -116,15 +116,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 
 /* Drop target feedback while dragging a task onto a day. */
 .drop-on{box-shadow:inset 0 0 0 2px #f36a17;background:#fff4ee !important}
-/* Two independent signals on one chip: the fill is the *project* (set inline
-   from projectColor, so tasks of the same project read as a group across the
-   whole calendar), and the left stripe is the *status*. Cancel/complete also
-   get a text treatment, since a 3px stripe alone is easy to miss. */
-.chip-pending{border-color:#f5a623}
-.chip-ongoing{border-color:#1565c0}
-.chip-complete{border-color:#1e8449}
+/* Colour on a chip now means exactly one thing — which project it belongs to
+   (set inline from projectColor). Status rides along as a leading icon, so
+   the two signals can't be confused with each other the way a coloured fill
+   and a coloured stripe could. The left stripe just inherits the project's
+   own text colour. */
+.chip{border-color:currentColor}
+.chip .cico{flex-shrink:0;font-style:normal;font-size:10px;font-weight:700;line-height:1;opacity:.85}
 .chip-complete .ctitle{opacity:.72}
-.chip-cancel{border-color:#aeb4bd;opacity:.6}
+.chip-cancel{opacity:.6}
 .chip-cancel .ctitle{text-decoration:line-through}
 
 /* ── Week view ── */
@@ -195,6 +195,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 
 /* ── Project cards ── */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+/* Projects are grouped by status — one band per status, in STATUS_ORDER. */
+.pgrp+.pgrp{margin-top:20px}
+.pgrp-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid #e6e9ee}
+.pgrp-t{font-size:13px;font-weight:700}
+.pgrp-i{font-size:14px;font-weight:700;line-height:1}
+.pgrp-n{font-size:10.5px;font-weight:700;color:#888;background:#f1f2f4;border-radius:9px;padding:1px 8px}
+.pgrp.done .pgrp-t,.pgrp.done .pgrp-i{opacity:.55}
 .pcard{background:white;border:1px solid #e0e4ea;border-radius:10px;padding:15px 17px;display:flex;flex-direction:column;gap:9px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
 .pcard:hover{border-color:#f8b184;box-shadow:0 4px 16px rgba(243,106,23,.12)}
 .pcard-top{display:flex;align-items:flex-start;gap:8px}
@@ -210,7 +217,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .bar .b-complete{background:#1e8449}.bar .b-ongoing{background:#1565c0}.bar .b-pending{background:#f5a623}.bar .b-cancel{background:#c7ccd3}
 
 /* ── Status tag ── */
-.stag{font-size:10px;padding:2px 9px;border-radius:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+/* Task status is one neutral pill told apart by its icon, never by its
+   colour. Project status keeps the coloured .stag-* variants below. */
+.stag{font-size:10px;padding:2px 9px;border-radius:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;
+  white-space:nowrap;background:#f4f5f7;color:#5a6270;border:1px solid #e3e6ea}
+/* Glyphs, not emoji — they need a touch more size and weight than the label
+   beside them to carry at this scale. */
+.stag .sico{font-style:normal;font-size:11px;font-weight:700;line-height:1}
 .stag-pending{background:#fff8e1;color:#a06800;border:1px solid #ffe082}
 .stag-complete{background:#e6f4ea;color:#1e8449;border:1px solid #b7dfbf}
 .stag-cancel{background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6}
@@ -300,7 +313,6 @@ textarea.inp{resize:vertical;min-height:56px}
 .ttbl input:disabled,.ttbl select:disabled{color:#666;cursor:default;background:transparent;-webkit-appearance:none;appearance:none}
 .ttbl .del{border:none;background:none;cursor:pointer;color:#ccc;font-size:14px;padding:2px 5px;border-radius:4px}
 .ttbl .del:hover{color:#c0392b;background:#fce8e6}
-.ttbl tr.st-complete td:nth-child(1) input{color:#1e8449}
 .ttbl tr.st-cancel td:nth-child(1) input{color:#aaa;text-decoration:line-through}
 
 .hint{font-size:11px;color:#999;line-height:1.6}
@@ -352,7 +364,7 @@ textarea.inp{resize:vertical;min-height:56px}
 .tcnt .t-late{background:#fce8e6;color:#c0392b;border-color:#f5c6c0}
 .tcnt .t-late.zero{background:#f1f2f4;color:#aaa;border-color:#dfe2e6}
 
-/* ── Summary tab ── */
+/* ── Dashboard tab ── */
 .sumgrid-top{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .sumcard{background:white;border:1px solid #e0e4ea;border-radius:10px;padding:15px 17px;display:flex;flex-direction:column;gap:10px}
 .sumcard-hd{font-size:13.5px;font-weight:700}
@@ -362,6 +374,79 @@ textarea.inp{resize:vertical;min-height:56px}
 .sumtbl td.warn{color:#c0392b;font-weight:700}
 .sumtbl tbody tr:hover{background:#f8f9fb}
 .sumtbl .un{display:inline-flex;align-items:center;gap:6px}
+.sumtbl td.num,.sumtbl th.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* KPI strip */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:11px;margin-bottom:14px}
+.kpi{background:white;border:1px solid #e0e4ea;border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:2px}
+.kpi b{font-size:23px;line-height:1.15;font-variant-numeric:tabular-nums}
+.kpi span{font-size:10px;color:#999;letter-spacing:.3px;text-transform:uppercase;font-weight:700}
+.kpi small{font-size:10.5px;color:#aaa}
+.kpi.bad b{color:#c0392b}
+.kpi.warn b{color:#a06800}
+.kpi.good b{color:#1e8449}
+
+/* Capacity heatmap — people down the side, days across the top */
+.hm-wrap{overflow-x:auto}
+.hm{border-collapse:separate;border-spacing:0;min-width:100%}
+.hm th,.hm td{padding:0;border:none}
+.hm .hm-name{position:sticky;left:0;z-index:2;background:white;text-align:left;padding:0 10px 0 2px;
+  white-space:nowrap;font-size:12px;min-width:150px;box-shadow:1px 0 0 #eceff3}
+.hm thead .hm-name{background:white;z-index:3}
+.hm-d{font-size:9px;color:#aaa;text-align:center;width:23px;line-height:1.3;font-weight:700;padding-bottom:3px}
+.hm-d.we{color:#c0392b}
+.hm-d.today span{background:#f36a17;color:white;border-radius:4px;padding:0 3px;display:inline-block}
+.hm-c{width:23px;height:23px}
+.hm-c i{display:block;width:19px;height:19px;margin:2px;border-radius:4px;background:#f1f3f6;
+  font-style:normal;font-size:10px;font-weight:700;line-height:19px;text-align:center;color:transparent;cursor:pointer}
+.hm-c i:hover{outline:2px solid #f36a17;outline-offset:-2px}
+.hm-c.we i{background:#eceef2;box-shadow:inset 0 0 0 1px #e2e5ea}
+/* 5-step scale — deliberately not a gradient: the point is to read "how many
+   plates is this person spinning today" at a glance, not to compare shades. */
+.hm-c i.l1{background:#d6ecd8;color:#2c6e33}
+.hm-c i.l2{background:#a8d8ae;color:#255c2b}
+.hm-c i.l3{background:#ffd98a;color:#7a5200}
+.hm-c i.l4{background:#ffab6b;color:#7a3a00}
+.hm-c i.l5{background:#e8705a;color:white}
+.hm-tot{font-size:11px;color:#666;padding-left:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.hm-lg{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#999;flex-wrap:wrap}
+.hm-lg i{display:inline-block;width:14px;height:14px;border-radius:3px;font-style:normal;vertical-align:-3px}
+
+/* Workload balance bars */
+.wbal{display:flex;flex-direction:column;gap:7px}
+.wbal-r{display:grid;grid-template-columns:118px 1fr 62px;align-items:center;gap:9px;font-size:12px}
+.wbal-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wbal-b{height:14px;background:#f1f3f6;border-radius:4px;overflow:hidden;display:flex}
+.wbal-b i{display:block;height:100%}
+.wbal-b .w-wd{background:#5b8def}
+.wbal-b .w-we{background:#e8705a}
+.wbal-v{text-align:right;font-size:11px;color:#666;font-variant-numeric:tabular-nums}
+
+/* At-risk list */
+.risk{display:flex;flex-direction:column;gap:5px;max-height:320px;overflow-y:auto}
+.risk-r{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12px}
+.risk-r:hover{background:#fff4ee}
+.risk-p{flex-shrink:0;width:150px;color:#8a94a6;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk-a{flex-shrink:0;display:flex;gap:3px}
+.risk-d{flex-shrink:0;font-size:11px;font-weight:700;width:74px;text-align:right}
+.risk-d.late{color:#c0392b}
+.risk-d.soon{color:#a06800}
+.risk-hd{font-size:11px;font-weight:700;color:#999;letter-spacing:.3px;text-transform:uppercase;margin-top:4px}
+
+/* Throughput sparkline */
+.thru{display:flex;align-items:flex-end;gap:5px;height:96px;padding-top:6px}
+.thru-c{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+.thru-b{width:100%;background:#5b8def;border-radius:3px 3px 0 0;min-height:2px}
+.thru-b.dim{background:#c9d6f5}
+.thru-v{font-size:10px;color:#666;font-weight:700}
+.thru-l{font-size:9px;color:#bbb;white-space:nowrap}
+
+/* Admin-only card marker */
+.adm-only{font-size:9.5px;font-weight:700;color:#8a5cf6;background:#f3edff;border:1px solid #ddd0ff;
+  padding:2px 7px;border-radius:9px;letter-spacing:.3px;text-transform:uppercase}
+.sumcard-hd{display:flex;align-items:center;gap:8px}
+.streak-bad{color:#c0392b;font-weight:700}
 
 /* ── Log tab ── */
 .logwrap{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow-x:auto}
@@ -484,7 +569,7 @@ textarea.inp{resize:vertical;min-height:56px}
     <button id="tabCal"   class="on" onclick="switchTab('cal')">📅 Calendar</button>
     <button id="tabProj"           onclick="switchTab('proj')">📁 Projects</button>
     <button id="tabUsers"          onclick="switchTab('users')">👥 Users</button>
-    <button id="tabSummary"        onclick="switchTab('summary')">📊 Summary</button>
+    <button id="tabDash"           onclick="switchTab('dash')">📊 Dashboard</button>
     <button id="tabLog"            onclick="switchTab('log')">🕘 Log</button>
   </div>
 
@@ -564,23 +649,40 @@ textarea.inp{resize:vertical;min-height:56px}
     <div id="usersArea"><div class="loading"><div class="spin"></div> Loading users…</div></div>
   </div>
 
-  <!-- ══ SUMMARY TAB ══ -->
-  <div id="paneSummary" style="display:none">
+  <!-- ══ DASHBOARD TAB ══ -->
+  <div id="paneDash" style="display:none">
     <div class="tbar">
-      <div class="ssel filt" id="sMemberWrap" style="width:158px">
+      <div class="ssel filt" id="dMemberWrap" style="width:158px">
         <input class="inp" autocomplete="off" placeholder="All members">
         <div class="ssel-panel"></div>
       </div>
+      <div class="ssel filt" id="dProjectWrap" style="width:178px">
+        <input class="inp" autocomplete="off" placeholder="All projects">
+        <div class="ssel-panel"></div>
+      </div>
+      <!-- The team works weekends too, so weekday/weekend is a first-class
+           lens here rather than something to infer from the day columns. -->
+      <div class="seg" title="Which days of the week to count">
+        <button id="dScopeAll" class="on" onclick="setDashScope('all')">All days</button>
+        <button id="dScopeWd"           onclick="setDashScope('weekday')">Mon–Fri</button>
+        <button id="dScopeWe"           onclick="setDashScope('weekend')">Sat–Sun</button>
+      </div>
       <div class="dr" title="Count only tasks falling in this date range">
         <span class="dr-l">📅</span>
-        <input class="sel dr-i" type="date" id="sFrom" onchange="renderSummary()">
+        <input class="sel dr-i" type="date" id="dFrom" onchange="renderDashboard()">
         <span class="dr-s">→</span>
-        <input class="sel dr-i" type="date" id="sTo" onchange="renderSummary()">
-        <button class="dr-x" onclick="clearRange('sFrom','sTo',renderSummary)" title="Clear dates">✕</button>
+        <input class="sel dr-i" type="date" id="dTo" onchange="renderDashboard()">
+        <button class="dr-x" onclick="clearRange('dFrom','dTo',renderDashboard)" title="Clear dates">✕</button>
+      </div>
+      <div class="seg" title="Jump the date range">
+        <button onclick="dashPreset('week')">This week</button>
+        <button onclick="dashPreset('next')">Next week</button>
+        <button onclick="dashPreset('month')">This month</button>
+        <button onclick="dashPreset('4w')">4 weeks</button>
       </div>
       <div class="gap"></div>
     </div>
-    <div id="summaryArea"><div class="loading"><div class="spin"></div> Loading summary…</div></div>
+    <div id="dashArea"><div class="loading"><div class="spin"></div> Loading dashboard…</div></div>
   </div>
 
   <!-- ══ LOG TAB ══ -->
@@ -862,6 +964,33 @@ let _dragTaskId = null;    // task being dragged across the calendar
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'};          // tasks
 const PROJECT_STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'}; // projects — a distinct domain
+/** Status is carried by an icon, not a colour. Colour was doing two jobs at
+ *  once on the calendar (project identity as the fill, status as the stripe),
+ *  and the stripe always lost — an icon reads at any size and survives being
+ *  printed, screenshotted, or looked at by someone colour-blind.
+ *
+ *  Plain glyphs, deliberately not emoji: these inherit the surrounding text
+ *  colour and weight, so they set like typography instead of looking like
+ *  clip art pasted into a 10px pill. Waiting / running / done / dropped —
+ *  four different *shapes*, which is what makes them still readable on a
+ *  calendar chip, where the icon appears with no label beside it.
+ *
+ *  None of the four appear in Unicode's emoji data, so no platform can
+ *  promote them to colour glyphs. */
+const STATUS_ICON = {pending:'↻', ongoing:'◐', complete:'✓', cancel:'✕'};
+/** Work in flight first, dead work last — the order the Projects tab groups by. */
+const STATUS_ORDER = ['ongoing', 'pending', 'complete', 'cancel'];
+/** The status tag used everywhere a task's state is labelled. */
+function statusTag(status){
+  return `<span class="stag" title="${STATUS_LABEL[status] || status}"
+    ><i class="sico">${STATUS_ICON[status] || ''}</i>${STATUS_LABEL[status] || status}</span>`;
+}
+/** Status choices for a picker, in STATUS_ORDER and carrying their icon, so
+ *  every dropdown in the app lists them the same way round. */
+function statusOptions(labels){
+  return STATUS_ORDER.filter(s => labels[s])
+    .map(value => ({value, label: `${STATUS_ICON[value]} ${labels[value]}`}));
+}
 
 // ════════════════════════════════════════════════════
 // DATE HELPERS
@@ -1240,25 +1369,29 @@ async function boot(){
   msInit(document.getElementById('fStatusWrap'), {
     // Built from STATUS_LABEL rather than hardcoded, so a status added there
     // can't go missing here the way "Ongoing" previously did.
-    getOptions: () => Object.entries(STATUS_LABEL).map(([value, label]) => ({value, label})),
+    getOptions: () => statusOptions(STATUS_LABEL),
     allLabel: 'Any status', onChange: loadCalendar,
   });
 
   // Per-tab member/status filters. Purely client-side (they re-render from
   // data already in memory), unlike the calendar's, which refetches.
   msInit(document.getElementById('pStatusWrap'), {
-    getOptions: () => Object.entries(PROJECT_STATUS_LABEL).map(([value, label]) => ({value, label})),
+    getOptions: () => statusOptions(PROJECT_STATUS_LABEL),
     allLabel: 'Any status', onChange: renderProjects,
   });
   msInit(document.getElementById('pMemberWrap'), {
     getOptions: memberFilterOptions, allLabel: 'All members', onChange: renderProjects,
   });
   msInit(document.getElementById('uStatusWrap'), {
-    getOptions: () => Object.entries(STATUS_LABEL).map(([value, label]) => ({value, label})),
+    getOptions: () => statusOptions(STATUS_LABEL),
     allLabel: 'Any task status', onChange: renderUsers,
   });
-  msInit(document.getElementById('sMemberWrap'), {
-    getOptions: memberFilterOptions, allLabel: 'All members', onChange: renderSummary,
+  msInit(document.getElementById('dMemberWrap'), {
+    getOptions: memberFilterOptions, allLabel: 'All members', onChange: renderDashboard,
+  });
+  msInit(document.getElementById('dProjectWrap'), {
+    getOptions: () => PROJECTS.map(p => ({value: p.id, label: (p.project_code ? p.project_code + ' — ' : '') + p.name})),
+    allLabel: 'All projects', onChange: renderDashboard,
   });
   // The Log tab's two filters refetch (the server holds far more history than
   // one page shows), unlike the purely client-side filters above.
@@ -1303,14 +1436,14 @@ async function refreshAll(){
   document.getElementById('unsched').innerHTML     = '';
   document.getElementById('projArea').innerHTML    = loadingBox('projects');
   document.getElementById('usersArea').innerHTML   = loadingBox('users');
-  document.getElementById('summaryArea').innerHTML = loadingBox('summary');
+  document.getElementById('dashArea').innerHTML    = loadingBox('dashboard');
   document.getElementById('logArea').innerHTML     = loadingBox('log');
   try {
     await loadProjects();
     await loadCalendar();
     await loadAllTasks(true);
     renderUsers();
-    renderSummary();
+    renderDashboard();
     await loadLog();
     toast('Refreshed', 'ok');
   } catch(e){
@@ -1321,7 +1454,7 @@ async function refreshAll(){
   }
 }
 
-/** Fetch every task in the system — the Users and Summary tabs both work off
+/** Fetch every task in the system — the Users and Dashboard tabs both work off
  *  this one list. Cached after the first call; `force` re-fetches. */
 let _allTasksLoaded = false;
 async function loadAllTasks(force){
@@ -1363,6 +1496,7 @@ async function loadProjects(){
   // there's no option list to rebuild here — but a project that just got
   // deleted must not stay selected as a stale filter.
   msPrune(document.getElementById('fProjectWrap'));
+  msPrune(document.getElementById('dProjectWrap'));
   renderProjects();
 }
 
@@ -1436,6 +1570,7 @@ function chip(t, day, {compact = false} = {}){
     title="${esc(title)}"
     style="background-color:${pc.bg};color:${pc.text}"
     onclick="event.stopPropagation();openTaskEditor('${t.id}')"
+    ><i class="cico">${STATUS_ICON[t.status] || ''}</i
     ><span class="ctitle">${tags}${code}${proj}${esc(t.title)}</span>${counter}</span>`;
 }
 
@@ -1801,7 +1936,7 @@ function userGroupsHtml(list, {taskClick, draggable = false}){
           : '';
         return `
         <div class="day-row" onclick="${taskClick(t.id)}"${drag}>
-          <span class="day-row-s"><span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span></span>
+          <span class="day-row-s">${statusTag(t.status)}</span>
           <span class="day-row-c">${t.project_code ? `<span class="pcode">${esc(t.project_code)}</span>` : ''}</span>
           <span class="day-row-p">${esc(t.project_name || '')}</span>
           <span class="day-row-t">${esc(t.title)}${taskStart(t) !== t.due_date
@@ -2014,10 +2149,12 @@ function renderDayDlgUnscheduled(){
       </div>
       <div class="uns-chips">${g.tasks.map(t => canEdit(t.project_id)
         ? `<span class="chip chip-${t.status}" style="display:inline-flex;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text}"
-             title="Schedule on this day" onclick="scheduleOnDay('${t.id}')"
+             title="Schedule on this day — ${STATUS_LABEL[t.status]}" onclick="scheduleOnDay('${t.id}')"
+             ><i class="cico">${STATUS_ICON[t.status] || ''}</i
              ><span class="ctitle">${(t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('')}${esc(t.title)}</span></span>`
         : `<span class="chip chip-${t.status}" style="display:inline-flex;opacity:.5;cursor:not-allowed;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text}"
-             title="You can't edit this project"><span class="ctitle">${esc(t.title)}</span></span>`).join('')}</div>
+             title="You can't edit this project"><i class="cico">${STATUS_ICON[t.status] || ''}</i
+             ><span class="ctitle">${esc(t.title)}</span></span>`).join('')}</div>
     </div>`).join('');
 }
 
@@ -2104,7 +2241,7 @@ function dayTasksDlgAdd(){
 }
 
 // ════════════════════════════════════════════════════
-// SHARED FILTER HELPERS  (Projects + Summary tabs)
+// SHARED FILTER HELPERS  (Projects + Dashboard tabs)
 // ════════════════════════════════════════════════════
 function memberFilterOptions(){
   return META.members.map(m => ({value: m.email, label: m.name + (m.is_admin ? ' (admin)' : '')}));
@@ -2274,25 +2411,105 @@ function openUserDlg(email){
 function closeUserDlg(){ document.getElementById('userDlg').style.display = 'none'; }
 
 // ════════════════════════════════════════════════════
-// SUMMARY RENDER
+// DASHBOARD
 // ════════════════════════════════════════════════════
-async function loadSummary(){
+/** More than this many tasks running on one person on one day reads as
+ *  overloaded — the heatmap's hottest band and the "Overloaded" KPI. */
+const OVERLOAD = 4;
+const HM_MAX_DAYS = 70;   // widest heatmap drawn before the window is clipped
+let DASH_SCOPE = 'all';   // 'all' | 'weekday' | 'weekend'
+
+async function loadDashboard(){
   try {
     await loadAllTasks();
   } catch(e){
     if (e.status === 403) return showDeny(e.message);
-    document.getElementById('summaryArea').innerHTML = errBox(e.message);
+    document.getElementById('dashArea').innerHTML = errBox(e.message);
     return;
   }
-  renderSummary();
+  renderDashboard();
+}
+
+function setDashScope(s){
+  DASH_SCOPE = s;
+  document.getElementById('dScopeAll').classList.toggle('on', s === 'all');
+  document.getElementById('dScopeWd').classList.toggle('on', s === 'weekday');
+  document.getElementById('dScopeWe').classList.toggle('on', s === 'weekend');
+  renderDashboard();
+}
+
+/** The date-range presets — the ranges anyone actually asks for, without
+ *  making them count days on two date pickers. */
+function dashPreset(kind){
+  const t = todayISO();
+  let from, to;
+  if (kind === 'week'){ from = mondayOf(t); to = addDays(from, 6); }
+  else if (kind === 'next'){ from = addDays(mondayOf(t), 7); to = addDays(from, 6); }
+  else if (kind === 'month'){
+    const d = parseISO(t);
+    from = iso(new Date(d.getFullYear(), d.getMonth(), 1, 12));
+    to   = iso(new Date(d.getFullYear(), d.getMonth() + 1, 0, 12));
+  } else { from = mondayOf(t); to = addDays(from, 27); }
+  document.getElementById('dFrom').value = from;
+  document.getElementById('dTo').value   = to;
+  renderDashboard();
+}
+
+// ── Day maths ────────────────────────────────────────
+function isWeekend(d){ const n = parseISO(d).getDay(); return n === 0 || n === 6; }
+function mondayOf(d){ return addDays(d, -((parseISO(d).getDay() + 6) % 7)); }
+function inScope(d){
+  return DASH_SCOPE === 'all' || (DASH_SCOPE === 'weekend' ? isWeekend(d) : !isWeekend(d));
+}
+
+/** Every calendar day a task occupies. This *is* the effort model: a task
+ *  costs as many days as its own span covers, so there is no separate
+ *  estimate for anyone to keep up to date — and an undated task costs
+ *  nothing, because it isn't scheduled against anybody's week yet. */
+function taskSpanDays(t){
+  const s = taskStart(t), e = t.due_date;
+  if (!s || !e || e < s || t.status === 'cancel') return [];   // cancelled work isn't load, it's gone
+  const out = [];
+  for (let d = s; d <= e; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+/** `taskSpanDays` narrowed to the weekday/weekend lens the toolbar is on. */
+function taskDays(t){ return taskSpanDays(t).filter(inScope); }
+
+/** The heatmap's own window. A blank date filter means "everything" for every
+ *  other card here, which is not a grid anyone can read — so the grid falls
+ *  back to the four weeks starting this Monday. */
+function dashWindow(from, to){
+  let s = from || (to ? addDays(to, -27) : mondayOf(todayISO()));
+  let e = to || addDays(s, 27);
+  if (e < s) e = s;
+  let clipped = false;
+  if (daysBetween(s, e) + 1 > HM_MAX_DAYS){ e = addDays(s, HM_MAX_DAYS - 1); clipped = true; }
+  return {s, e, clipped};
+}
+
+/** email -> (day -> how many of their tasks run that day), inside *win*. */
+function buildLoad(tasks, win, emails){
+  const load = new Map(emails.map(e => [e, new Map()]));
+  tasks.forEach(t => {
+    (t.assignees || []).forEach(a => {
+      const days = load.get(a);
+      if (!days) return;
+      taskDays(t).forEach(d => {
+        if (d < win.s || d > win.e) return;
+        days.set(d, (days.get(d) || 0) + 1);
+      });
+    });
+  });
+  return load;
 }
 
 function statusStatCard(title, counts, total, labels){
   return `<div class="sumcard">
     <div class="sumcard-hd">${title}</div>
     <div class="ustats" style="grid-template-columns:repeat(4,1fr)">
-      ${['pending', 'ongoing', 'complete', 'cancel'].map(k =>
-        `<div class="ustat"><b>${counts[k]}</b><span>${labels[k]}</span></div>`).join('')}
+      ${STATUS_ORDER.map(k =>
+        `<div class="ustat"><b>${counts[k]}</b><span>${STATUS_ICON[k]} ${labels[k]}</span></div>`).join('')}
     </div>
     ${total ? `<div class="bar">
       <i class="b-complete" style="width:${counts.complete / total * 100}%"></i>
@@ -2304,81 +2521,350 @@ function statusStatCard(title, counts, total, labels){
   </div>`;
 }
 
-function renderSummary(){
+function renderDashboard(){
   if (!META) return;
   const today = todayISO();
-  const from = document.getElementById('sFrom').value;
-  const to   = document.getElementById('sTo').value;
-  const who  = msValues(document.getElementById('sMemberWrap'));
+  const from = document.getElementById('dFrom').value;
+  const to   = document.getElementById('dTo').value;
+  const who  = msValues(document.getElementById('dMemberWrap'));
+  const prj  = msValues(document.getElementById('dProjectWrap'));
 
-  // Tasks first: both the date range and the member filter are properties of
-  // a task, and the project counts below are derived from what survives here.
-  let tasks = ALL_TASKS.filter(t => taskInRange(t, from, to));
-  if (who.length) tasks = tasks.filter(t => (t.assignees || []).some(a => who.includes(a)));
+  // Three task sets, because the cards below genuinely need different ones:
+  //   mp      — member/project filter only. Throughput reads history the date
+  //             range would cut off, and weekend fairness is a long game.
+  //   mpRange — plus the date range.
+  //   tasks   — plus the weekday/weekend lens; the default set for everything
+  //             that answers "what is the team carrying right now".
+  const mp = ALL_TASKS.filter(t =>
+    (!who.length || (t.assignees || []).some(a => who.includes(a))) &&
+    (!prj.length || prj.includes(t.project_id)));
+  const mpRange = mp.filter(t => taskInRange(t, from, to));
+  const tasks = DASH_SCOPE === 'all' ? mpRange : mpRange.filter(t => taskDays(t).length);
 
   // Projects: the member filter is a membership question, but a date range
   // has no meaning for a project on its own — so a range narrows the list to
   // projects that actually have a task inside it.
   const inRange = new Set(tasks.map(t => t.project_id));
   const projects = PROJECTS.filter(p =>
-    (!who.length || who.some(w => isOnProject(p, w))) && (!(from || to) || inRange.has(p.id)));
+    (!prj.length || prj.includes(p.id)) &&
+    (!who.length || who.some(w => isOnProject(p, w))) &&
+    (!(from || to) || inRange.has(p.id)));
 
-  // ── 1. Projects by status ──
+  // One row per member; narrowed to the selected member(s) when the member
+  // filter is on, since every other row would then read zero.
+  const members = who.length ? META.members.filter(m => who.includes(m.email)) : META.members;
+  const win  = dashWindow(from, to);
+  const load = buildLoad(tasks, win, members.map(m => m.email));
+
   const pCounts = {pending:0, ongoing:0, complete:0, cancel:0};
   projects.forEach(p => pCounts[p.status]++);
-
-  // ── 2. Tasks by status ──
   const tCounts = {pending:0, ongoing:0, complete:0, cancel:0};
   tasks.forEach(t => tCounts[t.status]++);
 
-  // ── 3. By user ── one row per member; narrowed to the selected member(s)
-  // when the member filter is on, since every other row would then read zero.
-  const rows = who.length ? META.members.filter(m => who.includes(m.email)) : META.members;
-  const byUser = rows.map(m => {
+  const scope = [
+    (from || to) ? `${from ? fmtFull(from) : '…'} → ${to ? fmtFull(to) : '…'}` : '',
+    who.length ? who.map(e => (META.members.find(m => m.email === e) || {}).name || e).join(', ') : '',
+    prj.length ? `${prj.length} project(s)` : '',
+    DASH_SCOPE === 'weekday' ? 'Mon–Fri only' : DASH_SCOPE === 'weekend' ? 'Sat–Sun only' : '',
+  ].filter(Boolean).join(' · ');
+
+  document.getElementById('dashArea').innerHTML = `
+    ${scope ? `<div class="hint" style="margin-bottom:10px">Filtered: <strong>${esc(scope)}</strong>
+      ${(from || to) ? ' — undated tasks are excluded while a date range is set.' : ''}</div>` : ''}
+    ${dashKpis(tasks, projects, load, today)}
+    ${dashHeatmap(members, load, win, today)}
+    <div class="sumgrid-top">
+      ${dashBalance(members, tasks)}
+      ${dashRisk(tasks, today)}
+    </div>
+    ${(() => {
+      // Weekend duty is admin-only, so this row is sometimes one card wide —
+      // a two-column grid would leave a conspicuous empty half.
+      const wk = dashWeekend(members, mpRange);
+      return `<div class="sumgrid-top"${wk ? '' : ' style="grid-template-columns:1fr"'}>
+        ${wk}${dashThroughput(mp, today)}
+      </div>`;
+    })()}
+    <div class="sumgrid-top">
+      ${statusStatCard('📁 Projects by status', pCounts, projects.length, PROJECT_STATUS_LABEL)}
+      ${statusStatCard('✅ Tasks by status', tCounts, tasks.length, STATUS_LABEL)}
+    </div>
+    ${dashByUser(members, tasks, projects, load, today)}`;
+}
+
+// ── KPI strip ────────────────────────────────────────
+function dashKpis(tasks, projects, load, today){
+  const soonEnd = addDays(today, 7);
+  const open = t => t.status !== 'complete' && t.status !== 'cancel';
+  const overdue = tasks.filter(t => isOverdue(t, today)).length;
+  const soon = tasks.filter(t => open(t) && t.due_date && t.due_date >= today && t.due_date <= soonEnd).length;
+  const taskDayTotal = tasks.reduce((n, t) => n + taskDays(t).length, 0);
+  const weekendDays  = tasks.reduce((n, t) => n + taskSpanDays(t).filter(isWeekend).length, 0);
+  let overloaded = 0;
+  load.forEach(days => { for (const v of days.values()) if (v > OVERLOAD){ overloaded++; break; } });
+  const idle = [...load.values()].filter(days => ![...days.values()].some(v => v > 0)).length;
+
+  const card = (cls, label, value, note) =>
+    `<div class="kpi${cls ? ' ' + cls : ''}"><span>${label}</span><b>${value}</b><small>${note}</small></div>`;
+  return `<div class="kpis">
+    ${card('', 'Projects', projects.filter(p => p.status === 'ongoing').length, `${projects.length} in scope`)}
+    ${card('', 'Tasks', tasks.length, `${taskDayTotal} task-days`)}
+    ${card(overdue ? 'bad' : '', 'Overdue', overdue, 'past due, still open')}
+    ${card(soon ? 'warn' : '', 'Due ≤ 7 days', soon, 'next week’s pressure')}
+    ${card(weekendDays ? 'warn' : '', 'Weekend days', weekendDays, 'task-days on Sat/Sun')}
+    ${card(overloaded ? 'bad' : 'good', 'Overloaded', overloaded, `> ${OVERLOAD} tasks in a day`)}
+    ${card(idle ? 'good' : '', 'Free', idle, 'nothing in the window')}
+  </div>`;
+}
+
+// ── Capacity heatmap ─────────────────────────────────
+function dashHeatmap(members, load, win, today){
+  const LTR = ['M','T','W','T','F','S','S'];
+  const days = [];
+  for (let d = win.s; d <= win.e; d = addDays(d, 1)) if (inScope(d)) days.push(d);
+  if (!days.length || !members.length){
+    return `<div class="sumcard" style="margin-bottom:14px"><div class="sumcard-hd">🔥 Capacity</div>
+      <div class="hint">Nothing to plot for this window.</div></div>`;
+  }
+
+  const head = days.map(d => {
+    const dt = parseISO(d);
+    return `<th class="hm-d${isWeekend(d) ? ' we' : ''}${d === today ? ' today' : ''}"
+      title="${fmtFull(d)}"><span>${dt.getDate()}</span><br>${LTR[(dt.getDay() + 6) % 7]}</th>`;
+  }).join('');
+
+  const rows = members.map(m => {
+    const mine = load.get(m.email) || new Map();
+    let tot = 0, hot = 0;
+    const cells = days.map(d => {
+      const n = mine.get(d) || 0;
+      tot += n;
+      if (n > OVERLOAD) hot++;
+      // Levels cap at 5: past that the exact number stops changing the
+      // decision, and the label inside the cell still shows the real count.
+      const lvl = n ? 'l' + Math.min(n, 5) : '';
+      return `<td class="hm-c${isWeekend(d) ? ' we' : ''}"><i class="${lvl}"
+        title="${esc(m.name)} · ${fmtFull(d)} · ${n} task(s)"
+        onclick="openDayTasksDlg('${d}')">${n || ''}</i></td>`;
+    }).join('');
+    return `<tr>
+      <td class="hm-name">${assigneeTag(m.email, m.name)} ${esc(m.name)}</td>
+      ${cells}
+      <td class="hm-tot">${tot} td${hot ? ` <span class="streak-bad">· ${hot} hot</span>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="sumcard" style="margin-bottom:14px">
+    <div class="sumcard-hd">🔥 Capacity — ${fmtFull(win.s)} → ${fmtFull(win.e)}
+      ${win.clipped ? `<span class="hint">(clipped to ${HM_MAX_DAYS} days)</span>` : ''}</div>
+    <div class="hm-wrap"><table class="hm">
+      <thead><tr><th class="hm-name"></th>${head}<th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="hm-lg">
+      <span>Tasks running that day:</span>
+      <i style="background:#f1f3f6"></i><span>0</span>
+      <i class="l1" style="background:#d6ecd8"></i><span>1</span>
+      <i class="l2" style="background:#a8d8ae"></i><span>2</span>
+      <i class="l3" style="background:#ffd98a"></i><span>3</span>
+      <i class="l4" style="background:#ffab6b"></i><span>4</span>
+      <i class="l5" style="background:#e8705a"></i><span>5+</span>
+      <span style="margin-left:6px">· grey columns are Sat/Sun · click a cell for that day’s tasks</span>
+    </div>
+  </div>`;
+}
+
+// ── Workload balance ─────────────────────────────────
+function dashBalance(members, tasks){
+  const rows = members.map(m => {
+    const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
+    let wd = 0, we = 0;
+    mine.forEach(t => taskDays(t).forEach(d => isWeekend(d) ? we++ : wd++));
+    return {m, wd, we, tot: wd + we};
+  }).sort((a, b) => b.tot - a.tot);
+  const max = Math.max(1, ...rows.map(r => r.tot));
+
+  return `<div class="sumcard">
+    <div class="sumcard-hd">⚖️ Workload balance</div>
+    <div class="wbal">${rows.map(r => `<div class="wbal-r">
+      <span class="wbal-n">${assigneeTag(r.m.email, r.m.name)} ${esc(r.m.name)}</span>
+      <span class="wbal-b" title="${r.wd} weekday + ${r.we} weekend task-days">
+        <i class="w-wd" style="width:${r.wd / max * 100}%"></i>
+        <i class="w-we" style="width:${r.we / max * 100}%"></i>
+      </span>
+      <span class="wbal-v">${r.tot} td</span>
+    </div>`).join('')}</div>
+    <div class="hint">Task-days = how many days each task spans, summed.
+      <span style="color:#5b8def">▉</span> weekdays · <span style="color:#e8705a">▉</span> weekend</div>
+  </div>`;
+}
+
+// ── At-risk ──────────────────────────────────────────
+function dashRisk(tasks, today){
+  const open = t => t.status !== 'complete' && t.status !== 'cancel';
+  const byDue = (a, b) => (a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0);
+  const soonEnd = addDays(today, 7);
+  const late = tasks.filter(t => isOverdue(t, today)).sort(byDue);
+  const soon = tasks.filter(t => open(t) && t.due_date && t.due_date >= today && t.due_date <= soonEnd).sort(byDue);
+
+  const row = (t, cls, txt) => `<div class="risk-r" onclick="openTaskEditor('${t.id}')">
+    <span class="risk-p">${t.project_code ? `<span class="pcode">${esc(t.project_code)}</span> ` : ''}${esc(t.project_name || '')}</span>
+    <span class="risk-t">${esc(t.title)}</span>
+    <span class="risk-a">${(t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('')}</span>
+    <span class="risk-d ${cls}">${txt}</span>
+  </div>`;
+
+  return `<div class="sumcard">
+    <div class="sumcard-hd">🚨 At risk <span class="hint">${late.length} overdue · ${soon.length} due soon</span></div>
+    <div class="risk">
+      ${late.length ? '<div class="risk-hd">Overdue</div>' : ''}
+      ${late.map(t => row(t, 'late', `${daysBetween(t.due_date, today)}d late`)).join('')}
+      ${soon.length ? '<div class="risk-hd">Due within 7 days</div>' : ''}
+      ${soon.map(t => {
+        const n = daysBetween(today, t.due_date);
+        return row(t, 'soon', n === 0 ? 'today' : `in ${n}d`);
+      }).join('')}
+      ${(late.length || soon.length) ? '' : '<div class="hint">Nothing overdue or due in the next 7 days. 🎉</div>'}
+    </div>
+  </div>`;
+}
+
+// ── Weekend duty (admin only) ────────────────────────
+/** Deliberately ignores the Mon–Fri / Sat–Sun toolbar lens: this card is
+ *  about weekends by definition, and blanking it out because someone is
+ *  looking at weekdays would just be confusing. */
+function dashWeekend(members, tasks){
+  if (!META.me.is_admin) return '';
+
+  const rows = members.map(m => {
+    const days = new Set();
+    tasks.filter(t => (t.assignees || []).includes(m.email))
+      .forEach(t => taskSpanDays(t).forEach(d => { if (isWeekend(d)) days.add(d); }));
+    // One weekend = one Saturday. A Sunday belongs to the Saturday before it,
+    // so Sat+Sun of the same weekend never counts as two separate turns.
+    const weekends = [...new Set([...days].map(d =>
+      parseISO(d).getDay() === 0 ? addDays(d, -1) : d))].sort();
+    let streak = 0, run = 0, prev = null;
+    weekends.forEach(w => {
+      run = (prev && daysBetween(prev, w) === 7) ? run + 1 : 1;
+      prev = w;
+      if (run > streak) streak = run;
+    });
+    return {m, days: days.size, weekends: weekends.length, streak, last: weekends[weekends.length - 1]};
+  }).sort((a, b) => b.days - a.days || b.weekends - a.weekends);
+
+  const worked = rows.filter(r => r.days);
+  const spread = worked.length ? worked[0].days - worked[worked.length - 1].days : 0;
+
+  return `<div class="sumcard">
+    <div class="sumcard-hd">🌗 Weekend duty <span class="adm-only">admin</span></div>
+    ${worked.length ? `<table class="sumtbl">
+      <thead><tr>
+        <th>User</th><th class="num">Sat/Sun days</th><th class="num">Weekends</th>
+        <th class="num">Longest streak</th><th>Last weekend on</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td><span class="un">${assigneeTag(r.m.email, r.m.name)} ${esc(r.m.name)}</span></td>
+        <td class="num">${r.days}</td>
+        <td class="num">${r.weekends}</td>
+        <td class="num${r.streak >= 3 ? ' warn' : ''}">${r.streak || '—'}</td>
+        <td>${r.last ? fmtFull(r.last) : '—'}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <div class="hint">
+      ${rows.some(r => r.streak >= 3)
+        ? `<span class="streak-bad">⚠ ${rows.filter(r => r.streak >= 3).map(r => esc(r.m.name)).join(', ')}
+            worked 3+ weekends back to back — rotate the next one.</span><br>`
+        : ''}
+      Spread between the busiest and least-busy weekend worker: <strong>${spread} day(s)</strong>.
+      Counts follow the date range, not the Mon–Fri / Sat–Sun toggle.
+    </div>`
+    : '<div class="hint">Nobody is scheduled on a Saturday or Sunday in this range.</div>'}
+  </div>`;
+}
+
+// ── Throughput ───────────────────────────────────────
+/** Last 12 weeks of completions, always — a date range narrow enough to be
+ *  useful elsewhere would leave nothing here worth calling a trend. */
+function dashThroughput(mp, today){
+  const start = addDays(mondayOf(today), -11 * 7);
+  const weeks = [];
+  for (let i = 0; i < 12; i++) weeks.push(addDays(start, i * 7));
+  const done = mp.filter(t => t.status === 'complete' && t.completed_at);
+  const counts = weeks.map(w => {
+    const end = addDays(w, 6);
+    return done.filter(t => {
+      const d = t.completed_at.slice(0, 10);
+      return d >= w && d <= end;
+    }).length;
+  });
+  const max = Math.max(1, ...counts);
+
+  const timed = done.filter(t => taskStart(t) && taskStart(t) <= t.completed_at.slice(0, 10));
+  const cycle = timed.length
+    ? (timed.reduce((s, t) => s + daysBetween(taskStart(t), t.completed_at.slice(0, 10)), 0) / timed.length)
+    : null;
+
+  return `<div class="sumcard">
+    <div class="sumcard-hd">📈 Throughput <span class="hint">tasks completed per week</span></div>
+    <div class="thru">${weeks.map((w, i) => `<div class="thru-c" title="Week of ${fmtFull(w)} — ${counts[i]} completed">
+      <span class="thru-v">${counts[i] || ''}</span>
+      <span class="thru-b${i === weeks.length - 1 ? ' dim' : ''}" style="height:${counts[i] / max * 68}px"></span>
+      <span class="thru-l">${fmtDM(w)}</span>
+    </div>`).join('')}</div>
+    <div class="hint">
+      ${counts.reduce((a, b) => a + b, 0)} completed in 12 weeks
+      ${cycle !== null ? ` · average cycle time <strong>${cycle.toFixed(1)} day(s)</strong> from start to done` : ''}
+      · the last bar is the week in progress.
+    </div>
+  </div>`;
+}
+
+// ── By user ──────────────────────────────────────────
+function dashByUser(members, tasks, projects, load, today){
+  const byUser = members.map(m => {
     const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
     const theirs = projects.filter(p => isOnProject(p, m.email));
     const counts = {pending:0, ongoing:0, complete:0, cancel:0};
     mine.forEach(t => counts[t.status]++);
+    const days = load.get(m.email) || new Map();
     return {
       m, projTotal: theirs.length,
       projComplete: theirs.filter(p => p.status === 'complete').length,
       taskTotal: mine.length, counts,
       overdue: mine.filter(t => isOverdue(t, today)).length,
+      taskDays: mine.reduce((n, t) => n + taskDays(t).length, 0),
+      weekend: mine.reduce((n, t) => n + taskSpanDays(t).filter(isWeekend).length, 0),
+      hot: [...days.values()].filter(v => v > OVERLOAD).length,
     };
   });
 
-  const scope = [
-    (from || to) ? `${from ? fmtFull(from) : '…'} → ${to ? fmtFull(to) : '…'}` : '',
-    who.length ? who.map(e => (META.members.find(m => m.email === e) || {}).name || e).join(', ') : '',
-  ].filter(Boolean).join(' · ');
-
-  document.getElementById('summaryArea').innerHTML = `
-    ${scope ? `<div class="hint" style="margin-bottom:10px">Filtered: <strong>${esc(scope)}</strong>
-      ${(from || to) ? ' — undated tasks are excluded while a date range is set.' : ''}</div>` : ''}
-    <div class="sumgrid-top">
-      ${statusStatCard('📁 Projects by status', pCounts, projects.length, PROJECT_STATUS_LABEL)}
-      ${statusStatCard('✅ Tasks by status', tCounts, tasks.length, STATUS_LABEL)}
-    </div>
-    <div class="sumcard">
-      <div class="sumcard-hd">👥 By user</div>
-      <table class="sumtbl">
-        <thead><tr>
-          <th>User</th><th>Projects</th><th>Proj. complete</th><th>Tasks</th>
-          <th>Pending</th><th>Ongoing</th><th>Complete</th><th>Cancel</th><th>Overdue</th>
-        </tr></thead>
-        <tbody>${byUser.map(u => `<tr>
-          <td><span class="un">${assigneeTag(u.m.email, u.m.name)} ${esc(u.m.name)}</span></td>
-          <td>${u.projTotal}</td>
-          <td>${u.projComplete}</td>
-          <td>${u.taskTotal}</td>
-          <td>${u.counts.pending}</td>
-          <td>${u.counts.ongoing}</td>
-          <td>${u.counts.complete}</td>
-          <td>${u.counts.cancel}</td>
-          <td${u.overdue ? ' class="warn"' : ''}>${u.overdue}</td>
-        </tr>`).join('')}</tbody>
-      </table>
-    </div>`;
+  return `<div class="sumcard">
+    <div class="sumcard-hd">👥 By user</div>
+    <table class="sumtbl">
+      <thead><tr>
+        <th>User</th><th class="num">Projects</th><th class="num">Proj. done</th><th class="num">Tasks</th>
+        <th class="num">Task-days</th><th class="num">Weekend</th><th class="num">Hot days</th>
+        <th class="num">Pending</th><th class="num">Ongoing</th><th class="num">Complete</th>
+        <th class="num">Cancel</th><th class="num">Overdue</th>
+      </tr></thead>
+      <tbody>${byUser.map(u => `<tr>
+        <td><span class="un">${assigneeTag(u.m.email, u.m.name)} ${esc(u.m.name)}</span></td>
+        <td class="num">${u.projTotal}</td>
+        <td class="num">${u.projComplete}</td>
+        <td class="num">${u.taskTotal}</td>
+        <td class="num">${u.taskDays}</td>
+        <td class="num">${u.weekend}</td>
+        <td class="num${u.hot ? ' warn' : ''}">${u.hot}</td>
+        <td class="num">${u.counts.pending}</td>
+        <td class="num">${u.counts.ongoing}</td>
+        <td class="num">${u.counts.complete}</td>
+        <td class="num">${u.counts.cancel}</td>
+        <td class="num${u.overdue ? ' warn' : ''}">${u.overdue}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <div class="hint">Hot days = days with more than ${OVERLOAD} tasks running at once, inside the capacity window above.</div>
+  </div>`;
 }
 
 // ════════════════════════════════════════════════════
@@ -2546,8 +3032,26 @@ function renderProjects(){
     return;
   }
 
-  document.getElementById('projArea').innerHTML =
-    `<div class="pgrid">${list.map(projCard).join('')}</div>`;
+  // Grouped by status rather than sorted by it: a plain sort puts the same
+  // cards in the same order, but leaves you counting where one status stops
+  // and the next begins. Empty statuses are dropped, so filtering down to one
+  // status doesn't leave three empty headings behind.
+  // Any status the server grows that STATUS_ORDER doesn't know about yet still
+  // gets a band at the end — better an unsorted heading than vanished cards.
+  const order = STATUS_ORDER.concat(
+    [...new Set(list.map(p => p.status))].filter(s => !STATUS_ORDER.includes(s)));
+  document.getElementById('projArea').innerHTML = order.map(s => {
+    const group = list.filter(p => p.status === s);
+    if (!group.length) return '';
+    return `<div class="pgrp${s === 'complete' || s === 'cancel' ? ' done' : ''}">
+      <div class="pgrp-hd">
+        <span class="pgrp-i">${STATUS_ICON[s] || '•'}</span>
+        <span class="pgrp-t">${esc(PROJECT_STATUS_LABEL[s] || s)}</span>
+        <span class="pgrp-n">${group.length}</span>
+      </div>
+      <div class="pgrid">${group.map(projCard).join('')}</div>
+    </div>`;
+  }).join('');
 }
 
 function projCard(p){
@@ -2597,7 +3101,7 @@ function goToday(){ ANCHOR = todayISO(); loadCalendar(); }
 function switchTab(t){
   TAB = t;
   [['tabCal','paneCal','cal'], ['tabProj','paneProj','proj'], ['tabUsers','paneUsers','users'],
-   ['tabSummary','paneSummary','summary'], ['tabLog','paneLog','log']]
+   ['tabDash','paneDash','dash'], ['tabLog','paneLog','log']]
     .forEach(([tab, pane, key]) => {
       document.getElementById(tab).classList.toggle('on', t === key);
       document.getElementById(pane).style.display = t === key ? '' : 'none';
@@ -2607,7 +3111,7 @@ function switchTab(t){
   // Projects needs it too — its date filter resolves through task dates —
   // but only once the tab is actually open.
   if (t === 'users') loadUsers();
-  if (t === 'summary') loadSummary();
+  if (t === 'dash') loadDashboard();
   if (t === 'proj') loadAllTasks().then(renderProjects).catch(() => {});
   // Always refetched: the point of a log is to show what just happened, and
   // it changes on every edit anyone makes — a cached copy would be stale on
@@ -2741,8 +3245,8 @@ function renderDetail(focusTaskId){
   document.getElementById('detEditBtn').style.display = own ? '' : 'none';
   document.getElementById('detDelBtn').style.display  = own ? '' : 'none';
 
-  const stOpts = Object.entries(STATUS_LABEL)
-    .map(([k,v]) => `<option value="${k}">${v}</option>`).join('');
+  const stOpts = statusOptions(STATUS_LABEL)
+    .map(o => `<option value="${o.value}">${o.label}</option>`).join('');
   const dis = rw ? '' : 'disabled';
   // Task PIC must be a subset of project PIC — every assignee picker below
   // only offers this project's own members, never the full workload roster.
@@ -2878,7 +3382,13 @@ async function refreshAfterTaskChange(){
   const pid = DETAIL && DETAIL.id;
   await loadProjects();
   await loadCalendar();
-  if (TAB === 'users') await loadUsers();   // its counts are derived from the tasks just changed
+  // Both tabs are derived from the full task list, and both read it from the
+  // cache that the edit just invalidated — `loadUsers()` alone would re-render
+  // the same stale numbers, so force the refetch before either one renders.
+  if (TAB === 'users' || TAB === 'dash'){
+    await loadAllTasks(true);
+    if (TAB === 'users') renderUsers(); else renderDashboard();
+  }
   if (pid){
     DETAIL = await api(`/api/workload/projects/${pid}`);
     renderDetail();
