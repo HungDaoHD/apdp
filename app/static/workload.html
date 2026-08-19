@@ -80,8 +80,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .cell:nth-child(7n){border-right:none}
 .cell.out{background:#fafbfc}
 /* Today is blue, not orange: orange is reserved for the selection ring
-   (.chip.sel / .day-row.sel), and two orange cues on the same grid are
-   impossible to tell apart. */
+   (.cell-sel), and two orange cues on the same grid are impossible to tell
+   apart. */
 .cell.today{background:#eaf3fd;box-shadow:inset 0 0 0 2px #1565c0}
 .cell-n{height:18px;flex-shrink:0;font-size:11px;font-weight:700;color:#999;display:flex;align-items:center;justify-content:space-between}
 .cell.out .cell-n{color:#ccc}
@@ -110,21 +110,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .chip .ccode{font-family:monospace;font-weight:700;letter-spacing:.2px;opacity:.85;margin-right:3px}
 .chip .cproj{opacity:.75}
 
-/* Selected item, in every view. An *inset* ring rather than outline/outer
-   box-shadow: the cell lists clip with overflow:hidden, which would cut an
-   outer ring off at the edges, and an inset one also costs no layout space
-   so the item's fixed size is untouched. */
-/* Deliberately loud: the click that selects an item also opens the task
-   editor, which covers the calendar while it's up, so the marker has to be
-   obvious the moment the dialog closes. The orange wash is a background-IMAGE
-   layered over the project's background-COLOR, which keeps the project colour
-   underneath instead of replacing it. */
-.chip.is-sel,.day-row.is-sel{
-  box-shadow:inset 0 0 0 2px #f36a17;
-  background-image:linear-gradient(rgba(243,106,23,.22),rgba(243,106,23,.22));
+/* Selected calendar ITEM — the whole box a task was clicked inside (a day
+   cell in month view, a day×member cell in week/user view, a project's task
+   group in day view), not the task itself. An *inset* ring rather than
+   outline/outer box-shadow: these boxes clip with overflow:hidden, which
+   would cut an outer ring off at the edges, and an inset one also costs no
+   layout space so the box's fixed size is untouched. The orange wash is a
+   background-IMAGE layered over whatever background-COLOR the box already
+   has (today's blue tint, an out-of-month grey…) rather than replacing it.
+   !important on both: several "today" rules this has to coexist with
+   (`.cell.today`, `.wk td.today-col`, `.uv tr.uv-today td`) are two classes
+   or an ancestor combinator deep and so outrank a bare `.cell-sel` on
+   specificity alone — without it, a selected-and-today box silently loses
+   its ring exactly when the two states collide. */
+.cell-sel{
+  box-shadow:inset 0 0 0 3px #f36a17 !important;
+  background-image:linear-gradient(rgba(243,106,23,.12),rgba(243,106,23,.12)) !important;
 }
-.chip.is-sel{border-left-color:#f36a17}
-.chip.is-sel .ctitle,.day-row.is-sel .day-row-t{font-weight:700}
 
 /* Drop target feedback while dragging a task onto a day. */
 .drop-on{box-shadow:inset 0 0 0 2px #f36a17;background:#fff4ee !important}
@@ -834,7 +836,7 @@ let _newTaskAssignees = []; // pending selection in the detail dialog's "add tas
 let _taskDlgCtx = null;    // task open in the calendar's task editor
 let _dayDlgDate = null;    // date the [＋] day dialog is adding to
 let _dragTaskId = null;    // task being dragged across the calendar
-let SELECTED_TASK = null;  // task shown with the orange selection ring
+let SELECTED_CELL = null;  // key of the calendar box (day / day×member / project group) shown with the orange ring
 
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'};          // tasks
@@ -1305,12 +1307,10 @@ function chip(t, day, {compact = false} = {}){
     ? ` draggable="true" ondragstart="taskDragStart(event,'${t.id}')" ondragend="taskDragEnd(event)"`
     : '';
   const pc = projectColor(t.project_id);
-  // data-task lets selectTask() re-ring every occurrence of a task (a
-  // multi-day one appears on each of its days) without a full re-render.
-  return `<span class="chip chip-${t.status}${t.id === SELECTED_TASK ? ' is-sel' : ''}"${drag}
-    data-task="${t.id}" title="${esc(title)}"
+  return `<span class="chip chip-${t.status}"${drag}
+    title="${esc(title)}"
     style="background-color:${pc.bg};color:${pc.text}"
-    onclick="event.stopPropagation();openTaskEditor('${t.id}')"
+    onclick="event.stopPropagation();openTaskEditor('${t.id}', this)"
     ><span class="ctitle">${tags}${code}${proj}${esc(t.title)}</span>${counter}</span>`;
 }
 
@@ -1444,7 +1444,11 @@ function renderUserView(){
       // unbounded list would just be clipped invisibly instead of counted.
       const shown = list.slice(0, MAX_CHIPS_PER_WEEKCELL);
       const rest  = list.length - shown.length;
-      return `<td ondragover="dropAllow(event)" ondragleave="dropLeave(event)"
+      // Keyed by day row + member column — the transpose of the week view's
+      // key, since here the day is the row and the member is the column.
+      const key = `uv:${d}:${c.key}`;
+      return `<td class="${key===SELECTED_CELL?'cell-sel':''}" data-cell="${esc(key)}"
+        ondragover="dropAllow(event)" ondragleave="dropLeave(event)"
         ondrop="dropOnUserCell(event,'${d}','${esc(c.key)}')"
         ><div class="uv-cell">${shown.map(t => chip(t, d)).join('')}
           ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}</div></td>`;
@@ -1506,7 +1510,8 @@ function renderMonth(){
     const shown = list.slice(0, list.length > MAX_CHIPS_PER_DAY
       ? Math.max(1, MAX_CHIPS_PER_DAY - 1) : MAX_CHIPS_PER_DAY);
     const rest = list.length - shown.length;
-    cells += `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}"
+    cells += `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}${d === SELECTED_CELL ? ' cell-sel' : ''}"
+      data-cell="${d}"
       ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')">
       <div class="cell-n">
         <span style="cursor:pointer" title="View this day" onclick="jumpToDay('${d}')">${dd.getDate()}</span>
@@ -1545,7 +1550,10 @@ function renderWeek(){
       const list = (byDate[d] || []).filter(matches);
       const shown = list.slice(0, MAX_CHIPS_PER_WEEKCELL);
       const rest  = list.length - shown.length;
-      return `<td class="${d===today?'today-col':''}"
+      // Keyed by member row + day column: that intersection is the box a
+      // click actually lands in, distinct from the same day in another row.
+      const key = `wk:${r.key}:${d}`;
+      return `<td class="${d===today?'today-col':''}${key===SELECTED_CELL?' cell-sel':''}" data-cell="${esc(key)}"
         ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')"
         ><div class="wk-cell">${shown.map(t => chip(t, d)).join('')}
           ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}</div></td>`;
@@ -1592,8 +1600,12 @@ function renderDay(){
     code: t.project_code, name: t.project_name, client: t.project_client, type: t.project_type, tasks: [],
   }).tasks.push(t));
 
-  document.getElementById('calArea').innerHTML = addBar + Object.entries(groups).map(([pid, g]) => `
-    <div class="day-grp">
+  document.getElementById('calArea').innerHTML = addBar + Object.entries(groups).map(([pid, g]) => {
+    // In day view, one project's task list is the "box of tasks" — the whole
+    // group is what gets ringed, not the individual row clicked inside it.
+    const key = `day:${pid}`;
+    return `
+    <div class="day-grp${key === SELECTED_CELL ? ' cell-sel' : ''}" data-cell="${esc(key)}">
       <div class="day-grp-hd">
         ${g.code ? `<span class="pcode">${esc(g.code)}</span>` : ''}
         <strong>${esc(g.name)}</strong>
@@ -1603,8 +1615,8 @@ function renderDay(){
         <button class="btn btn-lt" style="font-size:11px" onclick="openDetail('${pid}')">Open project →</button>
       </div>
       ${g.tasks.map(t => `
-        <div class="day-row${t.id === SELECTED_TASK ? ' is-sel' : ''}" data-task="${t.id}"
-             onclick="openTaskEditor('${t.id}')"
+        <div class="day-row"
+             onclick="openTaskEditor('${t.id}', this)"
              ${canEdit(t.project_id) ? `draggable="true" ondragstart="taskDragStart(event,'${t.id}')" ondragend="taskDragEnd(event)"` : ''}>
           <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
           <span class="day-row-t">${esc(t.title)}${taskStart(t) !== t.due_date
@@ -1613,7 +1625,8 @@ function renderDay(){
             ? t.assignees.map(e => assigneeTag(e, e.split('@')[0])).join('')
             : '—'}</span>
         </div>`).join('')}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 /** Group a task list into per-project buckets, preserving first-seen order. */
@@ -1644,8 +1657,8 @@ function renderUnscheduled(){
       <span class="pcard-sub">${list.length} task(s) with no due date${
         list.length ? ' — drag one onto a day to schedule it' : ' — drag a task here to clear its date'}</span>
     </div>
-    ${groups.map(g => `
-      <div class="uns-row">
+    ${groups.map(g => { const key = `uns:${g.id}`; return `
+      <div class="uns-row${key === SELECTED_CELL ? ' cell-sel' : ''}" data-cell="${esc(key)}">
         <div class="uns-key">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${g.code ? `<span class="pcode">${esc(g.code)}</span>` : ''}
@@ -1654,7 +1667,7 @@ function renderUnscheduled(){
           <div class="pcard-sub">${g.tasks.length} task(s)${g.client ? ' · ' + esc(g.client) : ''}</div>
         </div>
         <div class="uns-chips">${g.tasks.map(t => chip(t, null, {compact:true})).join('')}</div>
-      </div>`).join('')}
+      </div>`; }).join('')}
   </div>`;
 }
 
@@ -1664,21 +1677,23 @@ function renderUnscheduled(){
 // Everything is edited locally and committed in one PATCH on Save, rather
 // than a request per field: a field-at-a-time save would re-render the
 // calendar under the open dialog after every keystroke's change event.
-/** Ring the given task in every view it currently appears in. Applied by
- *  toggling a class rather than re-rendering, so selecting never disturbs
- *  scroll position or the grid; renderers read SELECTED_TASK themselves so
- *  the ring survives a reload too. */
-function selectTask(taskId){
-  SELECTED_TASK = taskId;
-  document.querySelectorAll('.is-sel').forEach(el => el.classList.remove('is-sel'));
-  if (taskId) document.querySelectorAll(`[data-task="${taskId}"]`)
-    .forEach(el => el.classList.add('is-sel'));
+/** Ring the calendar box (day / day×member / project group) that *el* sits
+ *  inside — not *el* itself. Applied by toggling a class directly via the
+ *  clicked element's ancestor rather than re-rendering, so selecting never
+ *  disturbs scroll position or the grid; every box template also embeds
+ *  cell-sel from SELECTED_CELL, so the ring survives a same-view reload too
+ *  (e.g. after saving an edit from the dialog this click just opened). */
+function selectCell(el){
+  const cell = el ? el.closest('[data-cell]') : null;
+  SELECTED_CELL = cell ? cell.dataset.cell : null;
+  document.querySelectorAll('.cell-sel').forEach(e => e.classList.remove('cell-sel'));
+  if (cell) cell.classList.add('cell-sel');
 }
 
-function openTaskEditor(taskId){
+function openTaskEditor(taskId, el){
   const t = findCalTask(taskId);
   if (!t) return;
-  selectTask(taskId);   // every calendar item click lands here, in all views
+  selectCell(el);   // every calendar item click lands here, in all views
   const rw = canEdit(t.project_id);
   _taskDlgCtx = {
     id: t.id,
