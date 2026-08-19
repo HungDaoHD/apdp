@@ -160,6 +160,13 @@ def _out_task(doc: dict | None) -> dict | None:
 
 # ── Validation ────────────────────────────────────────────────────────────────
 
+def _split_csv(value: str | None) -> list[str]:
+    """Multi-select filters arrive as one comma-joined query param (e.g.
+    'a@x.com,b@x.com') rather than repeated params — simpler on the JS side,
+    and this is the one place that has to know about the join format."""
+    return [v.strip() for v in (value or "").split(",") if v.strip()]
+
+
 def _check_status(status: str, allowed: tuple[str, ...] = STATUSES) -> str:
     if status not in allowed:
         raise WorkloadError(f"Status {status!r} is invalid — expected one of {', '.join(allowed)}")
@@ -657,14 +664,20 @@ async def list_tasks(
         query["due_date"] = {"$lte": to}
 
     if assignee:
-        # Matching a scalar against an array field is Mongo's native "does
-        # this array contain this value" — no $elemMatch needed for a
-        # single-value equality check.
-        query["assignees"] = _check_member(assignee)
+        # $in against an array field matches "assignees contains any of
+        # these" — the multi-select filter's whole point, and it degrades to
+        # a plain single-value containment check when there's only one.
+        emails = _check_members(_split_csv(assignee))
+        if emails:
+            query["assignees"] = {"$in": emails}
     if project_id:
-        query["project_id"] = project_id
+        ids = _split_csv(project_id)
+        if ids:
+            query["project_id"] = {"$in": ids}
     if status:
-        query["status"] = _check_status(status)
+        statuses = [_check_status(s) for s in _split_csv(status)]
+        if statuses:
+            query["status"] = {"$in": statuses}
 
     task_rows = await _tasks().find(query).to_list(length=None)
     if not task_rows:
@@ -824,11 +837,16 @@ async def list_activity(
     """
     query: dict = {}
     if actor:
-        query["actor"] = _check_member(actor, "actor")
+        actors = [_check_member(a, "actor") for a in _split_csv(actor)]
+        if actors:
+            query["actor"] = {"$in": actors}
     if action:
-        if action not in ACTIVITY_ACTIONS:
-            raise WorkloadError(f"Unknown action {action!r}")
-        query["action"] = action
+        actions = _split_csv(action)
+        for a in actions:
+            if a not in ACTIVITY_ACTIONS:
+                raise WorkloadError(f"Unknown action {a!r}")
+        if actions:
+            query["action"] = {"$in": actions}
     if after or before:
         at: dict = {}
         if after:

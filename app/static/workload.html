@@ -187,6 +187,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .day-row{height:40px;padding:0 14px;border-bottom:1px solid #f5f6f8;display:flex;align-items:center;gap:10px;cursor:pointer;overflow:hidden}
 .day-row:last-child{border-bottom:none}
 .day-row:hover{background:#fffaf6}
+.day-row-s{flex-shrink:0;width:66px}
+.day-row-c{flex-shrink:0;width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.day-row-p{flex-shrink:0;width:150px;font-size:11.5px;color:#8a94a6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .day-row-t{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .day-row-w{flex-shrink:0;font-size:11px;color:#888;font-family:monospace;display:flex;gap:3px;align-items:center}
 
@@ -269,6 +272,12 @@ textarea.inp{resize:vertical;min-height:56px}
 .ssel-empty{padding:9px 12px;font-size:11.5px;color:#aaa}
 .ssel-add{padding:8px 12px;font-size:12.5px;cursor:pointer;color:#f36a17;font-weight:700;border-top:1px solid #f0f2f5}
 .ssel-add:hover{background:#fff4ee}
+
+/* ── Multi-select variant (msInit) — same floating panel, checkbox rows ── */
+.msel-opt{display:flex;align-items:center;gap:8px}
+.msel-opt input[type=checkbox]{pointer-events:none;flex-shrink:0}
+.msel-opt span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msel-all{border-bottom:1px solid #f0f2f5;font-weight:600}
 
 /* ── Assignee tag row (task table + add-task row) ── */
 /* Clicking opens a small CENTERED modal (reuses .mov/.mdlg, the same overlay
@@ -520,13 +529,10 @@ textarea.inp{resize:vertical;min-height:56px}
   <div id="paneProj" style="display:none">
     <div class="tbar">
       <input class="inp" id="pFilter" style="max-width:260px" placeholder="Filter by project name / client…" oninput="renderProjects()">
-      <select class="sel" id="pStatus" onchange="renderProjects()">
-        <option value="">Any status</option>
-        <option value="pending">Pending</option>
-        <option value="ongoing">Ongoing</option>
-        <option value="complete">Complete</option>
-        <option value="cancel">Cancel</option>
-      </select>
+      <div class="ssel filt" id="pStatusWrap" style="width:132px">
+        <input class="inp" autocomplete="off" placeholder="Any status">
+        <div class="ssel-panel"></div>
+      </div>
       <div class="ssel filt" id="pMemberWrap" style="width:158px">
         <input class="inp" autocomplete="off" placeholder="All members">
         <div class="ssel-panel"></div>
@@ -549,13 +555,10 @@ textarea.inp{resize:vertical;min-height:56px}
   <!-- ══ USERS TAB ══ -->
   <div id="paneUsers" style="display:none">
     <div class="tbar">
-      <select class="sel" id="uStatus" onchange="renderUsers()">
-        <option value="">Any task status</option>
-        <option value="pending">Pending</option>
-        <option value="ongoing">Ongoing</option>
-        <option value="complete">Complete</option>
-        <option value="cancel">Cancel</option>
-      </select>
+      <div class="ssel filt" id="uStatusWrap" style="width:150px">
+        <input class="inp" autocomplete="off" placeholder="Any task status">
+        <div class="ssel-panel"></div>
+      </div>
       <div class="gap"></div>
     </div>
     <div id="usersArea"><div class="loading"><div class="spin"></div> Loading users…</div></div>
@@ -971,6 +974,109 @@ function ssInit(wrap, {getOptions, allowCustom, initial, onChange}){
 function ssValue(wrap){ return wrap.dataset.value || ''; }
 
 // ════════════════════════════════════════════════════
+// MULTI-SELECT SEARCHABLE COMBOBOX
+// ════════════════════════════════════════════════════
+// Same floating-panel shell as ssInit above, but every toolbar filter
+// (member / project / status / action) needs several values active at
+// once, not one. Selection defaults to "everything" — which reads to every
+// caller as "no filter applied", exactly like the old single-select's ''
+// value did — and stays that way automatically as the option list grows
+// (a newly-created project, say) since "all" is tracked as a mode rather
+// than a frozen snapshot of value IDs. The panel stays open across clicks
+// so several boxes can be ticked in one pass; only blur/Escape closes it.
+function msInit(wrap, {getOptions, allLabel, onChange}){
+  const input = wrap.querySelector('.inp');
+  const panel = wrap.querySelector('.ssel-panel');
+  let mode = 'all';        // 'all' | 'custom'
+  let custom = new Set();  // only meaningful when mode === 'custom'
+  let typing = false;
+
+  const allValues = () => getOptions().map(o => o.value);
+  const isSelected = v => mode === 'all' ? true : custom.has(v);
+  const values = () => mode === 'all' ? [] : [...custom];
+
+  function toggleAll(){
+    if (mode === 'all'){ mode = 'custom'; custom = new Set(); }
+    else { mode = 'all'; custom = new Set(); }
+  }
+  function toggleOne(v){
+    if (mode === 'all'){
+      custom = new Set(allValues());
+      custom.delete(v);
+      mode = 'custom';
+    } else if (custom.has(v)) {
+      custom.delete(v);
+    } else {
+      custom.add(v);
+    }
+    // Ticking the last missing box is the same state as "all" — normalise
+    // back so a later-added option is included without the user re-opening.
+    const all = allValues();
+    if (mode === 'custom' && all.length && all.every(x => custom.has(x))){
+      mode = 'all'; custom = new Set();
+    }
+  }
+
+  function label(){
+    const opts = getOptions();
+    if (mode === 'all') return allLabel;
+    if (!custom.size) return 'None selected';
+    if (custom.size <= 2) return opts.filter(o => custom.has(o.value)).map(o => o.label).join(', ');
+    return `${custom.size} selected`;
+  }
+  function refreshInput(){ if (!typing) input.value = label(); }
+
+  function render(){
+    const q = typing ? input.value.trim().toLowerCase() : '';
+    const opts = getOptions();
+    const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
+    let html = `<div class="ssel-opt msel-opt msel-all" data-all="1">
+        <input type="checkbox" ${mode === 'all' ? 'checked' : ''}><span>${esc(allLabel)}</span>
+      </div>`;
+    html += filtered.map(o => `<div class="ssel-opt msel-opt" data-value="${esc(o.value)}">
+        <input type="checkbox" ${isSelected(o.value) ? 'checked' : ''}><span>${esc(o.label)}</span>
+      </div>`).join('');
+    if (!filtered.length) html += '<div class="ssel-empty">No matches</div>';
+    panel.innerHTML = html;
+    panel.classList.add('show');
+  }
+
+  input.addEventListener('focus', () => { typing = false; input.select(); render(); });
+  input.addEventListener('input', () => { typing = true; render(); });
+  input.addEventListener('blur', () => setTimeout(() => {
+    panel.classList.remove('show');
+    typing = false;
+    refreshInput();
+  }, 150));
+  input.addEventListener('keydown', e => { if (e.key === 'Escape') input.blur(); });
+  panel.addEventListener('mousedown', e => {
+    const opt = e.target.closest('[data-value],[data-all]');
+    if (!opt) return;
+    e.preventDefault();  // keep focus on the input so blur doesn't close the panel
+    if (opt.dataset.all) toggleAll(); else toggleOne(opt.dataset.value);
+    render();
+    refreshInput();
+    if (onChange) onChange(values());
+  });
+
+  refreshInput();
+  wrap._msValues = values;
+  // A value the panel currently isn't offering (e.g. a project that just
+  // got deleted) shouldn't linger in a 'custom' selection forever — drop it
+  // and refresh the label. 'all' mode needs no pruning: it's never a frozen
+  // snapshot, so a vanished option just stops appearing on its own.
+  wrap._msPrune = () => {
+    if (mode !== 'custom') return;
+    const valid = new Set(allValues());
+    custom = new Set([...custom].filter(v => valid.has(v)));
+    refreshInput();
+  };
+}
+/** Selected values, or [] when everything is selected (= no filter). */
+function msValues(wrap){ return wrap._msValues ? wrap._msValues() : []; }
+function msPrune(wrap){ if (wrap && wrap._msPrune) wrap._msPrune(); }
+
+// ════════════════════════════════════════════════════
 // MEMBER COLORS
 // ════════════════════════════════════════════════════
 // One fixed color per named person (assigned by request, not auto-generated)
@@ -1120,45 +1226,50 @@ async function boot(){
   // so the button is no longer admin-gated.
   document.getElementById('newProjBtn').style.display = '';
 
-  // Calendar filters. getOptions is a live callback, so the project list
-  // picks up newly created projects without re-initialising the widget.
-  ssInit(document.getElementById('fMemberWrap'), {
-    getOptions: () => [{value:'', label:'All members'},
-      ...META.members.map(m => ({value: m.email, label: m.name + (m.is_admin ? ' (admin)' : '')}))],
-    allowCustom: false, initial: '', onChange: loadCalendar,
+  // Calendar filters — multi-select, defaulting to everything checked (=
+  // no filter). getOptions is a live callback, so the project list picks up
+  // newly created projects without re-initialising the widget.
+  msInit(document.getElementById('fMemberWrap'), {
+    getOptions: () => META.members.map(m => ({value: m.email, label: m.name + (m.is_admin ? ' (admin)' : '')})),
+    allLabel: 'All members', onChange: loadCalendar,
   });
-  ssInit(document.getElementById('fProjectWrap'), {
-    getOptions: () => [{value:'', label:'All projects'},
-      ...PROJECTS.map(p => ({value: p.id, label: (p.project_code ? p.project_code + ' — ' : '') + p.name}))],
-    allowCustom: false, initial: '', onChange: loadCalendar,
+  msInit(document.getElementById('fProjectWrap'), {
+    getOptions: () => PROJECTS.map(p => ({value: p.id, label: (p.project_code ? p.project_code + ' — ' : '') + p.name})),
+    allLabel: 'All projects', onChange: loadCalendar,
   });
-  ssInit(document.getElementById('fStatusWrap'), {
+  msInit(document.getElementById('fStatusWrap'), {
     // Built from STATUS_LABEL rather than hardcoded, so a status added there
     // can't go missing here the way "Ongoing" previously did.
-    getOptions: () => [{value:'', label:'Any status'},
-      ...Object.entries(STATUS_LABEL).map(([value, label]) => ({value, label}))],
-    allowCustom: false, initial: '', onChange: loadCalendar,
+    getOptions: () => Object.entries(STATUS_LABEL).map(([value, label]) => ({value, label})),
+    allLabel: 'Any status', onChange: loadCalendar,
   });
 
-  // Per-tab member filters. Purely client-side (they re-render from data
-  // already in memory), unlike the calendar's, which refetches.
-  ssInit(document.getElementById('pMemberWrap'), {
-    getOptions: memberFilterOptions, allowCustom: false, initial: '', onChange: renderProjects,
+  // Per-tab member/status filters. Purely client-side (they re-render from
+  // data already in memory), unlike the calendar's, which refetches.
+  msInit(document.getElementById('pStatusWrap'), {
+    getOptions: () => Object.entries(PROJECT_STATUS_LABEL).map(([value, label]) => ({value, label})),
+    allLabel: 'Any status', onChange: renderProjects,
   });
-  ssInit(document.getElementById('sMemberWrap'), {
-    getOptions: memberFilterOptions, allowCustom: false, initial: '', onChange: renderSummary,
+  msInit(document.getElementById('pMemberWrap'), {
+    getOptions: memberFilterOptions, allLabel: 'All members', onChange: renderProjects,
+  });
+  msInit(document.getElementById('uStatusWrap'), {
+    getOptions: () => Object.entries(STATUS_LABEL).map(([value, label]) => ({value, label})),
+    allLabel: 'Any task status', onChange: renderUsers,
+  });
+  msInit(document.getElementById('sMemberWrap'), {
+    getOptions: memberFilterOptions, allLabel: 'All members', onChange: renderSummary,
   });
   // The Log tab's two filters refetch (the server holds far more history than
   // one page shows), unlike the purely client-side filters above.
-  ssInit(document.getElementById('lMemberWrap'), {
-    getOptions: memberFilterOptions, allowCustom: false, initial: '', onChange: loadLog,
+  msInit(document.getElementById('lMemberWrap'), {
+    getOptions: memberFilterOptions, allLabel: 'All members', onChange: loadLog,
   });
-  ssInit(document.getElementById('lActionWrap'), {
+  msInit(document.getElementById('lActionWrap'), {
     // Driven by the server's own list, so a newly logged action can't go
     // missing from the filter.
-    getOptions: () => [{value:'', label:'Any action'},
-      ...(META.activity_actions || []).map(a => ({value: a, label: ACTION_LABEL[a] || a}))],
-    allowCustom: false, initial: '', onChange: loadLog,
+    getOptions: () => (META.activity_actions || []).map(a => ({value: a, label: ACTION_LABEL[a] || a})),
+    allLabel: 'Any action', onChange: loadLog,
   });
 
   document.getElementById('pfMembers').innerHTML = META.members.map(m => `
@@ -1225,12 +1336,12 @@ async function loadCalendar(){
   // 'user' is a client-side rendering of the same month range, so the server
   // — which only knows day/week/month — is asked for 'month'.
   const q = new URLSearchParams({view: VIEW === 'user' ? 'month' : VIEW, anchor: ANCHOR});
-  const mem = ssValue(document.getElementById('fMemberWrap'));
-  const prj = ssValue(document.getElementById('fProjectWrap'));
-  const st  = ssValue(document.getElementById('fStatusWrap'));
-  if (mem) q.set('assignee', mem);
-  if (prj) q.set('project_id', prj);
-  if (st)  q.set('status', st);
+  const mem = msValues(document.getElementById('fMemberWrap'));
+  const prj = msValues(document.getElementById('fProjectWrap'));
+  const st  = msValues(document.getElementById('fStatusWrap'));
+  if (mem.length) q.set('assignee', mem.join(','));
+  if (prj.length) q.set('project_id', prj.join(','));
+  if (st.length)  q.set('status', st.join(','));
   try {
     CAL = await api('/api/workload/calendar?' + q);
     renderCalendar();
@@ -1251,11 +1362,7 @@ async function loadProjects(){
   // The project filter reads PROJECTS live via its getOptions callback, so
   // there's no option list to rebuild here — but a project that just got
   // deleted must not stay selected as a stale filter.
-  const fp = document.getElementById('fProjectWrap');
-  if (fp && fp.dataset.value && !PROJECTS.some(p => p.id === fp.dataset.value)){
-    fp.dataset.value = '';
-    fp.querySelector('.inp').value = 'All projects';
-  }
+  msPrune(document.getElementById('fProjectWrap'));
   renderProjects();
 }
 
@@ -1694,8 +1801,10 @@ function userGroupsHtml(list, {taskClick, draggable = false}){
           : '';
         return `
         <div class="day-row" onclick="${taskClick(t.id)}"${drag}>
-          <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
-          <span class="day-row-t">${t.project_code ? `<span class="pcode">${esc(t.project_code)}</span> ` : ''}${t.project_name ? `<span style="color:#8a94a6">${esc(t.project_name)}</span> — ` : ''}${esc(t.title)}${taskStart(t) !== t.due_date
+          <span class="day-row-s"><span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span></span>
+          <span class="day-row-c">${t.project_code ? `<span class="pcode">${esc(t.project_code)}</span>` : ''}</span>
+          <span class="day-row-p">${esc(t.project_name || '')}</span>
+          <span class="day-row-t">${esc(t.title)}${taskStart(t) !== t.due_date
             ? ` <span style="color:#aaa;font-weight:400">(${fmtDM(taskStart(t))} – ${fmtDM(t.due_date)})</span>` : ''}</span>
           <span class="day-row-w">${others.length
             ? others.map(e => assigneeTag(e, e.split('@')[0])).join('')
@@ -1998,8 +2107,7 @@ function dayTasksDlgAdd(){
 // SHARED FILTER HELPERS  (Projects + Summary tabs)
 // ════════════════════════════════════════════════════
 function memberFilterOptions(){
-  return [{value:'', label:'All members'},
-    ...META.members.map(m => ({value: m.email, label: m.name + (m.is_admin ? ' (admin)' : '')}))];
+  return META.members.map(m => ({value: m.email, label: m.name + (m.is_admin ? ' (admin)' : '')}));
 }
 /** The projects *email* works on — assigned to it, or its owner. Same rule
  *  `canEdit` uses, so "on a project" means one thing everywhere. */
@@ -2076,9 +2184,9 @@ function uprojRow(p, email, tasks, today){
 
 function renderUsers(){
   if (!META) return;
-  const st = document.getElementById('uStatus').value;
+  const st = msValues(document.getElementById('uStatusWrap'));
   const today = todayISO();
-  const tasks = st ? ALL_TASKS.filter(t => t.status === st) : ALL_TASKS;
+  const tasks = st.length ? ALL_TASKS.filter(t => st.includes(t.status)) : ALL_TASKS;
 
   document.getElementById('usersArea').innerHTML = `<div class="ugrid">${META.members.map(m => {
     const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
@@ -2129,8 +2237,8 @@ function openUserDlg(email){
   const m = META.members.find(x => x.email === email);
   if (!m) return;
   const today = todayISO();
-  const st = document.getElementById('uStatus').value;
-  const tasks = (st ? ALL_TASKS.filter(t => t.status === st) : ALL_TASKS)
+  const st = msValues(document.getElementById('uStatusWrap'));
+  const tasks = (st.length ? ALL_TASKS.filter(t => st.includes(t.status)) : ALL_TASKS)
     .filter(t => (t.assignees || []).includes(email));
   const projects = projectsForUser(email);
 
@@ -2201,19 +2309,19 @@ function renderSummary(){
   const today = todayISO();
   const from = document.getElementById('sFrom').value;
   const to   = document.getElementById('sTo').value;
-  const who  = ssValue(document.getElementById('sMemberWrap'));
+  const who  = msValues(document.getElementById('sMemberWrap'));
 
   // Tasks first: both the date range and the member filter are properties of
   // a task, and the project counts below are derived from what survives here.
   let tasks = ALL_TASKS.filter(t => taskInRange(t, from, to));
-  if (who) tasks = tasks.filter(t => (t.assignees || []).includes(who));
+  if (who.length) tasks = tasks.filter(t => (t.assignees || []).some(a => who.includes(a)));
 
   // Projects: the member filter is a membership question, but a date range
   // has no meaning for a project on its own — so a range narrows the list to
   // projects that actually have a task inside it.
   const inRange = new Set(tasks.map(t => t.project_id));
   const projects = PROJECTS.filter(p =>
-    (!who || isOnProject(p, who)) && (!(from || to) || inRange.has(p.id)));
+    (!who.length || who.some(w => isOnProject(p, w))) && (!(from || to) || inRange.has(p.id)));
 
   // ── 1. Projects by status ──
   const pCounts = {pending:0, ongoing:0, complete:0, cancel:0};
@@ -2223,9 +2331,9 @@ function renderSummary(){
   const tCounts = {pending:0, ongoing:0, complete:0, cancel:0};
   tasks.forEach(t => tCounts[t.status]++);
 
-  // ── 3. By user ── one row per member; narrowed to the selected member when
-  // the member filter is on, since every other row would then read zero.
-  const rows = who ? META.members.filter(m => m.email === who) : META.members;
+  // ── 3. By user ── one row per member; narrowed to the selected member(s)
+  // when the member filter is on, since every other row would then read zero.
+  const rows = who.length ? META.members.filter(m => who.includes(m.email)) : META.members;
   const byUser = rows.map(m => {
     const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
     const theirs = projects.filter(p => isOnProject(p, m.email));
@@ -2241,7 +2349,7 @@ function renderSummary(){
 
   const scope = [
     (from || to) ? `${from ? fmtFull(from) : '…'} → ${to ? fmtFull(to) : '…'}` : '',
-    who ? (META.members.find(m => m.email === who) || {}).name : '',
+    who.length ? who.map(e => (META.members.find(m => m.email === e) || {}).name || e).join(', ') : '',
   ].filter(Boolean).join(' · ');
 
   document.getElementById('summaryArea').innerHTML = `
@@ -2321,12 +2429,12 @@ function fmtChangeValue(field, v){
 async function loadLog(){
   if (!META) return;
   const q = new URLSearchParams({limit: document.getElementById('lLimit').value});
-  const who = ssValue(document.getElementById('lMemberWrap'));
-  const act = ssValue(document.getElementById('lActionWrap'));
+  const who = msValues(document.getElementById('lMemberWrap'));
+  const act = msValues(document.getElementById('lActionWrap'));
   const from = document.getElementById('lFrom').value;
   const to   = document.getElementById('lTo').value;
-  if (who) q.set('actor', who);
-  if (act) q.set('action', act);
+  if (who.length) q.set('actor', who.join(','));
+  if (act.length) q.set('action', act.join(','));
   // The date inputs mean whole local days; the server compares against UTC
   // instants, so convert here rather than hand it a bare date it would read
   // as midnight UTC — up to 7 hours off for this team.
@@ -2373,8 +2481,11 @@ function renderLog(){
           <td class="log-who">${assigneeTag(e.actor, name)} ${esc(name)}</td>
           <td><span class="act ${actionClass(e.action)}">${esc(ACTION_LABEL[e.action] || e.action)}</span></td>
           <td class="log-tgt"${open}>
-            ${e.project_code ? `<span class="uproj-c">${esc(e.project_code)}</span>` : ''}
-            ${esc(e.target || e.project_name || '—')}
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              ${e.project_code ? `<span class="uproj-c">${esc(e.project_code)}</span>` : ''}
+              ${e.project_name ? `<span style="color:#8a94a6">${esc(e.project_name)}</span>` : ''}
+            </div>
+            ${(e.target && e.target !== e.project_name) ? `<div style="margin-top:2px">${esc(e.target)}</div>` : (e.project_name ? '' : esc(e.target || '—'))}
           </td>
           <td>${changes ? `<div class="chg">${changes}</div>` : '<span class="chg-e">—</span>'}</td>
         </tr>`;
@@ -2396,10 +2507,10 @@ function display(email){
 // ════════════════════════════════════════════════════
 function renderProjects(){
   const q    = (document.getElementById('pFilter').value || '').toLowerCase();
-  const st   = document.getElementById('pStatus').value;
+  const st   = msValues(document.getElementById('pStatusWrap'));
   const from = document.getElementById('pFrom').value;
   const to   = document.getElementById('pTo').value;
-  const who  = ssValue(document.getElementById('pMemberWrap'));
+  const who  = msValues(document.getElementById('pMemberWrap'));
 
   // A date range asks "which projects are running then", and only the tasks
   // carry dates — so it resolves to the set of projects owning a task in the
@@ -2419,8 +2530,8 @@ function renderProjects(){
   }
 
   const list = PROJECTS.filter(p => {
-    if (st && p.status !== st) return false;
-    if (who && !isOnProject(p, who)) return false;
+    if (st.length && !st.includes(p.status)) return false;
+    if (who.length && !who.some(w => isOnProject(p, w))) return false;
     if (inRange && !inRange.has(p.id)) return false;
     if (!q) return true;
     return `${p.name} ${p.client} ${p.project_type}`.toLowerCase().includes(q);

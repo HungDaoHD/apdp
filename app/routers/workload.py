@@ -336,9 +336,9 @@ async def list_tasks(
     email: str = Depends(require_workload),
     date_from:  str | None = Query(default=None),
     date_to:    str | None = Query(default=None),
-    assignee:   str | None = Query(default=None),
-    project_id: str | None = Query(default=None),
-    status:     Status | None = Query(default=None),
+    assignee:   str | None = Query(default=None, description="Comma-separated emails"),
+    project_id: str | None = Query(default=None, description="Comma-separated project ids"),
+    status:     str | None = Query(default=None, description="Comma-separated statuses"),
 ):
     try:
         return await workload_svc.list_tasks(
@@ -356,9 +356,9 @@ async def calendar(
     email: str = Depends(require_workload),
     view:   View = Query(default="month"),
     anchor: str = Query(..., description="Any date inside the period, YYYY-MM-DD"),
-    assignee:   str | None = Query(default=None),
-    project_id: str | None = Query(default=None),
-    status:     Status | None = Query(default=None),
+    assignee:   str | None = Query(default=None, description="Comma-separated emails"),
+    project_id: str | None = Query(default=None, description="Comma-separated project ids"),
+    status:     str | None = Query(default=None, description="Comma-separated statuses"),
 ):
     """One screen's worth of calendar data: tasks in range, plus every project."""
     filters = {k: v for k, v in
