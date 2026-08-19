@@ -1695,7 +1695,7 @@ function userGroupsHtml(list, {taskClick, draggable = false}){
         return `
         <div class="day-row" onclick="${taskClick(t.id)}"${drag}>
           <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
-          <span class="day-row-t">${t.project_code ? `<span class="pcode">${esc(t.project_code)}</span> ` : ''}${esc(t.title)}${taskStart(t) !== t.due_date
+          <span class="day-row-t">${t.project_code ? `<span class="pcode">${esc(t.project_code)}</span> ` : ''}${t.project_name ? `<span style="color:#8a94a6">${esc(t.project_name)}</span> — ` : ''}${esc(t.title)}${taskStart(t) !== t.due_date
             ? ` <span style="color:#aaa;font-weight:400">(${fmtDM(taskStart(t))} – ${fmtDM(t.due_date)})</span>` : ''}</span>
           <span class="day-row-w">${others.length
             ? others.map(e => assigneeTag(e, e.split('@')[0])).join('')
