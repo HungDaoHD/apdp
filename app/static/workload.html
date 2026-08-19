@@ -409,6 +409,13 @@ textarea.inp{resize:vertical;min-height:56px}
 .hm-c i.l4{background:#ffab6b;color:#7a3a00}
 .hm-c i.l5{background:#e8705a;color:white}
 .hm-tot{font-size:11px;color:#666;padding-left:10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+/* Month stepper in the Capacity header. Smaller than the calendar's own nav,
+   which sits in a toolbar rather than inside a card title. */
+.hm-nav{display:inline-flex;align-items:center;gap:5px;margin-left:auto}
+.hm-nav .nav-btn{width:24px;height:24px;font-size:13px}
+.hm-nav .btn{padding:4px 10px;font-size:11px}
+.hm-nav .btn[disabled]{opacity:.45;cursor:default}
+.hm-nav .btn[disabled]:hover{border-color:#dde1e7;color:#444}
 .hm-lg{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#999;flex-wrap:wrap}
 .hm-lg i{display:inline-block;width:14px;height:14px;border-radius:3px;font-style:normal;vertical-align:-3px}
 
@@ -433,14 +440,6 @@ textarea.inp{resize:vertical;min-height:56px}
 .risk-d.late{color:#c0392b}
 .risk-d.soon{color:#a06800}
 .risk-hd{font-size:11px;font-weight:700;color:#999;letter-spacing:.3px;text-transform:uppercase;margin-top:4px}
-
-/* Throughput sparkline */
-.thru{display:flex;align-items:flex-end;gap:5px;height:96px;padding-top:6px}
-.thru-c{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
-.thru-b{width:100%;background:#5b8def;border-radius:3px 3px 0 0;min-height:2px}
-.thru-b.dim{background:#c9d6f5}
-.thru-v{font-size:10px;color:#666;font-weight:700}
-.thru-l{font-size:9px;color:#bbb;white-space:nowrap}
 
 /* Admin-only card marker */
 .adm-only{font-size:9.5px;font-weight:700;color:#8a5cf6;background:#f3edff;border:1px solid #ddd0ff;
@@ -674,11 +673,14 @@ textarea.inp{resize:vertical;min-height:56px}
         <input class="sel dr-i" type="date" id="dTo" onchange="renderDashboard()">
         <button class="dr-x" onclick="clearRange('dFrom','dTo',renderDashboard)" title="Clear dates">✕</button>
       </div>
-      <div class="seg" title="Jump the date range">
-        <button onclick="dashPreset('week')">This week</button>
-        <button onclick="dashPreset('next')">Next week</button>
-        <button onclick="dashPreset('month')">This month</button>
-        <button onclick="dashPreset('4w')">4 weeks</button>
+      <!-- 'All' is the default: no range at all, which is the only setting
+           that also counts undated tasks. -->
+      <div class="seg" id="dPresets" title="Jump the date range">
+        <button data-preset="all"   class="on" onclick="dashPreset('all')">All</button>
+        <button data-preset="week"  onclick="dashPreset('week')">This week</button>
+        <button data-preset="next"  onclick="dashPreset('next')">Next week</button>
+        <button data-preset="month" onclick="dashPreset('month')">This month</button>
+        <button data-preset="4w"    onclick="dashPreset('4w')">4 weeks</button>
       </div>
       <div class="gap"></div>
     </div>
@@ -2440,6 +2442,10 @@ function closeUserDlg(){ document.getElementById('userDlg').style.display = 'non
 const OVERLOAD = 4;
 const HM_MAX_DAYS = 70;   // widest heatmap drawn before the window is clipped
 let DASH_SCOPE = 'all';   // 'all' | 'weekday' | 'weekend'
+/** Which month the heatmap shows when no date range is set: 0 is the current
+ *  one, -1 the previous. Held as an offset from today rather than a fixed
+ *  date so a page left open overnight still calls "this month" correctly. */
+let HM_MONTH = 0;
 
 async function loadDashboard(){
   try {
@@ -2462,19 +2468,44 @@ function setDashScope(s){
 
 /** The date-range presets — the ranges anyone actually asks for, without
  *  making them count days on two date pickers. */
-function dashPreset(kind){
+/** The [from, to] a preset button stands for. Split out from dashPreset so
+ *  the highlight below can be *derived* by comparing against the two date
+ *  inputs, rather than remembered in a variable that clearing the dates or
+ *  typing them by hand would leave pointing at the wrong button. */
+function presetRange(kind){
   const t = todayISO();
-  let from, to;
-  if (kind === 'week'){ from = mondayOf(t); to = addDays(from, 6); }
-  else if (kind === 'next'){ from = addDays(mondayOf(t), 7); to = addDays(from, 6); }
-  else if (kind === 'month'){
+  if (kind === 'all') return {from: '', to: ''};
+  if (kind === 'week'){ const from = mondayOf(t); return {from, to: addDays(from, 6)}; }
+  if (kind === 'next'){ const from = addDays(mondayOf(t), 7); return {from, to: addDays(from, 6)}; }
+  if (kind === 'month'){
     const d = parseISO(t);
-    from = iso(new Date(d.getFullYear(), d.getMonth(), 1, 12));
-    to   = iso(new Date(d.getFullYear(), d.getMonth() + 1, 0, 12));
-  } else { from = mondayOf(t); to = addDays(from, 27); }
+    return {from: iso(new Date(d.getFullYear(), d.getMonth(), 1, 12)),
+            to:   iso(new Date(d.getFullYear(), d.getMonth() + 1, 0, 12))};
+  }
+  const from = mondayOf(t);
+  return {from, to: addDays(from, 27)};
+}
+
+function dashPreset(kind){
+  const {from, to} = presetRange(kind);
   document.getElementById('dFrom').value = from;
   document.getElementById('dTo').value   = to;
+  // Pressing a preset is the "start over" gesture, so 'All' lands on the
+  // current month rather than wherever the heatmap was last browsed to.
+  HM_MONTH = 0;
   renderDashboard();
+}
+
+/** Light whichever preset the date inputs currently spell out — including
+ *  'All' when they are empty, which is where the ✕ button lands too. Typing
+ *  an arbitrary range by hand matches nothing, and lights nothing. */
+function syncDashPresets(){
+  const from = document.getElementById('dFrom').value;
+  const to   = document.getElementById('dTo').value;
+  document.querySelectorAll('#dPresets button').forEach(b => {
+    const r = presetRange(b.dataset.preset);
+    b.classList.toggle('on', r.from === from && r.to === to);
+  });
 }
 
 // ── Day maths ────────────────────────────────────────
@@ -2499,15 +2530,34 @@ function taskSpanDays(t){
 function taskDays(t){ return taskSpanDays(t).filter(inScope); }
 
 /** The heatmap's own window. A blank date filter means "everything" for every
- *  other card here, which is not a grid anyone can read — so the grid falls
- *  back to the four weeks starting this Monday. */
+ *  other card here, which is not a grid anyone can read — so with no range set
+ *  the grid browses one whole calendar month at a time, moved by the prev/next
+ *  buttons in its header. `month` tells the header to offer them; a range set
+ *  in the toolbar governs instead, and the buttons step aside. */
 function dashWindow(from, to){
-  let s = from || (to ? addDays(to, -27) : mondayOf(todayISO()));
+  if (!from && !to){
+    const d = parseISO(todayISO());
+    // Day 0 of the following month is the last day of this one. Both ends are
+    // built from day 1/0 rather than shifted by arithmetic, so no month-length
+    // clamping is needed, and a month can never exceed the clip below.
+    return {
+      s: iso(new Date(d.getFullYear(), d.getMonth() + HM_MONTH, 1, 12)),
+      e: iso(new Date(d.getFullYear(), d.getMonth() + HM_MONTH + 1, 0, 12)),
+      clipped: false, month: true,
+    };
+  }
+  let s = from || addDays(to, -27);   // one end is set here, or the branch above caught it
   let e = to || addDays(s, 27);
   if (e < s) e = s;
   let clipped = false;
   if (daysBetween(s, e) + 1 > HM_MAX_DAYS){ e = addDays(s, HM_MAX_DAYS - 1); clipped = true; }
-  return {s, e, clipped};
+  return {s, e, clipped, month: false};
+}
+
+/** Step the heatmap's month, or pass null to come back to the current one. */
+function shiftDashMonth(n){
+  HM_MONTH = n === null ? 0 : HM_MONTH + n;
+  renderDashboard();
 }
 
 /** email -> (day -> how many of their tasks run that day), inside *win*. */
@@ -2550,10 +2600,13 @@ function renderDashboard(){
   const to   = document.getElementById('dTo').value;
   const who  = msValues(document.getElementById('dMemberWrap'));
   const prj  = msValues(document.getElementById('dProjectWrap'));
+  // Every path that changes the range — a preset, the ✕, typing a date —
+  // ends up here, so this is the one place the highlight needs updating.
+  syncDashPresets();
 
   // Three task sets, because the cards below genuinely need different ones:
-  //   mp      — member/project filter only. Throughput reads history the date
-  //             range would cut off, and weekend fairness is a long game.
+  //   mp      — member/project filter only, so a card can look past the date
+  //             range when its question spans one (weekend fairness).
   //   mpRange — plus the date range.
   //   tasks   — plus the weekday/weekend lens; the default set for everything
   //             that answers "what is the team carrying right now".
@@ -2600,12 +2653,11 @@ function renderDashboard(){
       ${dashRisk(tasks, today)}
     </div>
     ${(() => {
-      // Weekend duty is admin-only, so this row is sometimes one card wide —
-      // a two-column grid would leave a conspicuous empty half.
+      // Weekend duty is admin-only and now stands alone in its row, so the
+      // grid is single-column — and the row goes away entirely for everyone
+      // else, rather than leaving an empty band behind.
       const wk = dashWeekend(members, mpRange);
-      return `<div class="sumgrid-top"${wk ? '' : ' style="grid-template-columns:1fr"'}>
-        ${wk}${dashThroughput(mp, today)}
-      </div>`;
+      return wk ? `<div class="sumgrid-top" style="grid-template-columns:1fr">${wk}</div>` : '';
     })()}
     <div class="sumgrid-top">
       ${statusStatCard('📁 Projects by status', pCounts, projects.length, PROJECT_STATUS_LABEL)}
@@ -2644,8 +2696,23 @@ function dashHeatmap(members, load, win, today){
   const LTR = ['M','T','W','T','F','S','S'];
   const days = [];
   for (let d = win.s; d <= win.e; d = addDays(d, 1)) if (inScope(d)) days.push(d);
+
+  // Built before the empty check below, not inside each branch: a month with
+  // nothing in it still has to offer prev/next, or browsing into one would
+  // leave no way back out.
+  const hd = `<div class="sumcard-hd">🔥 Capacity — ${win.month
+      ? `${MONTH_NAMES[parseISO(win.s).getMonth()]} ${parseISO(win.s).getFullYear()}`
+      : `${fmtFull(win.s)} → ${fmtFull(win.e)}`}
+    ${win.month ? `<span class="hm-nav">
+      <button class="nav-btn" onclick="shiftDashMonth(-1)" title="Previous month">‹</button>
+      <button class="btn btn-lt" onclick="shiftDashMonth(null)"${HM_MONTH ? '' : ' disabled'}
+        title="Back to this month">Today</button>
+      <button class="nav-btn" onclick="shiftDashMonth(1)" title="Next month">›</button>
+    </span>` : ''}
+    ${win.clipped ? `<span class="hint">(clipped to ${HM_MAX_DAYS} days)</span>` : ''}</div>`;
+
   if (!days.length || !members.length){
-    return `<div class="sumcard" style="margin-bottom:14px"><div class="sumcard-hd">🔥 Capacity</div>
+    return `<div class="sumcard" style="margin-bottom:14px">${hd}
       <div class="hint">Nothing to plot for this window.</div></div>`;
   }
 
@@ -2677,8 +2744,7 @@ function dashHeatmap(members, load, win, today){
   }).join('');
 
   return `<div class="sumcard" style="margin-bottom:14px">
-    <div class="sumcard-hd">🔥 Capacity — ${fmtFull(win.s)} → ${fmtFull(win.e)}
-      ${win.clipped ? `<span class="hint">(clipped to ${HM_MAX_DAYS} days)</span>` : ''}</div>
+    ${hd}
     <div class="hm-wrap"><table class="hm">
       <thead><tr><th class="hm-name"></th>${head}<th></th></tr></thead>
       <tbody>${rows}</tbody>
@@ -2802,43 +2868,6 @@ function dashWeekend(members, tasks){
       Counts follow the date range, not the Mon–Fri / Sat–Sun toggle.
     </div>`
     : '<div class="hint">Nobody is scheduled on a Saturday or Sunday in this range.</div>'}
-  </div>`;
-}
-
-// ── Throughput ───────────────────────────────────────
-/** Last 12 weeks of completions, always — a date range narrow enough to be
- *  useful elsewhere would leave nothing here worth calling a trend. */
-function dashThroughput(mp, today){
-  const start = addDays(mondayOf(today), -11 * 7);
-  const weeks = [];
-  for (let i = 0; i < 12; i++) weeks.push(addDays(start, i * 7));
-  const done = mp.filter(t => t.status === 'complete' && t.completed_at);
-  const counts = weeks.map(w => {
-    const end = addDays(w, 6);
-    return done.filter(t => {
-      const d = t.completed_at.slice(0, 10);
-      return d >= w && d <= end;
-    }).length;
-  });
-  const max = Math.max(1, ...counts);
-
-  const timed = done.filter(t => taskStart(t) && taskStart(t) <= t.completed_at.slice(0, 10));
-  const cycle = timed.length
-    ? (timed.reduce((s, t) => s + daysBetween(taskStart(t), t.completed_at.slice(0, 10)), 0) / timed.length)
-    : null;
-
-  return `<div class="sumcard">
-    <div class="sumcard-hd">📈 Throughput <span class="hint">tasks completed per week</span></div>
-    <div class="thru">${weeks.map((w, i) => `<div class="thru-c" title="Week of ${fmtFull(w)} — ${counts[i]} completed">
-      <span class="thru-v">${counts[i] || ''}</span>
-      <span class="thru-b${i === weeks.length - 1 ? ' dim' : ''}" style="height:${counts[i] / max * 68}px"></span>
-      <span class="thru-l">${fmtDM(w)}</span>
-    </div>`).join('')}</div>
-    <div class="hint">
-      ${counts.reduce((a, b) => a + b, 0)} completed in 12 weeks
-      ${cycle !== null ? ` · average cycle time <strong>${cycle.toFixed(1)} day(s)</strong> from start to done` : ''}
-      · the last bar is the week in progress.
-    </div>
   </div>`;
 }
 
