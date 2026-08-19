@@ -79,10 +79,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
   padding:0 5px 3px;display:flex;flex-direction:column;overflow:hidden}
 .cell:nth-child(7n){border-right:none}
 .cell.out{background:#fafbfc}
-/* Today is blue, not orange: orange is reserved for the selection ring
-   (.cell-sel), and two orange cues on the same grid are impossible to tell
-   apart. */
-.cell.today{background:#eaf3fd;box-shadow:inset 0 0 0 2px #1565c0}
+/* Today is a background tint only, no border/ring. */
+.cell.today{background:#eaf3fd}
+/* Hovering a day previews where a click would land — the whole cell is
+   clickable (opens that day's task list), so the whole cell lights up.
+   !important: otherwise this loses to .cell.today/.cell.out on specificity
+   alone (same 2-class weight), so hovering today's cell would silently show
+   no feedback at all. */
+.cell:hover{background-color:#fff4ee !important;cursor:pointer}
 .cell-n{height:18px;flex-shrink:0;font-size:11px;font-weight:700;color:#999;display:flex;align-items:center;justify-content:space-between}
 .cell.out .cell-n{color:#ccc}
 .cell.today .cell-n{color:#1565c0}
@@ -110,24 +114,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .chip .ccode{font-family:monospace;font-weight:700;letter-spacing:.2px;opacity:.85;margin-right:3px}
 .chip .cproj{opacity:.75}
 
-/* Selected calendar ITEM — the whole box a task was clicked inside (a day
-   cell in month view, a day×member cell in week/user view, a project's task
-   group in day view), not the task itself. An *inset* ring rather than
-   outline/outer box-shadow: these boxes clip with overflow:hidden, which
-   would cut an outer ring off at the edges, and an inset one also costs no
-   layout space so the box's fixed size is untouched. The orange wash is a
-   background-IMAGE layered over whatever background-COLOR the box already
-   has (today's blue tint, an out-of-month grey…) rather than replacing it.
-   !important on both: several "today" rules this has to coexist with
-   (`.cell.today`, `.wk td.today-col`, `.uv tr.uv-today td`) are two classes
-   or an ancestor combinator deep and so outrank a bare `.cell-sel` on
-   specificity alone — without it, a selected-and-today box silently loses
-   its ring exactly when the two states collide. */
-.cell-sel{
-  box-shadow:inset 0 0 0 3px #f36a17 !important;
-  background-image:linear-gradient(rgba(243,106,23,.12),rgba(243,106,23,.12)) !important;
-}
-
 /* Drop target feedback while dragging a task onto a day. */
 .drop-on{box-shadow:inset 0 0 0 2px #f36a17;background:#fff4ee !important}
 /* Two independent signals on one chip: the fill is the *project* (set inline
@@ -149,9 +135,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .wk th.today-col{background:#dceafb;color:#1565c0}
 .wk td{border-right:1px solid #eef0f3;border-bottom:1px solid #eef0f3;padding:5px;vertical-align:top;overflow:hidden}
 .wk td.who{position:sticky;left:0;background:white;z-index:1;font-size:12px;font-weight:600;color:#333;vertical-align:middle;border-right:1px solid #e0e4ea}
-.wk td.who small{display:block;font-weight:400;color:#aaa;font-size:10px;margin-top:1px}
 .wk td.today-col{background:#f4f9fe}
-.wk-cell{height:44px;overflow:hidden;display:flex;flex-direction:column;gap:2px;min-width:0}
+/* Every day cell (not the member-label column) opens that day's task list on
+   click, so it gets the same hover preview as month view's cells. !important
+   for the same reason: today-col's background shorthand otherwise wins. */
+.wk td:hover:not(.who){background-color:#fff4ee !important;cursor:pointer}
+/* No cap, no fixed height here — every task for that person/day must show
+   (that's the whole point of this view), so the cell grows to fit instead of
+   clipping. A plain HTML table row is already as tall as its tallest cell,
+   so every column in a row still lines up even though the row's own height
+   now varies day to day. */
+.wk-cell{min-height:24px;display:flex;flex-direction:column;gap:2px;min-width:0}
 
 /* ── By-user view — people across, dates down ── */
 /* Header and date column are sticky so a long month stays readable while
@@ -173,12 +167,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .uv tr.uv-wknd td.uv-date{background:#fbfcfd;color:#c0392b}
 .uv tr.uv-wknd td{background:#fcfdfe}
 .uv tr.uv-today td{background:#f4f9fe}
-.uv tr.uv-today td.uv-date{background:#dceafb;color:#1565c0;font-weight:700;box-shadow:inset 3px 0 0 #1565c0}
+.uv tr.uv-today td.uv-date{background:#dceafb;color:#1565c0;font-weight:700}
 .uv tr:hover td.uv-date .cell-add{opacity:1}
-.uv-cell{height:44px;overflow:hidden;display:flex;flex-direction:column;gap:2px;min-width:0}
+/* Every cell in this grid — a day×member box or the date label — opens that
+   day's task list on click. */
+.uv td:hover{background-color:#fff4ee !important;cursor:pointer}
+.uv-cell{height:80px;overflow:hidden;display:flex;flex-direction:column;gap:2px;min-width:0}
 
 /* ── Day view ── */
-.day-grp{background:white;border:1px solid #e0e4ea;border-radius:10px;margin-bottom:12px;overflow:hidden}
+/* flex-shrink:0 matters specifically inside .mbody (a flex column, see the
+   day-tasks modal): overflow:hidden here zeroes a flex item's *automatic*
+   min-height per spec, so without this the browser shrinks each group to
+   squeeze them all into the modal's visible height — clipping tasks —
+   instead of leaving them full height and letting .mbody's own
+   overflow-y:auto scroll past them. */
+.day-grp{background:white;border:1px solid #e0e4ea;border-radius:10px;margin-bottom:12px;overflow:hidden;flex-shrink:0}
 .day-grp-hd{padding:10px 14px;background:#f8f9fb;border-bottom:1px solid #eef0f3;display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .day-grp-hd strong{font-size:13px}
 .day-row{height:40px;padding:0 14px;border-bottom:1px solid #f5f6f8;display:flex;align-items:center;gap:10px;cursor:pointer;overflow:hidden}
@@ -801,6 +804,21 @@ textarea.inp{resize:vertical;min-height:56px}
   </div>
 </div>
 
+<!-- ══ DAY TASKS — clicking a day cell anywhere on the calendar ══ -->
+<div class="mov" id="dayTasksDlg" style="display:none;z-index:1045">
+  <div class="mdlg wide">
+    <div class="mhd">
+      <strong id="dayTasksDlgTitle">Tasks</strong>
+      <button class="mbtn-close" onclick="closeDayTasksDlg()">✕</button>
+    </div>
+    <div class="mbody" id="dayTasksDlgBody"></div>
+    <div class="mft">
+      <button class="btn btn-suc" onclick="dayTasksDlgAdd()">＋ Add task</button>
+      <button class="btn btn-lt" onclick="closeDayTasksDlg()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ USER PROJECTS — the "More" button on a Users-tab card ══ -->
 <div class="mov" id="userDlg" style="display:none;z-index:1040">
   <div class="mdlg wide">
@@ -835,8 +853,8 @@ let _csrfToken = null;
 let _newTaskAssignees = []; // pending selection in the detail dialog's "add task" row
 let _taskDlgCtx = null;    // task open in the calendar's task editor
 let _dayDlgDate = null;    // date the [＋] day dialog is adding to
+let _dayTasksDlgDate = null; // date the day-tasks browse dialog is showing
 let _dragTaskId = null;    // task being dragged across the calendar
-let SELECTED_CELL = null;  // key of the calendar box (day / day×member / project group) shown with the orange ring
 
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'};          // tasks
@@ -1310,7 +1328,7 @@ function chip(t, day, {compact = false} = {}){
   return `<span class="chip chip-${t.status}"${drag}
     title="${esc(title)}"
     style="background-color:${pc.bg};color:${pc.text}"
-    onclick="event.stopPropagation();openTaskEditor('${t.id}', this)"
+    onclick="event.stopPropagation();openTaskEditor('${t.id}')"
     ><span class="ctitle">${tags}${code}${proj}${esc(t.title)}</span>${counter}</span>`;
 }
 
@@ -1326,7 +1344,20 @@ function tasksByDate(){
     const to   = t.due_date  > CAL.to   ? CAL.to   : t.due_date;
     for (let d = from; d <= to; d = addDays(d, 1)) (map[d] ||= []).push(t);
   });
+  Object.values(map).forEach(list => list.sort(byAssignee));
   return map;
+}
+
+/** Roster order (the same order the week view lays out its rows), not
+ *  alphabetical by email — so a day's task list visibly groups by person in
+ *  an order that matches the rest of the page. A multi-assignee task sorts
+ *  by its first assignee; unassigned tasks sort last. */
+function byAssignee(a, b){
+  const rank = email => {
+    const i = META.members.findIndex(m => m.email === email);
+    return i === -1 ? META.members.length : i;
+  };
+  return rank((a.assignees || [])[0]) - rank((b.assignees || [])[0]);
 }
 
 // Fixed geometry — the calendar's footprint must not move with content, so
@@ -1334,11 +1365,28 @@ function tasksByDate(){
 const CELL_H = 150, DAYNUM_H = 18, CHIP_H = 18, CHIP_GAP = 2, CELL_PAD_B = 3;
 const MAX_CHIPS_PER_DAY = Math.max(
   1, Math.floor((CELL_H - DAYNUM_H - CELL_PAD_B) / (CHIP_H + CHIP_GAP)));
-const MAX_CHIPS_PER_WEEKCELL = 2;   // week view rows are a fixed 44px
+const MAX_CHIPS_PER_USERCELL = 4;   // user view rows are a fixed 80px — see .uv-cell. Week view has no cap.
+
+/** Slice *list* to at most *cap* visible chips, reserving one of those slots
+ *  for a "+N more" link the moment the list overflows. Every cell here is a
+ *  fixed height with overflow:hidden — showing *cap* chips AND appending a
+ *  link on top used to silently clip whichever of the two lost the pixel
+ *  budget (usually the link itself), so the overflow was invisible and
+ *  unreachable. Reserving the slot up front means what's rendered always
+ *  fits. */
+function capChips(list, cap){
+  const shown = list.slice(0, list.length > cap ? Math.max(1, cap - 1) : cap);
+  return {shown, rest: list.length - shown.length};
+}
 
 /** Any task currently on screen — the calendar payload holds both buckets. */
 function findCalTask(taskId){
-  return (CAL.tasks || []).concat(CAL.unscheduled || []).find(t => t.id === taskId) || null;
+  // ALL_TASKS is the fallback: the day-tasks modal (openDayTasksDlg) shows
+  // every task for a date regardless of the toolbar's own member/status
+  // filter, so a row it renders can be one the filtered CAL doesn't have.
+  return (CAL.tasks || []).concat(CAL.unscheduled || []).find(t => t.id === taskId)
+    || ALL_TASKS.find(t => t.id === taskId)
+    || null;
 }
 
 // ════════════════════════════════════════════════════
@@ -1426,8 +1474,11 @@ function renderUserView(){
   const lastDay = new Date(anchor.getFullYear(), anchor.getMonth()+1, 0).getDate();
   const days = Array.from({length: lastDay}, (_, i) => addDays(first, i));
 
+  // Roster columns only — an unassigned task has no "person" for this grid
+  // to place it under, so it simply doesn't appear here (it's still visible
+  // via Month view or the day-tasks modal, which still lists an Unassigned
+  // group).
   const cols = META.members.map(m => ({key: m.email, label: m.name}));
-  cols.push({key: '', label: 'Unassigned'});
 
   const heads = cols.map(c => `<th class="uv-who" style="${
     c.key ? `border-bottom:3px solid ${memberColor(c.key)}` : ''}">
@@ -1440,24 +1491,20 @@ function renderUserView(){
       const list = (byDate[d] || []).filter(t => c.key
         ? (t.assignees || []).includes(c.key)
         : !(t.assignees && t.assignees.length));
-      // Capped like every other view — the row height is fixed, so an
-      // unbounded list would just be clipped invisibly instead of counted.
-      const shown = list.slice(0, MAX_CHIPS_PER_WEEKCELL);
-      const rest  = list.length - shown.length;
-      // Keyed by day row + member column — the transpose of the week view's
-      // key, since here the day is the row and the member is the column.
-      const key = `uv:${d}:${c.key}`;
-      return `<td class="${key===SELECTED_CELL?'cell-sel':''}" data-cell="${esc(key)}"
+      const {shown, rest} = capChips(list, MAX_CHIPS_PER_USERCELL);
+      // Clicking anywhere on the cell opens *that day's* full task list — not
+      // just this column's slice of it.
+      return `<td onclick="openDayTasksDlg('${d}')"
         ondragover="dropAllow(event)" ondragleave="dropLeave(event)"
         ondrop="dropOnUserCell(event,'${d}','${esc(c.key)}')"
         ><div class="uv-cell">${shown.map(t => chip(t, d)).join('')}
-          ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}</div></td>`;
+          ${rest > 0 ? `<span class="more">+${rest} more</span>` : ''}</div></td>`;
     }).join('');
     return `<tr class="${d === today ? 'uv-today' : ''}${weekend ? ' uv-wknd' : ''}">
-      <td class="uv-date">
+      <td class="uv-date" onclick="openDayTasksDlg('${d}')">
         <strong>${String(dd.getDate()).padStart(2,'0')}</strong>
         <small>${DOW[(dd.getDay()+6)%7]}</small>
-        <button class="cell-add" title="Add a task on this day" onclick="openDayAdd('${d}')">＋</button>
+        <button class="cell-add" title="Add a task on this day" onclick="event.stopPropagation();openDayAdd('${d}')">＋</button>
       </td>${tds}</tr>`;
   }).join('');
 
@@ -1506,19 +1553,16 @@ function renderMonth(){
     const d = addDays(CAL.from, i);
     const dd = parseISO(d);
     const list = byDate[d] || [];
-    // When the list overflows, one slot goes to the "+N more" link itself.
-    const shown = list.slice(0, list.length > MAX_CHIPS_PER_DAY
-      ? Math.max(1, MAX_CHIPS_PER_DAY - 1) : MAX_CHIPS_PER_DAY);
-    const rest = list.length - shown.length;
-    cells += `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}${d === SELECTED_CELL ? ' cell-sel' : ''}"
-      data-cell="${d}"
+    const {shown, rest} = capChips(list, MAX_CHIPS_PER_DAY);
+    cells += `<div class="cell${dd.getMonth() !== curMonth ? ' out' : ''}${d === today ? ' today' : ''}"
+      onclick="openDayTasksDlg('${d}')"
       ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')">
       <div class="cell-n">
-        <span style="cursor:pointer" title="View this day" onclick="jumpToDay('${d}')">${dd.getDate()}</span>
-        <button class="cell-add" title="Add a task on this day" onclick="openDayAdd('${d}')">＋</button></div>
+        <span>${dd.getDate()}</span>
+        <button class="cell-add" title="Add a task on this day" onclick="event.stopPropagation();openDayAdd('${d}')">＋</button></div>
       <div class="cell-chips">
         ${shown.map(t => chip(t, d)).join('')}
-        ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}
+        ${rest > 0 ? `<span class="more">+${rest} more</span>` : ''}
       </div>
     </div>`;
   }
@@ -1533,34 +1577,31 @@ function renderWeek(){
   const days = Array.from({length:7}, (_, i) => addDays(CAL.from, i));
   const today = todayISO();
 
-  // One row per member, plus a catch-all row so unassigned work is visible
-  // rather than silently missing from the week.
-  const rows = META.members.map(m => ({key: m.email, label: m.name, sub: 'member'}));
-  rows.push({key: '', label: 'Unassigned', sub: 'unassigned'});
+  // One row per roster member — an unassigned task has no row to land on
+  // here, so it simply doesn't appear (still visible via Month view or the
+  // day-tasks modal, which still lists an Unassigned group).
+  const rows = META.members.map(m => ({key: m.email, label: m.name}));
 
   const body = rows.map(r => {
-    // A task with multiple assignees appears in every one of their rows; the
-    // "Unassigned" row only picks up tasks with no assignees at all. A
+    // A task with multiple assignees appears in every one of their rows. A
     // multi-day task shows up on each day it covers, same as anywhere else.
-    const matches = r.key
-      ? (task => (task.assignees || []).includes(r.key))
-      : (task => !(task.assignees && task.assignees.length));
+    const matches = task => (task.assignees || []).includes(r.key);
 
     const tds = days.map(d => {
       const list = (byDate[d] || []).filter(matches);
-      const shown = list.slice(0, MAX_CHIPS_PER_WEEKCELL);
-      const rest  = list.length - shown.length;
-      // Keyed by member row + day column: that intersection is the box a
-      // click actually lands in, distinct from the same day in another row.
-      const key = `wk:${r.key}:${d}`;
-      return `<td class="${d===today?'today-col':''}${key===SELECTED_CELL?' cell-sel':''}" data-cell="${esc(key)}"
+      // Unlike month/user, this cell shows every task with no cap — the
+      // week grid is where "how loaded is this person" actually gets read,
+      // so a hidden "+N more" would hide the exact thing being checked. The
+      // row simply grows to fit (see .wk-cell); no fixed height to clip it.
+      // Clicking anywhere on the cell opens that day's full task list — not
+      // just this row's slice of it — so it's keyed by date alone.
+      return `<td class="${d===today?'today-col':''}"
+        onclick="openDayTasksDlg('${d}')"
         ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')"
-        ><div class="wk-cell">${shown.map(t => chip(t, d)).join('')}
-          ${rest > 0 ? `<span class="more" onclick="jumpToDay('${d}')">+${rest} more</span>` : ''}</div></td>`;
+        ><div class="wk-cell">${list.map(t => chip(t, d)).join('')}</div></td>`;
     }).join('');
 
-    const accent = r.key ? `border-left:3px solid ${memberColor(r.key)}` : '';
-    return `<tr><td class="who" style="${accent}">${esc(r.label)}<small>${r.sub}</small></td>${tds}</tr>`;
+    return `<tr><td class="who" style="border-left:3px solid ${memberColor(r.key)}">${esc(r.label)}</td>${tds}</tr>`;
   }).join('');
 
   // The [＋] lives in the column header here — in the week grid every day is a
@@ -1595,38 +1636,9 @@ function renderDay(){
       `<div class="empty"><div class="empty-ico">☕</div><h3>No tasks</h3><p>No tasks scheduled for ${fmtFull(ANCHOR)}.</p></div>`;
     return;
   }
-  const groups = {};
-  list.forEach(t => (groups[t.project_id] ||= {
-    code: t.project_code, name: t.project_name, client: t.project_client, type: t.project_type, tasks: [],
-  }).tasks.push(t));
-
-  document.getElementById('calArea').innerHTML = addBar + Object.entries(groups).map(([pid, g]) => {
-    // In day view, one project's task list is the "box of tasks" — the whole
-    // group is what gets ringed, not the individual row clicked inside it.
-    const key = `day:${pid}`;
-    return `
-    <div class="day-grp${key === SELECTED_CELL ? ' cell-sel' : ''}" data-cell="${esc(key)}">
-      <div class="day-grp-hd">
-        ${g.code ? `<span class="pcode">${esc(g.code)}</span>` : ''}
-        <strong>${esc(g.name)}</strong>
-        ${g.client ? `<span class="pcard-sub">${esc(g.client)}</span>` : ''}
-        ${g.type ? `<span class="ttag">${esc(g.type)}</span>` : ''}
-        <div class="gap"></div>
-        <button class="btn btn-lt" style="font-size:11px" onclick="openDetail('${pid}')">Open project →</button>
-      </div>
-      ${g.tasks.map(t => `
-        <div class="day-row"
-             onclick="openTaskEditor('${t.id}', this)"
-             ${canEdit(t.project_id) ? `draggable="true" ondragstart="taskDragStart(event,'${t.id}')" ondragend="taskDragEnd(event)"` : ''}>
-          <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
-          <span class="day-row-t">${esc(t.title)}${taskStart(t) !== t.due_date
-            ? ` <span style="color:#aaa;font-weight:400">(${fmtDM(taskStart(t))} – ${fmtDM(t.due_date)})</span>` : ''}</span>
-          <span class="day-row-w">${(t.assignees && t.assignees.length)
-            ? t.assignees.map(e => assigneeTag(e, e.split('@')[0])).join('')
-            : '—'}</span>
-        </div>`).join('')}
-    </div>`;
-  }).join('');
+  document.getElementById('calArea').innerHTML = addBar + userGroupsHtml(list, {
+    taskClick: id => `openTaskEditor('${id}')`, draggable: true,
+  });
 }
 
 /** Group a task list into per-project buckets, preserving first-seen order. */
@@ -1644,6 +1656,55 @@ function groupByProject(list){
   return [...groups.values()];
 }
 
+/** Group a task list by assignee, roster order, "Unassigned" last (empty
+ *  groups dropped). A task with several assignees appears once per
+ *  assignee — the same way it already appears once per row in the week
+ *  view — so "grouped by user" really shows each person's whole day, not
+ *  just their first listed assignee. */
+function groupByUser(list){
+  const groups = META.members.map(m => ({email: m.email, name: m.name, tasks: []}));
+  const unassigned = {email: '', name: 'Unassigned', tasks: []};
+  (list || []).forEach(t => {
+    const emails = (t.assignees && t.assignees.length) ? t.assignees : [''];
+    emails.forEach(email => (groups.find(g => g.email === email) || unassigned).tasks.push(t));
+  });
+  return [...groups, unassigned].filter(g => g.tasks.length);
+}
+
+/** Render one task-group box per assignee — shared by Day view and the
+ *  day-tasks modal (opened from Month/Week), which both now group this way.
+ *  Each row leads with the project code instead of assignee tags, since who
+ *  it's for is now the group header; *taskClick(id)* supplies the row's
+ *  onclick so a modal caller can close itself first. *draggable* is only
+ *  true on the real calendar grid — a modal has no drop target to land on. */
+function userGroupsHtml(list, {taskClick, draggable = false}){
+  const groups = groupByUser(list);
+  if (!groups.length) return '';
+  return groups.map(g => `
+    <div class="day-grp" style="margin-bottom:10px">
+      <div class="day-grp-hd">
+        ${g.email ? assigneeTag(g.email, g.name) : ''}
+        <strong>${esc(g.name)}</strong>
+        <span class="pcard-sub">${g.tasks.length} task(s)</span>
+      </div>
+      ${g.tasks.map(t => {
+        const others = (t.assignees || []).filter(e => e !== g.email);
+        const drag = draggable && canEdit(t.project_id)
+          ? ` draggable="true" ondragstart="taskDragStart(event,'${t.id}')" ondragend="taskDragEnd(event)"`
+          : '';
+        return `
+        <div class="day-row" onclick="${taskClick(t.id)}"${drag}>
+          <span class="stag stag-${t.status}">${STATUS_LABEL[t.status]}</span>
+          <span class="day-row-t">${t.project_code ? `<span class="pcode">${esc(t.project_code)}</span> ` : ''}${esc(t.title)}${taskStart(t) !== t.due_date
+            ? ` <span style="color:#aaa;font-weight:400">(${fmtDM(taskStart(t))} – ${fmtDM(t.due_date)})</span>` : ''}</span>
+          <span class="day-row-w">${others.length
+            ? others.map(e => assigneeTag(e, e.split('@')[0])).join('')
+            : ''}</span>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
 function renderUnscheduled(){
   const list = CAL.unscheduled || [];
   const box = document.getElementById('unsched');
@@ -1657,8 +1718,8 @@ function renderUnscheduled(){
       <span class="pcard-sub">${list.length} task(s) with no due date${
         list.length ? ' — drag one onto a day to schedule it' : ' — drag a task here to clear its date'}</span>
     </div>
-    ${groups.map(g => { const key = `uns:${g.id}`; return `
-      <div class="uns-row${key === SELECTED_CELL ? ' cell-sel' : ''}" data-cell="${esc(key)}">
+    ${groups.map(g => `
+      <div class="uns-row">
         <div class="uns-key">
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
             ${g.code ? `<span class="pcode">${esc(g.code)}</span>` : ''}
@@ -1667,7 +1728,7 @@ function renderUnscheduled(){
           <div class="pcard-sub">${g.tasks.length} task(s)${g.client ? ' · ' + esc(g.client) : ''}</div>
         </div>
         <div class="uns-chips">${g.tasks.map(t => chip(t, null, {compact:true})).join('')}</div>
-      </div>`; }).join('')}
+      </div>`).join('')}
   </div>`;
 }
 
@@ -1677,23 +1738,9 @@ function renderUnscheduled(){
 // Everything is edited locally and committed in one PATCH on Save, rather
 // than a request per field: a field-at-a-time save would re-render the
 // calendar under the open dialog after every keystroke's change event.
-/** Ring the calendar box (day / day×member / project group) that *el* sits
- *  inside — not *el* itself. Applied by toggling a class directly via the
- *  clicked element's ancestor rather than re-rendering, so selecting never
- *  disturbs scroll position or the grid; every box template also embeds
- *  cell-sel from SELECTED_CELL, so the ring survives a same-view reload too
- *  (e.g. after saving an edit from the dialog this click just opened). */
-function selectCell(el){
-  const cell = el ? el.closest('[data-cell]') : null;
-  SELECTED_CELL = cell ? cell.dataset.cell : null;
-  document.querySelectorAll('.cell-sel').forEach(e => e.classList.remove('cell-sel'));
-  if (cell) cell.classList.add('cell-sel');
-}
-
-function openTaskEditor(taskId, el){
+function openTaskEditor(taskId){
   const t = findCalTask(taskId);
   if (!t) return;
-  selectCell(el);   // every calendar item click lands here, in all views
   const rw = canEdit(t.project_id);
   _taskDlgCtx = {
     id: t.id,
@@ -1895,6 +1942,56 @@ async function addTaskOnDay(){
 function closeDayDlg(){
   document.getElementById('dayDlg').style.display = 'none';
   _dayDlgDate = null;
+}
+
+// ════════════════════════════════════════════════════
+// DAY TASKS — browse everything scheduled on one day, from clicking
+// anywhere on a calendar cell (month/week/user views)
+// ════════════════════════════════════════════════════
+/** Every task touching *isoDate*, grouped by assignee like Day view.
+ *
+ *  Deliberately pulled from ALL_TASKS (every task, unfiltered), not
+ *  tasksByDate()/CAL — CAL only holds whatever the toolbar's own
+ *  member/project/status filter currently lets through, and this modal's
+ *  whole point is showing everyone's day, so a narrowed CAL would silently
+ *  drop other people's tasks out of their own group.
+ *
+ *  Read-only browsing: clicking a row closes this modal and opens the real
+ *  task editor; adding a new task hands off to the existing per-day dialog. */
+async function openDayTasksDlg(isoDate){
+  _dayTasksDlgDate = isoDate;
+  document.getElementById('dayTasksDlgTitle').textContent = fmtFull(isoDate);
+  document.getElementById('dayTasksDlgBody').innerHTML = loadingBox('tasks');
+  document.getElementById('dayTasksDlg').style.display = 'flex';
+
+  try {
+    await loadAllTasks();
+  } catch(e){
+    document.getElementById('dayTasksDlgBody').innerHTML = errBox(e.message);
+    return;
+  }
+  if (_dayTasksDlgDate !== isoDate) return; // closed (or re-opened elsewhere) while loading
+
+  const list = ALL_TASKS.filter(t => taskInRange(t, isoDate, isoDate));
+  document.getElementById('dayTasksDlgTitle').textContent =
+    `${fmtFull(isoDate)} — ${list.length} task(s)`;
+  document.getElementById('dayTasksDlgBody').innerHTML = list.length
+    ? userGroupsHtml(list, {taskClick: id => `closeDayTasksDlg();openTaskEditor('${id}')`})
+    : `<div class="empty"><div class="empty-ico">☕</div><h3>No tasks</h3>
+        <p>No tasks scheduled for ${fmtFull(isoDate)}.</p></div>`;
+}
+
+function closeDayTasksDlg(){
+  document.getElementById('dayTasksDlg').style.display = 'none';
+  _dayTasksDlgDate = null;
+}
+
+/** Hands off to the existing [＋] day-add dialog for the same date, rather
+ *  than duplicating that form here. */
+function dayTasksDlgAdd(){
+  const d = _dayTasksDlgDate;
+  closeDayTasksDlg();
+  if (d) openDayAdd(d);
 }
 
 // ════════════════════════════════════════════════════
@@ -2386,7 +2483,6 @@ function shift(n){
   loadCalendar();
 }
 function goToday(){ ANCHOR = todayISO(); loadCalendar(); }
-function jumpToDay(d){ ANCHOR = d; setView('day'); }
 function switchTab(t){
   TAB = t;
   [['tabCal','paneCal','cal'], ['tabProj','paneProj','proj'], ['tabUsers','paneUsers','users'],

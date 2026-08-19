@@ -510,6 +510,16 @@ async def create_task(
     if project is None:
         raise WorkloadError("Project not found")
     who = _check_task_assignees(assignees, project.get("members", []))
+    if not who:
+        # Nobody named on creation — default to the project owner so a new
+        # task never starts out with no PIC at all; the owner can hand it off
+        # afterwards like any other assignee. Only when the owner is actually
+        # on the project's own member list, since task PIC must stay a subset
+        # of project PIC — an owner who isn't a member gets no default here,
+        # same as before.
+        owner = (project.get("created_by") or "").strip().lower()
+        if owner in project.get("members", []):
+            who = [owner]
 
     last = await _tasks().find({"project_id": project_id}).sort("sort_order", -1).limit(1).to_list(length=1)
     nxt = (last[0]["sort_order"] + 1) if last else 0
