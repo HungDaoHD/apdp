@@ -116,13 +116,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 
 /* Drop target feedback while dragging a task onto a day. */
 .drop-on{box-shadow:inset 0 0 0 2px #f36a17;background:#fff4ee !important}
-/* Colour on a chip now means exactly one thing — which project it belongs to
-   (set inline from projectColor). Status rides along as a leading icon, so
-   the two signals can't be confused with each other the way a coloured fill
-   and a coloured stripe could. The left stripe just inherits the project's
-   own text colour. */
-.chip{border-color:currentColor}
-.chip .cico{flex-shrink:0;font-style:normal;font-size:10px;font-weight:700;line-height:1;opacity:.85}
+/* Two independent signals on one chip: the fill is the *project* (set inline
+   from projectColor, so tasks of the same project read as a group across the
+   whole calendar), and the left stripe is the *status* — also set inline,
+   from STATUS_COLOR, so the stripe and the icon can't drift apart. The icon
+   repeats the status in a form that survives a 3px stripe being missed. */
+.chip .cico{flex-shrink:0;font-size:10px;vertical-align:-0.1em}
 .chip-complete .ctitle{opacity:.72}
 .chip-cancel{opacity:.6}
 .chip-cancel .ctitle{text-decoration:line-through}
@@ -199,7 +198,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .pgrp+.pgrp{margin-top:20px}
 .pgrp-hd{display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid #e6e9ee}
 .pgrp-t{font-size:13px;font-weight:700}
-.pgrp-i{font-size:14px;font-weight:700;line-height:1}
+.pgrp-i{font-size:14px;vertical-align:-0.1em}
 .pgrp-n{font-size:10.5px;font-weight:700;color:#888;background:#f1f2f4;border-radius:9px;padding:1px 8px}
 .pgrp.done .pgrp-t,.pgrp.done .pgrp-i{opacity:.55}
 .pcard{background:white;border:1px solid #e0e4ea;border-radius:10px;padding:15px 17px;display:flex;flex-direction:column;gap:9px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
@@ -217,13 +216,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .bar .b-complete{background:#1e8449}.bar .b-ongoing{background:#1565c0}.bar .b-pending{background:#f5a623}.bar .b-cancel{background:#c7ccd3}
 
 /* ── Status tag ── */
-/* Task status is one neutral pill told apart by its icon, never by its
-   colour. Project status keeps the coloured .stag-* variants below. */
+/* The bare .stag colours are a fallback for a status with no .stag-* variant
+   (one the server grew that the frontend hasn't styled yet) — every known
+   status lands on one of the four coloured variants below. */
 .stag{font-size:10px;padding:2px 9px;border-radius:10px;font-weight:700;display:inline-flex;align-items:center;gap:3px;
   white-space:nowrap;background:#f4f5f7;color:#5a6270;border:1px solid #e3e6ea}
-/* Glyphs, not emoji — they need a touch more size and weight than the label
-   beside them to carry at this scale. */
-.stag .sico{font-style:normal;font-size:11px;font-weight:700;line-height:1}
+/* An inline SVG, not a text glyph — see STATUS_ICON_SVG for why. */
+.stag .sico{font-size:11px;vertical-align:-0.1em}
 .stag-pending{background:#fff8e1;color:#a06800;border:1px solid #ffe082}
 .stag-complete{background:#e6f4ea;color:#1e8449;border:1px solid #b7dfbf}
 .stag-cancel{background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6}
@@ -313,6 +312,7 @@ textarea.inp{resize:vertical;min-height:56px}
 .ttbl input:disabled,.ttbl select:disabled{color:#666;cursor:default;background:transparent;-webkit-appearance:none;appearance:none}
 .ttbl .del{border:none;background:none;cursor:pointer;color:#ccc;font-size:14px;padding:2px 5px;border-radius:4px}
 .ttbl .del:hover{color:#c0392b;background:#fce8e6}
+.ttbl tr.st-complete td:nth-child(1) input{color:#1e8449}
 .ttbl tr.st-cancel td:nth-child(1) input{color:#aaa;text-decoration:line-through}
 
 .hint{font-size:11px;color:#999;line-height:1.6}
@@ -964,29 +964,51 @@ let _dragTaskId = null;    // task being dragged across the calendar
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'};          // tasks
 const PROJECT_STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'}; // projects — a distinct domain
-/** Status is carried by an icon, not a colour. Colour was doing two jobs at
- *  once on the calendar (project identity as the fill, status as the stripe),
- *  and the stripe always lost — an icon reads at any size and survives being
- *  printed, screenshotted, or looked at by someone colour-blind.
+/** Status reads twice over: its colour *and* its icon. The icon was added
+ *  because colour alone is easy to miss on a 3px chip stripe and useless to
+ *  a colour-blind reader — but it supplements the colour rather than
+ *  replacing it, so a status stays recognisable at a glance either way.
  *
- *  Plain glyphs, deliberately not emoji: these inherit the surrounding text
- *  colour and weight, so they set like typography instead of looking like
- *  clip art pasted into a 10px pill. Waiting / running / done / dropped —
- *  four different *shapes*, which is what makes them still readable on a
- *  calendar chip, where the icon appears with no label beside it.
- *
- *  None of the four appear in Unicode's emoji data, so no platform can
- *  promote them to colour glyphs. */
+ *  STATUS_ICON is the plain-glyph form, used only in the two spots that
+ *  structurally can't hold markup: a native <select><option> can't contain
+ *  HTML at all, and the searchable filter dropdowns HTML-escape their
+ *  option labels. */
 const STATUS_ICON = {pending:'↻', ongoing:'◐', complete:'✓', cancel:'✕'};
 /** Work in flight first, dead work last — the order the Projects tab groups by. */
 const STATUS_ORDER = ['ongoing', 'pending', 'complete', 'cancel'];
+/** One source of truth for status colour, matching the .stag-* pills. Used
+ *  for the icons and the calendar chip's stripe, so the two can't drift. */
+const STATUS_COLOR = {pending:'#a06800', ongoing:'#1565c0', complete:'#1e8449', cancel:'#8a8f97'};
+/** Everywhere markup is allowed, the icon is an inline SVG rather than a text
+ *  glyph — immune to font substitution, since there's no font involved to
+ *  fall back from. Windows' Segoe UI Emoji claims a far wider range of shape
+ *  characters than Unicode's own emoji list, and kept rendering ↻ ◐ ✓ ✕ as
+ *  flat colour emoji; U+FE0E doesn't help, as it only pins characters that
+ *  have a registered emoji-variation sequence, which none of these do. */
+const STATUS_ICON_SVG = {
+  pending:  '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  ongoing:  '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+          + '<path d="M8 2.5a5.5 5.5 0 000 11z" fill="currentColor"/>',
+  complete: '<path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+  cancel:   '<path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+};
+/** The SVG paints in `currentColor`, so setting colour here carries the status
+ *  colour into the icon wherever it lands — including a calendar chip, whose
+ *  own text colour is the *project's*, not the status's. */
+function statusIconSvg(status, cls){
+  const c = STATUS_COLOR[status];
+  return `<svg class="${cls}" viewBox="0 0 16 16" width="1em" height="1em" aria-hidden="true" focusable="false"
+    ${c ? `style="color:${c}"` : ''}>${STATUS_ICON_SVG[status] || ''}</svg>`;
+}
 /** The status tag used everywhere a task's state is labelled. */
 function statusTag(status){
-  return `<span class="stag" title="${STATUS_LABEL[status] || status}"
-    ><i class="sico">${STATUS_ICON[status] || ''}</i>${STATUS_LABEL[status] || status}</span>`;
+  return `<span class="stag stag-${status}" title="${STATUS_LABEL[status] || status}"
+    >${statusIconSvg(status, 'sico')}${STATUS_LABEL[status] || status}</span>`;
 }
 /** Status choices for a picker, in STATUS_ORDER and carrying their icon, so
- *  every dropdown in the app lists them the same way round. */
+ *  every dropdown in the app lists them the same way round. Plain-glyph
+ *  STATUS_ICON, not the SVG map — every caller here is a native <select> or
+ *  an escaped filter-dropdown label, neither of which can render markup. */
 function statusOptions(labels){
   return STATUS_ORDER.filter(s => labels[s])
     .map(value => ({value, label: `${STATUS_ICON[value]} ${labels[value]}`}));
@@ -1568,10 +1590,9 @@ function chip(t, day, {compact = false} = {}){
   const pc = projectColor(t.project_id);
   return `<span class="chip chip-${t.status}"${drag}
     title="${esc(title)}"
-    style="background-color:${pc.bg};color:${pc.text}"
+    style="background-color:${pc.bg};color:${pc.text};border-left-color:${STATUS_COLOR[t.status] || pc.text}"
     onclick="event.stopPropagation();openTaskEditor('${t.id}')"
-    ><i class="cico">${STATUS_ICON[t.status] || ''}</i
-    ><span class="ctitle">${tags}${code}${proj}${esc(t.title)}</span>${counter}</span>`;
+    >${statusIconSvg(t.status, 'cico')}<span class="ctitle">${tags}${code}${proj}${esc(t.title)}</span>${counter}</span>`;
 }
 
 /** Every visible day mapped to the tasks occupying it. A multi-day task is
@@ -2148,13 +2169,11 @@ function renderDayDlgUnscheduled(){
         </div>
       </div>
       <div class="uns-chips">${g.tasks.map(t => canEdit(t.project_id)
-        ? `<span class="chip chip-${t.status}" style="display:inline-flex;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text}"
+        ? `<span class="chip chip-${t.status}" style="display:inline-flex;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text};border-left-color:${STATUS_COLOR[t.status] || projectColor(t.project_id).text}"
              title="Schedule on this day — ${STATUS_LABEL[t.status]}" onclick="scheduleOnDay('${t.id}')"
-             ><i class="cico">${STATUS_ICON[t.status] || ''}</i
-             ><span class="ctitle">${(t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('')}${esc(t.title)}</span></span>`
-        : `<span class="chip chip-${t.status}" style="display:inline-flex;opacity:.5;cursor:not-allowed;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text}"
-             title="You can't edit this project"><i class="cico">${STATUS_ICON[t.status] || ''}</i
-             ><span class="ctitle">${esc(t.title)}</span></span>`).join('')}</div>
+             >${statusIconSvg(t.status, 'cico')}<span class="ctitle">${(t.assignees || []).map(e => assigneeTag(e, e.split('@')[0])).join('')}${esc(t.title)}</span></span>`
+        : `<span class="chip chip-${t.status}" style="display:inline-flex;opacity:.5;cursor:not-allowed;background-color:${projectColor(t.project_id).bg};color:${projectColor(t.project_id).text};border-left-color:${STATUS_COLOR[t.status] || projectColor(t.project_id).text}"
+             title="You can't edit this project">${statusIconSvg(t.status, 'cico')}<span class="ctitle">${esc(t.title)}</span></span>`).join('')}</div>
     </div>`).join('');
 }
 
@@ -2509,7 +2528,7 @@ function statusStatCard(title, counts, total, labels){
     <div class="sumcard-hd">${title}</div>
     <div class="ustats" style="grid-template-columns:repeat(4,1fr)">
       ${STATUS_ORDER.map(k =>
-        `<div class="ustat"><b>${counts[k]}</b><span>${STATUS_ICON[k]} ${labels[k]}</span></div>`).join('')}
+        `<div class="ustat"><b>${counts[k]}</b><span>${statusIconSvg(k, 'sico')} ${labels[k]}</span></div>`).join('')}
     </div>
     ${total ? `<div class="bar">
       <i class="b-complete" style="width:${counts.complete / total * 100}%"></i>
@@ -3045,7 +3064,7 @@ function renderProjects(){
     if (!group.length) return '';
     return `<div class="pgrp${s === 'complete' || s === 'cancel' ? ' done' : ''}">
       <div class="pgrp-hd">
-        <span class="pgrp-i">${STATUS_ICON[s] || '•'}</span>
+        ${STATUS_ICON_SVG[s] ? statusIconSvg(s, 'pgrp-i') : `<span class="pgrp-i">•</span>`}
         <span class="pgrp-t">${esc(PROJECT_STATUS_LABEL[s] || s)}</span>
         <span class="pgrp-n">${group.length}</span>
       </div>
