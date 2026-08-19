@@ -566,15 +566,15 @@ textarea.inp{resize:vertical;min-height:56px}
 
 <div class="main">
   <div class="tabs">
-    <button id="tabCal"   class="on" onclick="switchTab('cal')">📅 Calendar</button>
-    <button id="tabProj"           onclick="switchTab('proj')">📁 Projects</button>
-    <button id="tabUsers"          onclick="switchTab('users')">👥 Users</button>
-    <button id="tabDash"           onclick="switchTab('dash')">📊 Dashboard</button>
-    <button id="tabLog"            onclick="switchTab('log')">🕘 Log</button>
+    <button id="tabDash"  class="on" onclick="switchTab('dash')">📊 Dashboard</button>
+    <button id="tabCal"             onclick="switchTab('cal')">📅 Calendar</button>
+    <button id="tabProj"            onclick="switchTab('proj')">📁 Projects</button>
+    <button id="tabUsers"           onclick="switchTab('users')">👥 Users</button>
+    <button id="tabLog"             onclick="switchTab('log')">🕘 Log</button>
   </div>
 
   <!-- ══ CALENDAR TAB ══ -->
-  <div id="paneCal">
+  <div id="paneCal" style="display:none">
     <div class="tbar">
       <div class="seg">
         <button id="vMonth" class="on" onclick="setView('month')">Month</button>
@@ -650,7 +650,7 @@ textarea.inp{resize:vertical;min-height:56px}
   </div>
 
   <!-- ══ DASHBOARD TAB ══ -->
-  <div id="paneDash" style="display:none">
+  <div id="paneDash">
     <div class="tbar">
       <div class="ssel filt" id="dMemberWrap" style="width:158px">
         <input class="inp" autocomplete="off" placeholder="All members">
@@ -949,7 +949,7 @@ let CAL       = null;      // last calendar payload
 let PROJECTS  = [];
 let VIEW      = 'month';
 let ANCHOR    = todayISO();
-let TAB       = 'cal';
+let TAB       = 'dash';
 let DETAIL    = null;      // project currently open in the detail dialog
 let EDITING   = null;      // project being edited in the project dialog (null = create)
 let ALL_TASKS = [];        // every task, joined with its project — powers the Users tab
@@ -1435,6 +1435,9 @@ async function boot(){
   renderStandardTaskChecklist();
 
   await loadProjects();
+  // Dashboard is the default tab, so it needs data now; Calendar is preloaded
+  // too since switchTab('cal') itself never fetches — only the filters do.
+  await loadDashboard();
   await loadCalendar();
 }
 
