@@ -3830,14 +3830,16 @@ function evalFilter(row, filter) {
 // parentRows: already-filtered rows for the parent node
 // levelItem: {question, label, groups, show_total}
 // nextLevels: remaining deeper level items
-function buildLevelChildren(parentRows, levelItem, nextLevels) {
+function buildLevelChildren(parentRows, levelItem, nextLevels, parentPath) {
+  parentPath = parentPath || [];
   if (levelItem.type === 'custom_ref') {
     const def = resolveCustomRef(levelItem);
     if (!def) return [];
     return (def.choices || []).map(ch => {
       const rows = parentRows.filter(row => evalFilter(row, ch.filter));
-      const node = { label: ch.label, rows, children: [] };
-      if (nextLevels.length) node.children = buildLevelChildren(rows, nextLevels[0], nextLevels.slice(1));
+      const path = [...parentPath, ch.label];
+      const node = { label: ch.label, rows, children: [], path };
+      if (nextLevels.length) node.children = buildLevelChildren(rows, nextLevels[0], nextLevels.slice(1), path);
       return node;
     });
   }
@@ -3848,24 +3850,28 @@ function buildLevelChildren(parentRows, levelItem, nextLevels) {
 
   // show_total → Total sub-column FIRST (left side)
   if (levelItem.show_total) {
-    const node = { label: 'Total', rows: parentRows, children: [], isSubTotal: true };
+    const path = [...parentPath, 'Total'];
+    const node = { label: 'Total', rows: parentRows, children: [], isSubTotal: true, path };
     if (nextLevels.length)
-      node.children = buildLevelChildren(parentRows, nextLevels[0], nextLevels.slice(1));
+      node.children = buildLevelChildren(parentRows, nextLevels[0], nextLevels.slice(1), path);
     nodes.push(node);
   }
 
   if (!groups.length) {
     // No groups at this level → single pass-through child node
-    const node = { label: levelItem.label || levelItem.question, rows: parentRows, children: [] };
+    const label = levelItem.label || levelItem.question;
+    const path = [...parentPath, label];
+    const node = { label, rows: parentRows, children: [], path };
     if (nextLevels.length)
-      node.children = buildLevelChildren(parentRows, nextLevels[0], nextLevels.slice(1));
+      node.children = buildLevelChildren(parentRows, nextLevels[0], nextLevels.slice(1), path);
     nodes.push(node);
   } else {
     for (const g of groups) {
       const rows = filterRowsByGroup(parentRows, col, g);
-      const node = { label: g.label, rows, children: [] };
+      const path = [...parentPath, g.label];
+      const node = { label: g.label, rows, children: [], path };
       if (nextLevels.length)
-        node.children = buildLevelChildren(rows, nextLevels[0], nextLevels.slice(1));
+        node.children = buildLevelChildren(rows, nextLevels[0], nextLevels.slice(1), path);
       nodes.push(node);
     }
   }
@@ -3883,7 +3889,7 @@ function buildBannerTree(banner) {
   for (const item of banner) {
     if (item.filter === null && !item.question) {
       if (!hasShowTotal)
-        roots.push({ label: 'Total', rows: allRows, children: [], isTotal: true });
+        roots.push({ label: 'Total', rows: allRows, children: [], isTotal: true, path: ['Total'] });
     }
   }
 
@@ -3893,11 +3899,13 @@ function buildBannerTree(banner) {
 
     if (item.type === 'custom') {
       const levels = item.levels || [];
+      const rootLabel = item.label || 'Custom';
       const lv1Children = (item.choices || []).map(ch => {
         const rows = allRows.filter(row => evalFilter(row, ch.filter));
-        return { label: ch.label, rows, children: levels.length ? buildLevelChildren(rows, levels[0], levels.slice(1)) : [] };
+        const path = [rootLabel, ch.label];
+        return { label: ch.label, rows, path, children: levels.length ? buildLevelChildren(rows, levels[0], levels.slice(1), path) : [] };
       });
-      roots.push({ label: item.label || 'Custom', rows: allRows, children: lv1Children });
+      roots.push({ label: rootLabel, rows: allRows, children: lv1Children, path: [rootLabel] });
       continue;
     }
 
@@ -3905,11 +3913,13 @@ function buildBannerTree(banner) {
       const def = resolveCustomRef(item);
       if (!def) continue;
       const levels = item.levels || [];
+      const rootLabel = def.label || 'Custom';
       const lv1Children = (def.choices || []).map(ch => {
         const rows = allRows.filter(row => evalFilter(row, ch.filter));
-        return { label: ch.label, rows, children: levels.length ? buildLevelChildren(rows, levels[0], levels.slice(1)) : [] };
+        const path = [rootLabel, ch.label];
+        return { label: ch.label, rows, path, children: levels.length ? buildLevelChildren(rows, levels[0], levels.slice(1), path) : [] };
       });
-      roots.push({ label: def.label || 'Custom', rows: allRows, children: lv1Children });
+      roots.push({ label: rootLabel, rows: allRows, children: lv1Children, path: [rootLabel] });
       continue;
     }
 
@@ -3918,10 +3928,11 @@ function buildBannerTree(banner) {
     const groups      = item.groups  || [];
     const levels      = item.levels  || [];   // [lv2Item, lv3Item, ...]
     const bannerLabel = item.label || (_bq ? qTitle(_bq) : null) || item.question;
+    const rootPath    = [bannerLabel];
 
     // Completely flat (no groups, no sub-levels, no sub-total) → single leaf
     if (!groups.length && !levels.length && !item.show_total) {
-      roots.push({ label: bannerLabel, rows: allRows, children: [] });
+      roots.push({ label: bannerLabel, rows: allRows, children: [], path: rootPath });
       continue;
     }
 
@@ -3930,9 +3941,9 @@ function buildBannerTree(banner) {
 
     if (!groups.length) {
       // No Lv1 groups → one pass-through node
-      const node = { label: bannerLabel, rows: allRows, children: [] };
+      const node = { label: bannerLabel, rows: allRows, children: [], path: rootPath };
       if (levels.length)
-        node.children = buildLevelChildren(allRows, levels[0], levels.slice(1));
+        node.children = buildLevelChildren(allRows, levels[0], levels.slice(1), rootPath);
       lv1Children.push(node);
     } else {
       // show_total → Total FIRST: rows where the banner question itself is not null
@@ -3945,24 +3956,27 @@ function buildBannerTree(banner) {
               const v = row[col];
               return v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== 'nan';
             });
-        const node = { label: 'Total', rows: totalRows, children: [], isSubTotal: true };
+        const path = [...rootPath, 'Total'];
+        const node = { label: 'Total', rows: totalRows, children: [], isSubTotal: true, path };
         if (levels.length)
-          node.children = buildLevelChildren(totalRows, levels[0], levels.slice(1));
+          node.children = buildLevelChildren(totalRows, levels[0], levels.slice(1), path);
         lv1Children.push(node);
       }
       for (const g of groups) {
         const rows = (_bq && isMAbinary(_bq))
           ? filterRowsByGroupMABinary(allRows, _bq, g)
           : filterRowsByGroup(allRows, col, g);
-        const node = { label: g.label || autoGroupLabel(_bq, g) || String(g.value??''), rows, children: [] };
+        const label = g.label || autoGroupLabel(_bq, g) || String(g.value??'');
+        const path  = [...rootPath, label];
+        const node = { label, rows, children: [], path };
         if (levels.length)
-          node.children = buildLevelChildren(rows, levels[0], levels.slice(1));
+          node.children = buildLevelChildren(rows, levels[0], levels.slice(1), path);
         lv1Children.push(node);
       }
     }
 
     // Wrap Lv1 children under the banner-label group node
-    roots.push({ label: bannerLabel, rows: allRows, children: lv1Children });
+    roots.push({ label: bannerLabel, rows: allRows, children: lv1Children, path: rootPath });
   }
 
   return roots;
@@ -4723,6 +4737,15 @@ let _pvLogicMode   = false;
 // ── Quota Table ──────────────────────────────────────
 let _pvQuotaMode = false;
 
+// Unique storage key for a banner leaf column — full ancestor path, not just
+// its own label. Nested banners (e.g. Age > Gender) repeat leaf labels like
+// "Nam"/"Nữ" under every age group; keying by bare label collapsed all of
+// them onto one shared target cell. `path` always has >=1 element (set by
+// buildBannerTree/buildLevelChildren); falls back to label for older nodes.
+function bcKey(bc) {
+  return (bc.path && bc.path.length ? bc.path : [bc.label]).join('');
+}
+
 // Build row descriptors for a quota stub item (SA/MA only)
 function buildQtaRows(stubItem, mq) {
   if (!mq || !['SA','MA'].includes(qType(mq))) return [];
@@ -4790,18 +4813,18 @@ function qtaGetAutoTarget(row, ci, bannerCols, targetsForStub, allRows) {
     if (row.isBase) {
       // Base/Total = sum of editable-row targets across all non-Total cols
       return nonTotalCols.reduce((sum, b) =>
-        sum + allRows.filter(r => !r.autoCalc).reduce((s, r) => s + (Number(targetsForStub[b.label]?.[r.key]) || 0), 0), 0);
+        sum + allRows.filter(r => !r.autoCalc).reduce((s, r) => s + (Number(targetsForStub[bcKey(b)]?.[r.key]) || 0), 0), 0);
     }
-    return nonTotalCols.reduce((sum, b) => sum + (Number(targetsForStub[b.label]?.[row.key]) || 0), 0);
+    return nonTotalCols.reduce((sum, b) => sum + (Number(targetsForStub[bcKey(b)]?.[row.key]) || 0), 0);
   }
   // Base row (non-Total col): sum of all editable row targets for this col
   if (row.isBase) {
     return allRows.filter(r => !r.autoCalc)
-      .reduce((sum, r) => sum + (Number(targetsForStub[bc.label]?.[r.key]) || 0), 0);
+      .reduce((sum, r) => sum + (Number(targetsForStub[bcKey(bc)]?.[r.key]) || 0), 0);
   }
   // Netted group header: sum of its choice targets for this col
   if (row.isGroup && row.groupType === 'netted') {
-    return row.codes.reduce((sum, code) => sum + (Number(targetsForStub[bc.label]?.[String(code)]) || 0), 0);
+    return row.codes.reduce((sum, code) => sum + (Number(targetsForStub[bcKey(bc)]?.[String(code)]) || 0), 0);
   }
   return 0;
 }
@@ -4842,14 +4865,14 @@ function qtaSetTargetEl(el) {
   qtaSetTarget(Number(d.si), Number(d.ri), Number(d.ci), d.banner, d.key, el.value);
 }
 
-function qtaSetTarget(si, ri, ci, bannerLabel, rowKey, val) {
+function qtaSetTarget(si, ri, ci, bannerKey, rowKey, val) {
   const cfg = data[activeCfg];
   if (!cfg.quota) cfg.quota = {};
   if (!cfg.quota.targets) cfg.quota.targets = {};
   const stubQ = (cfg.stub||[])[si]?.question || String(si);
   if (!cfg.quota.targets[stubQ]) cfg.quota.targets[stubQ] = {};
-  if (!cfg.quota.targets[stubQ][bannerLabel]) cfg.quota.targets[stubQ][bannerLabel] = {};
-  cfg.quota.targets[stubQ][bannerLabel][rowKey] = Number(val) || 0;
+  if (!cfg.quota.targets[stubQ][bannerKey]) cfg.quota.targets[stubQ][bannerKey] = {};
+  cfg.quota.targets[stubQ][bannerKey][rowKey] = Number(val) || 0;
   markDirty();
   // Update Remaining for the edited cell in-place (preserves input focus)
   const remEl = document.getElementById(`qta_r_${si}_${ri}_${ci}`);
@@ -4940,9 +4963,9 @@ function renderQuotaTargetInputs(cfg) {
       let cells = '';
       editCols.forEach((bc, ci) => {
         const realCi = allCols.indexOf(bc);    // real ci matching IDs in renderQuotaTable
-        const tgt    = Number(stubTgts[bc.label]?.[row.key]) || 0;
+        const tgt    = Number(stubTgts[bcKey(bc)]?.[row.key]) || 0;
         cells += `<td class="qta-target-cell"><input type="number" class="qta-target" value="${tgt}" min="0"
-          data-si="${si}" data-ri="${ri}" data-ci="${realCi}" data-banner="${a(bc.label)}" data-key="${a(row.key)}"
+          data-si="${si}" data-ri="${ri}" data-ci="${realCi}" data-banner="${a(bcKey(bc))}" data-key="${a(row.key)}"
           onchange="qtaSetTargetEl(this)"></td>`;
       });
       body += `<tr><td class="${lblClass}"${lblStyle}>${h(row.label)}</td>${cells}</tr>`;
@@ -4976,7 +4999,7 @@ function renderQuotaTable(cfg, readOnly = false) {
         const isAutoCalc = row.autoCalc || bc.isTotal;
         const tgt = isAutoCalc
           ? qtaGetAutoTarget(row, ci, bannerCols, stubTgts, rows)
-          : Number(stubTgts[bc.label]?.[row.key]) || 0;
+          : Number(stubTgts[bcKey(bc)]?.[row.key]) || 0;
         const rem    = tgt - collected;
         const remCls = 'qta-rem '+(rem<0?'qta-rem-neg':rem===0?'qta-rem-zero':'qta-rem-ok');
         if (readOnly) {
@@ -4990,7 +5013,7 @@ function renderQuotaTable(cfg, readOnly = false) {
           cells += `<td class="${remCls}" id="qta_r_${si}_${ri}_${ci}" data-collected="${collected}">${rem}</td>`;
         } else {
           cells += `<td class="qta-target-cell"><input type="number" class="qta-target" value="${tgt}" min="0"
-            data-si="${si}" data-ri="${ri}" data-ci="${ci}" data-banner="${a(bc.label)}" data-key="${a(row.key)}"
+            data-si="${si}" data-ri="${ri}" data-ci="${ci}" data-banner="${a(bcKey(bc))}" data-key="${a(row.key)}"
             onchange="qtaSetTargetEl(this)"></td>`;
           cells += `<td class="qta-coll">${collected}</td>`;
           cells += `<td class="${remCls}" id="qta_r_${si}_${ri}_${ci}" data-collected="${collected}">${rem}</td>`;
