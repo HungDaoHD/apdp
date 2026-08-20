@@ -221,6 +221,10 @@ class MemoryTokenStorage:
         self._email = value
         self._save_to_disk()
 
+    @property
+    def has_refresh_token(self) -> bool:
+        return bool(self._refresh_token)
+
     def clear(self) -> None:
         self._access_token  = None
         self._refresh_token = None

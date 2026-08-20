@@ -161,10 +161,11 @@ async def qme_status(request: Request):
     if not is_allowed(storage.email):
         return {"connected": False, "email": None, "is_admin": False}
     return {
-        "connected":  storage.is_connected(),
-        "email":      storage.email,
-        "is_admin":   is_admin(storage.email),
-        "csrf_token": csrf_token_for(session_id),
+        "connected":         storage.is_connected(),
+        "email":             storage.email,
+        "is_admin":          is_admin(storage.email),
+        "csrf_token":        csrf_token_for(session_id),
+        "has_refresh_token": storage.has_refresh_token,   # temp debug field for the short-session investigation
     }
 
 
