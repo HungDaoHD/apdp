@@ -105,6 +105,7 @@ class MemoryTokenStorage:
         self._expires_at:    float      = 0.0
         self._login_at:      float      = 0.0   # time of original login (not refresh)
         self._email:         str | None = None
+        self._loaded_mtime:  float      = 0.0   # mtime of disk file as last read into memory
         self._refresh_lock               = asyncio.Lock()
 
     def _token_file(self) -> Path:
@@ -113,6 +114,7 @@ class MemoryTokenStorage:
         return _token_dir() / f".qme_token_{self._session_id}.json"
 
     async def get_tokens(self) -> OAuthToken | None:
+        self._sync_with_disk()
         if not self._access_token:
             return None
         return OAuthToken(
@@ -195,6 +197,7 @@ class MemoryTokenStorage:
         pass  # client credentials come from config, not from the server
 
     def is_connected(self) -> bool:
+        self._sync_with_disk()
         if not self._access_token:
             return False
         if time.time() >= self._expires_at - 60:
@@ -203,6 +206,7 @@ class MemoryTokenStorage:
 
     def can_refresh(self) -> bool:
         """True if a refresh_token is available and session is within 7-day limit."""
+        self._sync_with_disk()
         if not self._refresh_token:
             return False
         if not self._login_at or time.time() - self._login_at > _SESSION_MAX_AGE:
@@ -260,15 +264,45 @@ class MemoryTokenStorage:
             except Exception:
                 _restrict_windows(tmp)
             tmp.replace(f)
+            try:
+                self._loaded_mtime = f.stat().st_mtime
+            except Exception:
+                pass
         except TokenEncryptionRequired as e:
             log.error("Refusing to persist QMe token unencrypted (session=%s…): %s",
                        self._session_id[:8], e)
         except Exception as e:
             log.warning("Could not save token to disk: %s", e)
 
+    def _sync_with_disk(self) -> None:
+        """Reload from disk if a sibling Gunicorn worker wrote a newer token.
+
+        Each worker is a separate process that only loads the token file once
+        (on first use), then keeps it purely in memory — a refresh performed
+        by another worker (or a disconnect that deletes the file) would
+        otherwise never be seen here, leaving this worker stuck reporting a
+        stale/expired session (or a revoked one as still valid) until process
+        restart or cache eviction. Called before every connected/refresh
+        decision so disk stays the source of truth across workers.
+        """
+        try:
+            f = self._token_file()
+            if not f.exists():
+                if self._access_token or self._refresh_token:
+                    self._access_token  = None
+                    self._refresh_token = None
+                    self._expires_at    = 0.0
+                    self._loaded_mtime  = 0.0
+                return
+            if f.stat().st_mtime > self._loaded_mtime:
+                self._load_from_disk()
+        except Exception:
+            pass
+
     def _load_from_disk(self) -> None:
         try:
-            raw = self._token_file().read_bytes()
+            f = self._token_file()
+            raw = f.read_bytes()
             fernet = _get_fernet()
             if fernet:
                 try:
@@ -291,6 +325,7 @@ class MemoryTokenStorage:
             elif self._refresh_token:
                 log.info("QMe access token expired — refresh_token available (session=%s… email=%s)",
                          self._session_id[:8], self._email)
+            self._loaded_mtime = f.stat().st_mtime
         except Exception:
             pass
 
