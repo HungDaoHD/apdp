@@ -961,6 +961,15 @@ async def delete_leave(leave_id: str) -> None:
         raise WorkloadError("Booking not found")
 
 
+async def set_leave_google_event_id(leave_id: str, google_event_id: str | None) -> None:
+    """Record which Google Calendar event mirrors this booking, once
+    google_calendar_svc has created it. Best-effort by design — called from a
+    background sync task, so a booking that was cancelled in the meantime
+    (update_one on a missing _id is a silent no-op) just means the write is
+    now moot."""
+    await _leaves().update_one({"_id": leave_id}, {"$set": {"google_event_id": google_event_id}})
+
+
 async def list_leaves(
     *, email: str | None = None, date_from: str | None = None, date_to: str | None = None
 ) -> list[dict]:
@@ -1110,6 +1119,7 @@ ACTIVITY_ACTIONS: tuple[str, ...] = (
     "task.create", "task.update", "task.delete", "task.bulk_assignee",
     "leave.create", "leave.delete",
     "member.set_hours",
+    "google.connect", "google.disconnect", "google.app_config",
 )
 
 # Fields whose before/after is worth recording. Anything not listed (e.g.

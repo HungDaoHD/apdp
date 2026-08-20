@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from routers import surveys, pipeline, qme_auth, usage_log, price_check, workload
+from routers import surveys, pipeline, qme_auth, usage_log, price_check, workload, google_calendar
 from config import Settings
 from dependencies import require_csrf, require_qme
 
@@ -96,6 +96,8 @@ async def on_startup() -> None:
     try:
         from services.workload_svc import init_db
         await init_db()
+        from services.google_calendar_svc import init_db as init_gcal_db
+        await init_gcal_db()
     except Exception:
         logging.getLogger(__name__).error(
             "MongoDB unreachable at startup — /workload will not work until it is fixed. "
@@ -120,6 +122,7 @@ app.include_router(qme_auth.router)    # auth routes are always public; /disconn
 app.include_router(usage_log.router)   # per-endpoint auth via require_qme; POST /log checks CSRF itself
 app.include_router(price_check.router) # standalone, per-endpoint auth via require_qme + require_csrf
 app.include_router(workload.router)    # per-endpoint auth via require_workload(_admin) + require_csrf
+app.include_router(google_calendar.router)  # OAuth dance is public by nature; /disconnect checks CSRF itself
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 

@@ -678,6 +678,36 @@ textarea.inp{resize:vertical;min-height:56px}
       </div>
       <div class="gap"></div>
     </div>
+    <div id="gcalAdminCard" class="sumcard" style="display:none;margin-bottom:14px">
+      <div class="sumcard-hd">🔗 Google Calendar integration <span class="hint" style="font-weight:400">(admin only)</span></div>
+      <div class="mbody" style="padding:12px 16px">
+        <div class="hint" style="margin-bottom:10px">
+          One-time setup so every member can sync their own bookings to their personal Google Calendar. Create an
+          OAuth Client (Internal, scope <code>calendar.events</code>) in
+          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a>,
+          then paste the values below. The secret is encrypted at rest and never shown again once saved.
+        </div>
+        <div id="gcCfgStatus" class="hint" style="margin-bottom:10px"></div>
+        <div class="row3" style="grid-template-columns:1fr 1fr">
+          <div class="fld">
+            <label>CLIENT ID</label>
+            <input class="inp" id="gcClientId" placeholder="xxxx.apps.googleusercontent.com">
+          </div>
+          <div class="fld">
+            <label>CLIENT SECRET</label>
+            <input class="inp" id="gcClientSecret" type="password" placeholder="leave blank to keep current">
+          </div>
+        </div>
+        <div class="fld" style="margin-top:8px">
+          <label>REDIRECT URI <span class="hint">— must match Google Cloud Console exactly</span></label>
+          <input class="inp" id="gcRedirectUri" placeholder="https://your-domain/api/workload/google/callback">
+        </div>
+      </div>
+      <div class="mft">
+        <div class="mft-status" id="gcCfgMsg" style="display:none"></div>
+        <button class="btn btn-suc" id="gcCfgSaveBtn" onclick="saveGcalAppConfig()">Save</button>
+      </div>
+    </div>
     <div id="usersArea"><div class="loading"><div class="spin"></div> Loading users…</div></div>
   </div>
 
@@ -1512,6 +1542,17 @@ async function boot(){
   // Every workload member can start a project now (they own what they create),
   // so the button is no longer admin-gated.
   document.getElementById('newProjBtn').style.display = '';
+
+  await loadGcalStatus();
+  await loadGcalAppConfig();
+  // Land here from the Google OAuth redirect: report the result once, then
+  // scrub the query string so a page refresh doesn't re-show the toast.
+  const gcalResult = new URLSearchParams(location.search).get('google');
+  if (gcalResult){
+    toast(gcalResult === 'connected' ? 'Google Calendar connected' : 'Google Calendar connection failed — please try again',
+          gcalResult === 'connected' ? '' : 'err');
+    history.replaceState(null, '', location.pathname);
+  }
 
   // Calendar filters — multi-select, defaulting to everything checked (=
   // no filter). getOptions is a live callback, so the project list picks up
@@ -2533,8 +2574,53 @@ function uprojRow(p, email, tasks, today){
   </div>`;
 }
 
+// ── Google Calendar — admin one-time app setup (Users tab) ─────────────────
+let GCAL_APP_CFG = null;   // {configured, client_id, redirect_uri} — admin only
+
+async function loadGcalAppConfig(){
+  if (!META.me.is_admin) return;
+  try { GCAL_APP_CFG = await api('/api/workload/google/app-config'); }
+  catch { GCAL_APP_CFG = null; }
+}
+
+function renderGcalAppConfig(){
+  const card = document.getElementById('gcalAdminCard');
+  if (!META.me.is_admin || !GCAL_APP_CFG){ card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('gcCfgStatus').innerHTML = GCAL_APP_CFG.configured
+    ? `✅ Configured — Client ID <code>${esc(GCAL_APP_CFG.client_id)}</code>`
+    : '⚠️ Not set up yet — members can\'t connect Google Calendar until this is saved.';
+  document.getElementById('gcClientId').value = GCAL_APP_CFG.client_id || '';
+  document.getElementById('gcRedirectUri').value = GCAL_APP_CFG.redirect_uri
+    || (location.origin + '/api/workload/google/callback');
+  document.getElementById('gcClientSecret').value = '';
+}
+
+async function saveGcalAppConfig(){
+  const client_id     = document.getElementById('gcClientId').value.trim();
+  const client_secret = document.getElementById('gcClientSecret').value.trim();
+  const redirect_uri  = document.getElementById('gcRedirectUri').value.trim();
+  if (!client_id || !redirect_uri) return setMsg('gcCfgMsg', 'Client ID and Redirect URI are both required', 'err');
+
+  const btn = document.getElementById('gcCfgSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    GCAL_APP_CFG = await api('/api/workload/google/app-config', {
+      method: 'PUT', body: {client_id, client_secret, redirect_uri},
+    });
+    setMsg('gcCfgMsg', '', '');
+    toast('Google Calendar app config saved');
+    renderGcalAppConfig();
+  } catch(e){
+    setMsg('gcCfgMsg', e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
 function renderUsers(){
   if (!META) return;
+  renderGcalAppConfig();
   const st = msValues(document.getElementById('uStatusWrap'));
   const today = todayISO();
   const tasks = st.length ? ALL_TASKS.filter(t => st.includes(t.status)) : ALL_TASKS;
@@ -3265,6 +3351,42 @@ function shiftBookMonth(n){
   renderBooking();
 }
 
+// ── Google Calendar sync (self-service — each member connects their own) ───
+let GCAL_STATUS = null;   // {connected} — from /api/workload/google/status
+
+async function loadGcalStatus(){
+  try { GCAL_STATUS = await api('/api/workload/google/status'); }
+  catch { GCAL_STATUS = {connected: false}; }
+}
+
+function gcalWidget(){
+  if (!GCAL_STATUS) return '';
+  if (!META.google_configured){
+    return `<span class="hint" title="Ask the admin to set it up under the Users tab">📅 Google Calendar not set up yet</span>`;
+  }
+  return GCAL_STATUS.connected
+    ? `<button class="btn btn-lt" onclick="disconnectGcal()"
+        title="Your WFH/day-off/partial-day bookings sync to your Google Calendar">
+        📅 Google Calendar connected — Disconnect</button>`
+    : `<button class="btn btn-lt" onclick="connectGcal()"
+        title="Automatically add your bookings to your Google Calendar">
+        📅 Connect Google Calendar</button>`;
+}
+
+function connectGcal(){
+  location.href = '/api/workload/google/connect';
+}
+
+async function disconnectGcal(){
+  if (!confirm('Disconnect Google Calendar? Events already synced stay on your calendar until you remove them there yourself.')) return;
+  try {
+    await api('/api/workload/google/disconnect', {method: 'POST'});
+    GCAL_STATUS = {connected: false};
+    toast('Google Calendar disconnected');
+    renderBooking();
+  } catch(e){ toast(e.message, 'err'); }
+}
+
 function renderBooking(){
   if (!META) return;
   const today = todayISO();
@@ -3273,7 +3395,9 @@ function renderBooking(){
   const win = bookWindow();
   document.getElementById('bookArea').innerHTML = `
     <div class="sumcard" style="margin-bottom:14px">
-      <div class="sumcard-hd">📊 Summary</div>
+      <div class="sumcard-hd" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span>📊 Summary</span>${gcalWidget()}
+      </div>
       ${members.length ? bookSummaryTable(members, today) : `<div class="hint">No members to show.</div>`}
     </div>
     ${bookGrid(members, ALL_LEAVES, win, today)}

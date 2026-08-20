@@ -12,11 +12,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from dependencies import require_csrf, require_workload
-from services import workload_svc
+from services import google_calendar_svc, workload_svc
 from services.authz import WORKLOAD_ADMINS, WORKLOAD_MEMBERS, display_name, is_workload_admin
 from services.workload_svc import WorkloadError
 
@@ -179,6 +179,10 @@ async def meta(email: str = Depends(require_workload)):
         # So the log tab's action filter can't drift out of sync with what the
         # routes below actually record.
         "activity_actions": list(workload_svc.ACTIVITY_ACTIONS),
+        # Lets every member's Connect button tell "not set up yet" apart from
+        # "set up, but I haven't connected" without needing the admin-only
+        # /google/app-config endpoint.
+        "google_configured": await google_calendar_svc.is_configured(),
     }
 
 
@@ -418,7 +422,7 @@ async def list_leaves(
 
 
 @router.post("/leaves", dependencies=[Depends(require_csrf)])
-async def create_leave(body: LeaveCreate, email: str = Depends(require_workload)):
+async def create_leave(body: LeaveCreate, background_tasks: BackgroundTasks, email: str = Depends(require_workload)):
     try:
         created = await workload_svc.create_leave(
             email=email, kind=body.kind, start_date=body.start_date, end_date=body.end_date,
@@ -436,11 +440,15 @@ async def create_leave(body: LeaveCreate, email: str = Depends(require_workload)
         actor=email, action="leave.create",
         target=f"{body.kind.upper()} {span}" + (f" ({detail})" if detail else ""),
     )
+    # Best-effort, off the response path: whether or not the owner has
+    # connected Google Calendar (and whether the sync call itself succeeds)
+    # never affects this endpoint's result — see google_calendar_svc.sync_create.
+    background_tasks.add_task(google_calendar_svc.sync_create, created)
     return created
 
 
 @router.delete("/leaves/{leave_id}", dependencies=[Depends(require_csrf)])
-async def delete_leave(leave_id: str, email: str = Depends(require_workload)):
+async def delete_leave(leave_id: str, background_tasks: BackgroundTasks, email: str = Depends(require_workload)):
     leave = await workload_svc.get_leave(leave_id)
     if leave is None:
         raise HTTPException(404, "Booking not found")
@@ -459,6 +467,7 @@ async def delete_leave(leave_id: str, email: str = Depends(require_workload)):
         actor=email, action="leave.delete",
         target=f"{display_name(leave['email'])} · {leave['kind'].upper()} · {span}",
     )
+    background_tasks.add_task(google_calendar_svc.sync_delete, leave)
     return {"ok": True}
 
 
