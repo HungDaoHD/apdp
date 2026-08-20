@@ -949,7 +949,10 @@ async def create_leave(
 
 
 async def get_leave(leave_id: str) -> dict | None:
-    return _out(await _leaves().find_one({"_id": leave_id}))
+    doc = _out(await _leaves().find_one({"_id": leave_id}))
+    if doc is None:
+        return None
+    return (await _attach_day_equivalent([doc]))[0]
 
 
 async def delete_leave(leave_id: str) -> None:
@@ -977,7 +980,119 @@ async def list_leaves(
     if to:
         query["start_date"] = {"$lte": to}
     rows = await _leaves().find(query).sort("start_date", 1).to_list(length=None)
-    return [_out(r) for r in rows]
+    return await _attach_day_equivalent([_out(r) for r in rows])
+
+
+# ── Member working hours ─────────────────────────────────────────────────────
+# One row per member, keyed by email — a settings document, not a log, so
+# `set_member_hours` upserts in place rather than appending. Everyone starts
+# on the same default shift until the admin sets something else; nothing here
+# is self-service (see create_leave's module docstring for the contrast —
+# this one *is* gate-kept, in dependencies.require_workload_admin's caller).
+
+DEFAULT_WORK_START = "08:00"
+DEFAULT_WORK_END = "17:00"     # 9h span - the 1h lunch below = 8 working hours
+LUNCH_HOURS = 1.0
+WORK_HOURS_PER_DAY = 8.0       # the fixed day<->hours conversion factor a
+                                # partial-day booking's missed time is measured
+                                # against — independent of any one person's own
+                                # shift length, same as WFH's day-count rules.
+
+
+def _member_settings():
+    return _db()["member_settings"]
+
+
+def _default_hours(email: str) -> dict:
+    return {"email": email, "start_time": DEFAULT_WORK_START, "end_time": DEFAULT_WORK_END}
+
+
+async def get_member_hours(email: str) -> dict:
+    """{email, start_time, end_time} for *email* — the defaults if nobody has
+    set anything for them yet."""
+    who = _check_member(email, "email")
+    row = await _member_settings().find_one({"_id": who})
+    if row is None:
+        return _default_hours(who)
+    return {"email": who, "start_time": row["start_time"], "end_time": row["end_time"]}
+
+
+async def list_member_hours() -> dict[str, dict]:
+    """email -> {start_time, end_time} for every workload member in one
+    query, defaults filled in for anyone with no row — what `meta()` uses to
+    attach a shift to each member without one query per person."""
+    rows = await _member_settings().find().to_list(length=None)
+    by_email = {r["_id"]: r for r in rows}
+    return {
+        m: {"start_time": by_email[m]["start_time"], "end_time": by_email[m]["end_time"]}
+        if m in by_email else {"start_time": DEFAULT_WORK_START, "end_time": DEFAULT_WORK_END}
+        for m in WORKLOAD_MEMBERS
+    }
+
+
+async def set_member_hours(email: str, start_time: str, end_time: str, updated_by: str = "") -> dict:
+    """Admin-only (enforced by the router) — the daily shift used to convert
+    a partial-day booking's arrive/leave time into missed hours. Must leave
+    room for at least the 1h lunch; nothing here requires the span to equal
+    exactly 9h, since a shorter or longer day is the whole reason to set one."""
+    who = _check_member(email, "email")
+    if not who:
+        raise WorkloadError("email is required")
+    start = _check_time(start_time, "start_time")
+    end = _check_time(end_time, "end_time")
+    if not start or not end:
+        raise WorkloadError("start_time and end_time are both required")
+    if _time_to_hours(end) - _time_to_hours(start) <= LUNCH_HOURS:
+        raise WorkloadError(f"end_time must be at least {LUNCH_HOURS:g}h after start_time (room for the lunch break)")
+
+    await _member_settings().update_one(
+        {"_id": who},
+        {"$set": {
+            "start_time": start, "end_time": end,
+            "updated_by": (updated_by or "").strip().lower(), "updated_at": _now(),
+        }},
+        upsert=True,
+    )
+    return await get_member_hours(who)
+
+
+def _time_to_hours(value: str) -> float:
+    h, m = value.split(":")
+    return int(h) + int(m) / 60
+
+
+def partial_day_equivalent(leave: dict, start_time: str, end_time: str) -> float:
+    """A partial-day booking's missed time, as a fraction of a
+    WORK_HOURS_PER_DAY day — arrive_time late against *start_time*, leave_time
+    early against *end_time*, summed. The 1h lunch isn't separately modeled
+    (there's no lunch-window setting, only a shift start/end): if someone's
+    arrive_time falls after their own lunch would have started, this
+    over-counts that edge by up to the lunch hour — acceptable slack for a
+    rough team tally, not a payroll figure."""
+    if leave.get("kind") != "partial":
+        return 0.0
+    missed = 0.0
+    if leave.get("arrive_time"):
+        missed += max(0.0, _time_to_hours(leave["arrive_time"]) - _time_to_hours(start_time))
+    if leave.get("leave_time"):
+        missed += max(0.0, _time_to_hours(end_time) - _time_to_hours(leave["leave_time"]))
+    return missed / WORK_HOURS_PER_DAY
+
+
+async def _attach_day_equivalent(rows: list[dict]) -> list[dict]:
+    """Attach `day_equivalent` to each partial-day booking in *rows* — the
+    only kind whose day-count isn't already implied by `half`/[start, end].
+    wfh/off rows are left alone; the frontend already derives their count
+    from those two fields the same way it always has."""
+    partial_emails = {r["email"] for r in rows if r.get("kind") == "partial"}
+    if not partial_emails:
+        return rows
+    hours = await list_member_hours()
+    for r in rows:
+        if r.get("kind") == "partial":
+            h = hours.get(r["email"]) or _default_hours(r["email"])
+            r["day_equivalent"] = round(partial_day_equivalent(r, h["start_time"], h["end_time"]), 4)
+    return rows
 
 
 # ── Activity log ──────────────────────────────────────────────────────────────
@@ -994,6 +1109,7 @@ ACTIVITY_ACTIONS: tuple[str, ...] = (
     "project.create", "project.update", "project.delete",
     "task.create", "task.update", "task.delete", "task.bulk_assignee",
     "leave.create", "leave.delete",
+    "member.set_hours",
 )
 
 # Fields whose before/after is worth recording. Anything not listed (e.g.

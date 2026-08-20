@@ -96,6 +96,14 @@ class LeaveCreate(BaseModel):
     note:        str = Field(default="", max_length=500)
 
 
+class MemberHours(BaseModel):
+    """The daily shift used to convert a partial-day booking's arrive/leave
+    time into missed hours (see workload_svc.partial_day_equivalent). Admin
+    only — see the PUT route."""
+    start_time: str = Field(max_length=5)
+    end_time:   str = Field(max_length=5)
+
+
 def _patch(body: BaseModel, *, drop: set[str] = frozenset()) -> dict:
     """Only the fields the client actually sent.
 
@@ -149,6 +157,7 @@ def _plabel(project: dict | None) -> tuple[str, str]:
 @router.get("/meta")
 async def meta(email: str = Depends(require_workload)):
     """Roster, dropdown options, and what this caller is allowed to do."""
+    hours = await workload_svc.list_member_hours()
     return {
         "me": {
             "email":    email,
@@ -156,7 +165,10 @@ async def meta(email: str = Depends(require_workload)):
             "is_admin": is_workload_admin(email),
         },
         "members": [
-            {"email": m, "name": display_name(m), "is_admin": m in WORKLOAD_ADMINS}
+            {
+                "email": m, "name": display_name(m), "is_admin": m in WORKLOAD_ADMINS,
+                "start_time": hours[m]["start_time"], "end_time": hours[m]["end_time"],
+            }
             for m in WORKLOAD_MEMBERS
         ],
         "project_types": await workload_svc.project_types(),
@@ -441,3 +453,25 @@ async def delete_leave(leave_id: str, email: str = Depends(require_workload)):
         target=f"{display_name(leave['email'])} · {leave['kind'].upper()} · {span}",
     )
     return {"ok": True}
+
+
+# ── Member working hours ─────────────────────────────────────────────────────
+
+@router.put("/members/{member_email}/hours", dependencies=[Depends(require_csrf)])
+async def set_member_hours(member_email: str, body: MemberHours, email: str = Depends(require_workload)):
+    """Admin only — everyone else can see every shift (it rides along on
+    /meta), but only the admin sets one, same gate as WORKLOAD_ADMINS
+    elsewhere in this router."""
+    if not is_workload_admin(email):
+        raise HTTPException(403, "Only the workload admin can set working hours")
+    try:
+        updated = await workload_svc.set_member_hours(
+            member_email, body.start_time, body.end_time, updated_by=email,
+        )
+    except WorkloadError as exc:
+        raise _bad(exc)
+    await _log(
+        actor=email, action="member.set_hours",
+        target=f"{display_name(updated['email'])} · {updated['start_time']}–{updated['end_time']}",
+    )
+    return updated

@@ -348,6 +348,9 @@ textarea.inp{resize:vertical;min-height:56px}
 .ucard-hd{display:flex;align-items:center;gap:8px}
 .ucard-hd .atag{font-size:12px;padding:4px 9px}
 .ucard-nm{font-size:13.5px;font-weight:700;flex:1}
+.ucard-hours{display:flex;align-items:center;gap:6px;margin-top:-5px}
+.uh-edit{border:none;background:none;cursor:pointer;color:#aaa;font-size:11px;padding:1px 4px;border-radius:4px;line-height:1}
+.uh-edit:hover{color:#f36a17;background:#fff4ee}
 .ustats{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
 .ustat{background:#f8f9fb;border-radius:7px;padding:7px 4px;text-align:center}
 .ustat b{display:block;font-size:16px;line-height:1.3}
@@ -1024,6 +1027,34 @@ textarea.inp{resize:vertical;min-height:56px}
       <div class="mft-status" id="bfStatusMsg" style="display:none"></div>
       <button class="btn btn-lt" onclick="closeBookDlg()">Cancel</button>
       <button class="btn btn-suc" id="bfSaveBtn" onclick="saveBooking()">Book</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ WORKING HOURS — admin-only, edit from a Users-tab card ══ -->
+<div class="mov" id="hoursDlg" style="display:none;z-index:1050">
+  <div class="mdlg" style="width:320px">
+    <div class="mhd">
+      <strong>Working hours — <span id="hfWho"></span></strong>
+      <button class="mbtn-close" onclick="closeHoursDlg()">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="row3" style="grid-template-columns:1fr 1fr">
+        <div class="fld">
+          <label>START</label>
+          <input class="inp" type="time" id="hfStart">
+        </div>
+        <div class="fld">
+          <label>END</label>
+          <input class="inp" type="time" id="hfEnd">
+        </div>
+      </div>
+      <div class="hint">Used to convert a partial-day booking's arrive/leave time into a day-off equivalent (1 day off = 8 working hours, 1h lunch already left out of the span).</div>
+    </div>
+    <div class="mft">
+      <div class="mft-status" id="hfStatusMsg" style="display:none"></div>
+      <button class="btn btn-lt" onclick="closeHoursDlg()">Cancel</button>
+      <button class="btn btn-suc" id="hfSaveBtn" onclick="saveHours()">Save</button>
     </div>
   </div>
 </div>
@@ -2526,6 +2557,10 @@ function renderUsers(){
         ${m.is_admin ? '<span class="ttag">admin</span>' : ''}
         ${m.email === META.me.email ? '<span class="stag stag-ongoing">you</span>' : ''}
       </div>
+      <div class="ucard-hours hint">⏱ ${m.start_time}–${m.end_time}
+        ${META.me.is_admin ? `<button class="uh-edit" onclick="openHoursDlg('${esc(m.email)}')"
+          title="Edit working hours">✎ edit</button>` : ''}
+      </div>
       <div class="ustats" style="grid-template-columns:repeat(5,1fr)">
         <div class="ustat"><b>${projects.length}</b><span>Projects</span></div>
         <div class="ustat"><b>${projComplete}</b><span>Proj. done</span></div>
@@ -2592,6 +2627,47 @@ function openUserDlg(email){
   document.getElementById('userDlg').style.display = 'flex';
 }
 function closeUserDlg(){ document.getElementById('userDlg').style.display = 'none'; }
+
+/** Admin-only working-hours editor for one member's card — see
+ *  set_member_hours in workload_svc.py for what these two times feed into
+ *  (a partial-day booking's day-off equivalent). */
+function openHoursDlg(email){
+  const m = META.members.find(x => x.email === email);
+  if (!m) return;
+  document.getElementById('hfWho').textContent = m.name;
+  document.getElementById('hfStart').value = m.start_time;
+  document.getElementById('hfEnd').value   = m.end_time;
+  document.getElementById('hfSaveBtn').dataset.email = email;
+  setMsg('hfStatusMsg', '');
+  document.getElementById('hoursDlg').style.display = 'flex';
+}
+function closeHoursDlg(){ document.getElementById('hoursDlg').style.display = 'none'; }
+
+async function saveHours(){
+  const email = document.getElementById('hfSaveBtn').dataset.email;
+  const start_time = document.getElementById('hfStart').value;
+  const end_time   = document.getElementById('hfEnd').value;
+  if (!start_time || !end_time) return setMsg('hfStatusMsg', 'Both times are required', 'err');
+
+  const btn = document.getElementById('hfSaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api(`/api/workload/members/${encodeURIComponent(email)}/hours`, {
+      method: 'PUT', body: {start_time, end_time},
+    });
+    const m = META.members.find(x => x.email === email);
+    if (m){ m.start_time = start_time; m.end_time = end_time; }
+    closeHoursDlg();
+    toast('Working hours updated', 'ok');
+    renderUsers();
+    if (TAB === 'book') renderBooking();
+    if (TAB === 'dash') renderDashboard();
+  } catch(e){
+    setMsg('hfStatusMsg', e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
 
 // ════════════════════════════════════════════════════
 // DASHBOARD
@@ -2872,20 +2948,21 @@ function bookSummaryTable(members, today){
   const rows = members.map(m => {
     const wfhM = leaveMonthUsage(m.email, 'wfh', month);
     const wfhT = leaveTotalUsage(m.email, 'wfh');
-    const offM = leaveMonthUsage(m.email, 'off', month);
-    const offT = leaveTotalUsage(m.email, 'off');
+    const offM = offDaysMonthUsage(m.email, month);
+    const offT = offDaysTotalUsage(m.email);
     return `<tr>
       <td class="un">${assigneeTag(m.email, m.name)} ${esc(m.name)}</td>
       <td class="num${wfhM.days >= WFH_MAX_DAYS_PER_MONTH ? ' warn' : ''}">${wfhM.days}d · ${wfhM.count}x</td>
       <td class="num">${wfhT.days || '—'}d</td>
-      <td class="num">${offM.days || '—'}d</td>
-      <td class="num">${offT.days || '—'}d</td>
+      <td class="num">${offM || '—'}d</td>
+      <td class="num">${offT || '—'}d</td>
     </tr>`;
   }).join('');
   return `<table class="sumtbl"><thead><tr>
       <th>Member</th>
       <th class="num">WFH this month</th><th class="num">WFH total</th>
-      <th class="num">Off this month</th><th class="num">Off total</th>
+      <th class="num" title="Includes partial-day (late arrival / early leave) bookings, converted to a day-equivalent">Off this month</th>
+      <th class="num" title="Includes partial-day (late arrival / early leave) bookings, converted to a day-equivalent">Off total</th>
     </tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
@@ -3355,6 +3432,30 @@ function leaveTotalUsage(email, kind){
   const days = rows.reduce((s, l) => s + (l.half ? 0.5 : daysBetween(l.start_date, l.end_date) + 1), 0);
   return {days, count: rows.length};
 }
+
+/** Sum of `day_equivalent` (server-computed — see workload_svc.
+ *  partial_day_equivalent) across *email*'s partial-day bookings, filtered
+ *  to *month* when given. This is the only kind whose day-count isn't
+ *  already covered by leaveMonthUsage/leaveTotalUsage's half/[start,end]
+ *  math, which is why it's folded in separately rather than inside those. */
+function partialDaysUsage(email, month){
+  return ALL_LEAVES
+    .filter(l => l.email === email && l.kind === 'partial' && (!month || l.start_date.slice(0, 7) === month))
+    .reduce((s, l) => s + (l.day_equivalent || 0), 0);
+}
+
+/** "Off" day count, partial-day bookings included — what the Summary
+ *  table's Off columns show, per the rule that a partial day off counts
+ *  toward the total the same as a full/half OFF booking does. */
+function offDaysMonthUsage(email, month){
+  const off = leaveMonthUsage(email, 'off', month);
+  return round2(off.days + partialDaysUsage(email, month));
+}
+function offDaysTotalUsage(email){
+  const off = leaveTotalUsage(email, 'off');
+  return round2(off.days + partialDaysUsage(email, null));
+}
+function round2(n){ return Math.round(n * 100) / 100; }
 
 /** The existing booking (if any) touching the day right before *start* or
  *  right after *end* — mirrors workload_svc._find_adjacent_leave, including
