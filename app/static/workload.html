@@ -435,6 +435,7 @@ textarea.inp{resize:vertical;min-height:56px}
 .bk-c.we i{background:#eceef2;box-shadow:inset 0 0 0 1px #e2e5ea}
 .bk-c i.wfh{background:#e3edfc}
 .bk-c i.off{background:#fde7e0}
+.bk-c i.partial{background:#f1e6fc}
 .bk-c i.half{opacity:.6}
 .bk-c i.mine{cursor:pointer}
 .bk-c i.mine:hover{outline:2px solid #f36a17;outline-offset:-2px}
@@ -980,8 +981,9 @@ textarea.inp{resize:vertical;min-height:56px}
       <div class="fld">
         <label>TYPE</label>
         <div class="seg" style="width:100%">
-          <button id="bfKindWfh" class="on" style="flex:1" onclick="setBookKind('wfh')">🏠 WFH</button>
-          <button id="bfKindOff"           style="flex:1" onclick="setBookKind('off')">🌴 Day off</button>
+          <button id="bfKindWfh"     class="on" style="flex:1" onclick="setBookKind('wfh')">🏠 WFH</button>
+          <button id="bfKindOff"                style="flex:1" onclick="setBookKind('off')">🌴 Day off</button>
+          <button id="bfKindPartial"            style="flex:1" onclick="setBookKind('partial')">⏰ Partial day</button>
         </div>
       </div>
       <div class="row3">
@@ -993,13 +995,23 @@ textarea.inp{resize:vertical;min-height:56px}
           <label>TO</label>
           <input class="inp" type="date" id="bfTo" onchange="onBookDateChange()">
         </div>
-        <div class="fld">
+        <div class="fld" id="bfHalfFld">
           <label>HALF DAY</label>
           <select class="inp" id="bfHalf" onchange="updateBookQuota()">
             <option value="">Full day</option>
             <option value="am">Morning</option>
             <option value="pm">Afternoon</option>
           </select>
+        </div>
+      </div>
+      <div class="row3" id="bfPartialRow" style="display:none">
+        <div class="fld">
+          <label>ARRIVE AT</label>
+          <input class="inp" type="time" id="bfArrive" onchange="updateBookQuota()">
+        </div>
+        <div class="fld">
+          <label>LEAVE AT</label>
+          <input class="inp" type="time" id="bfLeave" onchange="updateBookQuota()">
         </div>
       </div>
       <div class="hint" id="bfQuota"></div>
@@ -1738,14 +1750,15 @@ function leaveOnDay(email, day){
 }
 
 function leaveNoteText(l, name){
-  return `${esc(name)} · ${l.kind === 'wfh' ? 'WFH' : 'Day off'}${l.half ? ' · ' + l.half.toUpperCase() : ''}`;
+  const detail = leaveDetail(l);
+  return `${esc(name)} · ${KIND_META[l.kind].label}${detail ? ' · ' + detail : ''}`;
 }
 
-/** Small icon badge for one booking — same 🏠/🌴 vocabulary as the Booking
+/** Small icon badge for one booking — same icon vocabulary as the Booking
  *  tab, sized down to fit inside a calendar cell. */
 function leaveBadge(l, name){
   return `<span class="leave-b ${l.kind}${l.half ? ' half' : ''}" title="${leaveNoteText(l, name)}"
-    >${l.kind === 'wfh' ? '🏠' : '🌴'}</span>`;
+    >${KIND_META[l.kind].icon}</span>`;
 }
 
 /** Aggregate row for a cell with no single "this member" to key off of
@@ -2836,7 +2849,10 @@ function dashBookingCard(members, leaves, today){
   const todayRows = members.map(m => {
     const mine = leaves.filter(l => l.email === m.email && l.start_date <= today && l.end_date >= today);
     if (!mine.length) return '';
-    const pills = mine.map(l => `<span class="bk-pill">${l.kind === 'wfh' ? '🏠 WFH' : '🌴 Off'}${l.half ? ` · ${l.half.toUpperCase()}` : ''}</span>`).join('');
+    const pills = mine.map(l => {
+      const detail = leaveDetail(l);
+      return `<span class="bk-pill">${KIND_META[l.kind].icon} ${KIND_META[l.kind].label}${detail ? ` · ${detail}` : ''}</span>`;
+    }).join('');
     return `<div class="bk-today-row">${assigneeTag(m.email, m.name)} ${esc(m.name)} ${pills}</div>`;
   }).filter(Boolean).join('');
 
@@ -2844,7 +2860,7 @@ function dashBookingCard(members, leaves, today){
     <div class="sumcard-hd">🏖️ Booking
       <span class="hint" style="cursor:pointer;margin-left:auto" onclick="switchTab('book')">Book / view all →</span>
     </div>
-    ${todayRows ? `<div class="bk-today">${todayRows}</div>` : `<div class="hint">Nobody is WFH or off today.</div>`}
+    ${todayRows ? `<div class="bk-today">${todayRows}</div>` : `<div class="hint">Nobody is out today.</div>`}
     ${bookSummaryTable(members, today)}
   </div>`;
 }
@@ -3127,8 +3143,8 @@ function dashByUser(members, tasks, projects, load, today){
 }
 
 // ════════════════════════════════════════════════════
-// BOOKING — WFH & day off. Self-service; not yet tied to the calendar or
-// capacity views (see the module docstring in workload_svc.py).
+// BOOKING — WFH, day off & partial day. Self-service; not yet tied to the
+// calendar or capacity views (see the module docstring in workload_svc.py).
 // ════════════════════════════════════════════════════
 /** Mirrors the caps enforced server-side in workload_svc.py, so the dialog
  *  can show a live "you'd be over" hint before the round trip — the server
@@ -3137,6 +3153,25 @@ function dashByUser(members, tasks, projects, load, today){
 const WFH_MAX_DAYS_PER_MONTH = 3;
 const WFH_MAX_BOOKINGS_PER_MONTH = 4;
 const OFF_MAX_CONSECUTIVE_DAYS = 3;
+
+/** Icon + label per kind, shared by every place a booking renders (dialog
+ *  legend, calendar badge, grid, list, Dashboard card) so the three never
+ *  drift out of sync with each other. */
+const KIND_META = {
+  wfh:     {icon: '🏠', label: 'WFH'},
+  off:     {icon: '🌴', label: 'Day off'},
+  partial: {icon: '⏰', label: 'Partial day'},
+};
+
+/** The half-day / arrive-leave suffix for one booking, e.g. "AM" or
+ *  "arrive 09:30 · leave 15:00" — whichever of the two the kind actually uses. */
+function leaveDetail(l){
+  if (l.half) return l.half.toUpperCase();
+  const bits = [];
+  if (l.arrive_time) bits.push(`arrive ${l.arrive_time}`);
+  if (l.leave_time)  bits.push(`leave ${l.leave_time}`);
+  return bits.join(' · ');
+}
 
 let BOOK_MONTH = 0;   // months from the current one — same idiom as HM_MONTH
 let BOOK_KIND  = 'wfh';
@@ -3187,12 +3222,13 @@ function bookGrid(members, leaves, win, today){
         return `<td class="bk-c${isWeekend(d) ? ' we' : ''}"><i></i></td>`;
       }
       const canCancel = l.email === META.me.email || META.me.is_admin;
-      const label = `${l.kind === 'wfh' ? 'WFH' : 'Day off'}${l.half ? ' · ' + l.half.toUpperCase() : ''}`;
+      const detail = leaveDetail(l);
+      const label = `${KIND_META[l.kind].label}${detail ? ' · ' + detail : ''}`;
       return `<td class="bk-c${isWeekend(d) ? ' we' : ''}"><i
         class="${l.kind}${l.half ? ' half' : ''}${canCancel ? ' mine' : ''}"
         title="${esc(m.name)} · ${label} · ${fmtFull(d)}${l.note ? ' · ' + esc(l.note) : ''}"
         ${canCancel ? `onclick="cancelBookingPrompt('${l.id}')"` : ''}
-        >${l.kind === 'wfh' ? '🏠' : '🌴'}</i></td>`;
+        >${KIND_META[l.kind].icon}</i></td>`;
     }).join('');
     return `<tr><td class="hm-name">${assigneeTag(m.email, m.name)} ${esc(m.name)}</td>${cells}</tr>`;
   }).join('');
@@ -3211,7 +3247,7 @@ function bookGrid(members, leaves, win, today){
       <tbody>${rows}</tbody>
     </table></div>` : `<div class="hint">No members to show.</div>`}
     <div class="hm-lg">
-      <span>🏠 WFH</span><span>🌴 Day off</span>
+      <span>🏠 WFH</span><span>🌴 Day off</span><span>⏰ Partial day</span>
       <span>a faded icon is a half-day booking</span>
       <span>click your own (or, as admin, anyone's) to cancel it</span>
     </div>
@@ -3231,9 +3267,10 @@ function bookList(members, leaves, today){
   const trs = rows.map(l => {
     const canCancel = l.email === META.me.email || META.me.is_admin;
     const span = l.start_date === l.end_date ? fmtFull(l.start_date) : `${fmtDM(l.start_date)} – ${fmtFull(l.end_date)}`;
+    const detail = leaveDetail(l);
     return `<tr class="${l.end_date < today ? 'bk-past' : ''}">
       <td>${assigneeTag(l.email, nameOf(l.email))} ${esc(nameOf(l.email))}</td>
-      <td>${l.kind === 'wfh' ? '🏠 WFH' : '🌴 Day off'}${l.half ? ` · ${l.half.toUpperCase()}` : ''}</td>
+      <td>${KIND_META[l.kind].icon} ${KIND_META[l.kind].label}${detail ? ` · ${detail}` : ''}</td>
       <td>${span}</td>
       <td>${esc(l.note || '')}</td>
       <td>${canCancel ? `<button class="btn btn-dng" style="padding:3px 9px;font-size:11px"
@@ -3253,9 +3290,11 @@ function openBookDlg(){
   document.getElementById('bfFrom').value = todayISO();
   document.getElementById('bfTo').value   = todayISO();
   document.getElementById('bfHalf').value = '';
+  document.getElementById('bfArrive').value = '';
+  document.getElementById('bfLeave').value = '';
   document.getElementById('bfNote').value = '';
   setMsg('bfStatusMsg', '');
-  setBookKind('wfh');   // also syncs TO, half-day, and the quota hint
+  setBookKind('wfh');   // also syncs TO, half-day/arrive-leave, and the quota hint
   document.getElementById('bookDlg').style.display = 'flex';
 }
 function closeBookDlg(){ document.getElementById('bookDlg').style.display = 'none'; }
@@ -3264,11 +3303,19 @@ function setBookKind(k){
   BOOK_KIND = k;
   document.getElementById('bfKindWfh').classList.toggle('on', k === 'wfh');
   document.getElementById('bfKindOff').classList.toggle('on', k === 'off');
+  document.getElementById('bfKindPartial').classList.toggle('on', k === 'partial');
   const to = document.getElementById('bfTo');
-  // WFH is always a single day now — a multi-day span *is* consecutive WFH,
-  // which is no longer allowed — so the TO field has nothing to offer here.
-  to.disabled = k === 'wfh';
-  if (k === 'wfh') to.value = document.getElementById('bfFrom').value;
+  // WFH and a partial day are both always a single day — a multi-day span
+  // *is* consecutive WFH (booked as separate days instead), and a partial
+  // day is one arrive/leave time on one day — so TO has nothing to offer.
+  to.disabled = k === 'wfh' || k === 'partial';
+  if (to.disabled) to.value = document.getElementById('bfFrom').value;
+  document.getElementById('bfHalfFld').style.display = k === 'partial' ? 'none' : '';
+  document.getElementById('bfPartialRow').style.display = k === 'partial' ? 'flex' : 'none';
+  if (k !== 'partial'){
+    document.getElementById('bfArrive').value = '';
+    document.getElementById('bfLeave').value = '';
+  }
   onBookDateChange();
 }
 
@@ -3279,7 +3326,7 @@ function setBookKind(k){
 function onBookDateChange(){
   const from = document.getElementById('bfFrom');
   const to   = document.getElementById('bfTo');
-  if (BOOK_KIND === 'wfh'){
+  if (BOOK_KIND === 'wfh' || BOOK_KIND === 'partial'){
     to.value = from.value;   // TO is disabled, but stays in lockstep for saveBooking() to read
   } else {
     if (from.value && !to.value) to.value = from.value;
@@ -3289,7 +3336,7 @@ function onBookDateChange(){
   const half = document.getElementById('bfHalf');
   const single = from.value && from.value === to.value;
   if (!single) half.value = '';
-  half.disabled = !single;
+  half.disabled = !single || BOOK_KIND === 'partial';
   updateBookQuota();
 }
 
@@ -3309,16 +3356,20 @@ function leaveTotalUsage(email, kind){
   return {days, count: rows.length};
 }
 
-/** Whether *email* already has any booking — WFH or off — touching the day
- *  right before *start* or right after *end*. Kind-agnostic: mirrors
- *  workload_svc._has_adjacent_leave, including the same shortcut of only
- *  checking the two boundary dates (see that function's docstring for why
- *  that's enough once overlaps are already ruled out). Adjacency isn't
- *  forbidden — it just requires a note, checked separately in
- *  updateBookQuota()/saveBooking(). */
-function hasAdjacentLeave(email, start, end){
+/** The existing booking (if any) touching the day right before *start* or
+ *  right after *end* — mirrors workload_svc._find_adjacent_leave, including
+ *  the same shortcut of only checking the two boundary dates (see that
+ *  function's docstring for why that's enough once overlaps are already
+ *  ruled out). Its `kind` decides whether the pairing needs a note. */
+function findAdjacentLeave(email, start, end){
   const prev = addDays(start, -1), next = addDays(end, 1);
-  return ALL_LEAVES.some(l => l.email === email && (l.end_date === prev || l.start_date === next));
+  return ALL_LEAVES.find(l => l.email === email && (l.end_date === prev || l.start_date === next));
+}
+
+/** Mirrors workload_svc._adjacency_needs_note: every adjacent pairing needs
+ *  a note except two OFF bookings landing back-to-back. */
+function adjacencyNeedsNote(kind, adjacentKind){
+  return !(kind === 'off' && adjacentKind === 'off');
 }
 
 function updateBookQuota(){
@@ -3329,8 +3380,8 @@ function updateBookQuota(){
   const el = document.getElementById('bfQuota');
   if (!from){ el.textContent = ''; el.className = 'hint'; return; }
 
-  // Neither kind is bookable on a weekend — checked first since it applies
-  // to both kinds, and makes every other hint moot until it's fixed.
+  // None of the three kinds is bookable on a weekend — checked first since
+  // it applies to all of them, and makes every other hint moot until fixed.
   for (let d = from; d <= to; d = addDays(d, 1)){
     if (isWeekend(d)){
       el.textContent = `WFH/day off can't be booked on Saturday or Sunday (${fmtFull(d)} is one).`;
@@ -3338,10 +3389,11 @@ function updateBookQuota(){
       return;
     }
   }
-  // Adjacency (cross-kind) is allowed, but the server requires a note
-  // explaining why until one is given — checked once here, before either
-  // kind's own branch, since it applies to both.
-  if (hasAdjacentLeave(META.me.email, from, to) && !note){
+  // Adjacency is allowed, but (except OFF next to OFF) the server requires a
+  // note explaining why until one is given — checked once here, before any
+  // kind-specific branch, since it can apply to all three.
+  const adj = findAdjacentLeave(META.me.email, from, to);
+  if (adj && adjacencyNeedsNote(BOOK_KIND, adj.kind) && !note){
     el.textContent = `This date is right next to one of your existing bookings — add a note explaining why.`;
     el.className = 'hint err';
     return;
@@ -3351,6 +3403,23 @@ function updateBookQuota(){
   if (BOOK_KIND === 'off'){
     el.textContent = `${half ? 0.5 : wholeDays} day(s) off · a booking may span at most ${OFF_MAX_CONSECUTIVE_DAYS} consecutive day(s)`;
     el.className = 'hint' + (wholeDays > OFF_MAX_CONSECUTIVE_DAYS ? ' err' : '');
+    return;
+  }
+  if (BOOK_KIND === 'partial'){
+    const arrive = document.getElementById('bfArrive').value;
+    const leave  = document.getElementById('bfLeave').value;
+    if (!arrive && !leave){
+      el.textContent = `Set an arrive time, a leave time, or both.`;
+      el.className = 'hint err';
+      return;
+    }
+    if (arrive && leave && arrive >= leave){
+      el.textContent = `Arrive time must be earlier than leave time.`;
+      el.className = 'hint err';
+      return;
+    }
+    el.textContent = [arrive && `Arrive ${arrive}`, leave && `Leave ${leave}`].filter(Boolean).join(' · ');
+    el.className = 'hint';
     return;
   }
   const span = half ? 0.5 : wholeDays;
@@ -3363,10 +3432,19 @@ function updateBookQuota(){
 async function saveBooking(){
   const from = document.getElementById('bfFrom').value;
   const to   = document.getElementById('bfTo').value || from;
-  const half = document.getElementById('bfHalf').value || null;
+  const half = BOOK_KIND === 'partial' ? null : (document.getElementById('bfHalf').value || null);
+  const arrive_time = BOOK_KIND === 'partial' ? (document.getElementById('bfArrive').value || null) : null;
+  const leave_time  = BOOK_KIND === 'partial' ? (document.getElementById('bfLeave').value || null) : null;
   const note = document.getElementById('bfNote').value.trim();
   if (!from) return setMsg('bfStatusMsg', 'Start date is required', 'err');
-  if (hasAdjacentLeave(META.me.email, from, to) && !note){
+  if (BOOK_KIND === 'partial' && !arrive_time && !leave_time){
+    return setMsg('bfStatusMsg', 'Set an arrive time, a leave time, or both', 'err');
+  }
+  if (BOOK_KIND === 'partial' && arrive_time && leave_time && arrive_time >= leave_time){
+    return setMsg('bfStatusMsg', 'Arrive time must be earlier than leave time', 'err');
+  }
+  const adj = findAdjacentLeave(META.me.email, from, to);
+  if (adj && adjacencyNeedsNote(BOOK_KIND, adj.kind) && !note){
     return setMsg('bfStatusMsg', 'This booking is right next to one of your existing bookings — add a note explaining why', 'err');
   }
 
@@ -3374,7 +3452,7 @@ async function saveBooking(){
   btn.disabled = true; btn.textContent = 'Booking…';
   try {
     await api('/api/workload/leaves', {method: 'POST', body: {
-      kind: BOOK_KIND, start_date: from, end_date: to, half, note,
+      kind: BOOK_KIND, start_date: from, end_date: to, half, arrive_time, leave_time, note,
     }});
     closeBookDlg();
     toast('Booked', 'ok');

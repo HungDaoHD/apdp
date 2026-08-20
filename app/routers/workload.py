@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api/workload", tags=["workload"])
 Status = Literal["pending", "ongoing", "complete", "cancel"]          # tasks
 ProjectStatus = Literal["pending", "ongoing", "complete", "cancel"]    # projects — a distinct domain
 View = Literal["month", "week", "day"]
-LeaveKind = Literal["wfh", "off"]
+LeaveKind = Literal["wfh", "off", "partial"]
 Half = Literal["am", "pm"]
 
 
@@ -82,12 +82,18 @@ class BulkAssignee(BaseModel):
 
 class LeaveCreate(BaseModel):
     """No `email` field — booking is self-service only for now; an admin
-    booking on someone else's behalf isn't supported yet."""
-    kind:       LeaveKind
-    start_date: str
-    end_date:   str | None = None
-    half:       Half | None = None
-    note:       str = Field(default="", max_length=500)
+    booking on someone else's behalf isn't supported yet.
+
+    `half` applies to wfh/off; `arrive_time`/`leave_time` (HH:MM) apply to a
+    partial-day booking instead — workload_svc rejects mixing the two.
+    """
+    kind:        LeaveKind
+    start_date:  str
+    end_date:    str | None = None
+    half:        Half | None = None
+    arrive_time: str | None = Field(default=None, max_length=5)
+    leave_time:  str | None = Field(default=None, max_length=5)
+    note:        str = Field(default="", max_length=500)
 
 
 def _patch(body: BaseModel, *, drop: set[str] = frozenset()) -> dict:
@@ -381,7 +387,7 @@ async def calendar(
         raise _bad(exc)
 
 
-# ── Leave / booking (WFH & day off) ─────────────────────────────────────────
+# ── Leave / booking (WFH, day off & partial day) ────────────────────────────
 
 @router.get("/leaves")
 async def list_leaves(
@@ -402,16 +408,20 @@ async def list_leaves(
 async def create_leave(body: LeaveCreate, email: str = Depends(require_workload)):
     try:
         created = await workload_svc.create_leave(
-            email=email, kind=body.kind, start_date=body.start_date,
-            end_date=body.end_date, half=body.half, note=body.note, created_by=email,
+            email=email, kind=body.kind, start_date=body.start_date, end_date=body.end_date,
+            half=body.half, arrive_time=body.arrive_time, leave_time=body.leave_time,
+            note=body.note, created_by=email,
         )
     except WorkloadError as exc:
         raise _bad(exc)
     span = created["start_date"] if created["start_date"] == created["end_date"] \
         else f"{created['start_date']} → {created['end_date']}"
+    detail = created["half"].upper() if created["half"] else \
+        "/".join(filter(None, [created["arrive_time"] and f"in {created['arrive_time']}",
+                                created["leave_time"] and f"out {created['leave_time']}"]))
     await _log(
         actor=email, action="leave.create",
-        target=f"{body.kind.upper()} {span}" + (f" ({created['half'].upper()})" if created["half"] else ""),
+        target=f"{body.kind.upper()} {span}" + (f" ({detail})" if detail else ""),
     )
     return created
 

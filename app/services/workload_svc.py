@@ -754,16 +754,18 @@ async def calendar(view: str, anchor: str, **filters) -> dict:
     }
 
 
-# ── Leave / booking (WFH & day off) ─────────────────────────────────────────
+# ── Leave / booking (WFH, day off & partial day) ────────────────────────────
 # Self-service, no approval step — each kind is bounded only by the quota it
 # carries. A separate collection from `tasks` since a booking isn't work to
 # schedule, it's the opposite: time a member is *not* available for it. This
 # stands alone for now — nothing here touches the calendar or capacity views.
 
-LEAVE_KINDS: tuple[str, ...] = ("wfh", "off")
+LEAVE_KINDS: tuple[str, ...] = ("wfh", "off", "partial")
 WFH_MAX_DAYS_PER_MONTH = 3
 WFH_MAX_BOOKINGS_PER_MONTH = 4
 OFF_MAX_CONSECUTIVE_DAYS = 3
+
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 def _check_leave_kind(kind: str) -> str:
@@ -778,6 +780,15 @@ def _check_half(half: str | None) -> str | None:
     if half not in ("am", "pm"):
         raise WorkloadError(f"half must be 'am' or 'pm', got {half!r}")
     return half
+
+
+def _check_time(value: str | None, field: str) -> str | None:
+    """HH:MM, 24-hour — the format a plain <input type=time> sends."""
+    if not value:
+        return None
+    if not _TIME_RE.match(value):
+        raise WorkloadError(f"{field} must be HH:MM (24-hour), got {value!r}")
+    return value
 
 
 def _leave_span_days(start: str, end: str, half: str | None) -> float:
@@ -808,8 +819,9 @@ async def _wfh_month_usage(email: str, month: str) -> tuple[float, int]:
 
 
 def _check_no_weekend(start: str, end: str) -> None:
-    """Neither kind is bookable on a Saturday or Sunday — every day the span
-    touches, not just its ends, since a multi-day OFF booking can cross one."""
+    """None of the three kinds is bookable on a Saturday or Sunday — every
+    day the span touches, not just its ends, since a multi-day OFF booking
+    can cross one."""
     d = date.fromisoformat(start)
     last = date.fromisoformat(end)
     while d <= last:
@@ -818,14 +830,10 @@ def _check_no_weekend(start: str, end: str) -> None:
         d += timedelta(days=1)
 
 
-async def _has_adjacent_leave(email: str, start: str, end: str) -> bool:
-    """Whether *email* already has *any* booking — WFH or off — touching the
-    day right before *start* or right after *end*. Kind-agnostic: a WFH day
-    counts as adjacent to another WFH day, an OFF day, or vice versa.
-
-    Adjacency isn't forbidden on its own — `create_leave` allows it as long
-    as a note is given, so a deliberate back-to-back booking reads as
-    intentional rather than a mistake.
+async def _find_adjacent_leave(email: str, start: str, end: str) -> dict | None:
+    """The existing booking (if any) touching the day right before *start* or
+    right after *end* — its `kind` decides whether this particular pairing
+    needs a note (see `_adjacency_needs_note`).
 
     Only the two boundary dates need checking, not every existing booking's
     full span: `_leave_overlaps` has already ruled out anything overlapping
@@ -839,7 +847,15 @@ async def _has_adjacent_leave(email: str, start: str, end: str) -> bool:
     return await _leaves().find_one({
         "email": email,
         "$or": [{"end_date": prev_day}, {"start_date": next_day}],
-    }) is not None
+    })
+
+
+def _adjacency_needs_note(kind: str, adjacent_kind: str) -> bool:
+    """A note is required for every adjacent pairing except OFF next to OFF —
+    splitting a longer break into separate day-off bookings that happen to
+    land back-to-back is completely ordinary and needs no explanation. Any
+    pairing that touches WFH or a partial day still does."""
+    return not (kind == "off" and adjacent_kind == "off")
 
 
 async def create_leave(
@@ -849,6 +865,8 @@ async def create_leave(
     start_date: str,
     end_date: str | None = None,
     half: str | None = None,
+    arrive_time: str | None = None,
+    leave_time: str | None = None,
     note: str = "",
     created_by: str = "",
 ) -> dict:
@@ -857,6 +875,12 @@ async def create_leave(
         raise WorkloadError("email is required")
     kind = _check_leave_kind(kind)
     half = _check_half(half)
+    arrive = _check_time(arrive_time, "arrive_time")
+    leave = _check_time(leave_time, "leave_time")
+    if kind != "partial" and (arrive or leave):
+        raise WorkloadError("arrive_time/leave_time only apply to a partial-day booking")
+    if kind == "partial" and half:
+        raise WorkloadError("half doesn't apply to a partial-day booking — use arrive_time/leave_time instead")
     start = _check_date(start_date, "start_date")
     if not start:
         raise WorkloadError("start_date is required")
@@ -869,17 +893,17 @@ async def create_leave(
 
     if await _leave_overlaps(who, start, end):
         raise WorkloadError(f"{display_name(who)} already has a booking overlapping this date range")
-    if await _has_adjacent_leave(who, start, end) and not note.strip():
-        # Adjacent bookings are allowed — back-to-back WFH/off is a real
-        # pattern, not a mistake by default — but only with a stated reason,
-        # so it reads as a deliberate choice. Applies across kinds: an OFF
-        # booking ending Wednesday needs the same note from a WFH booking
-        # starting Thursday as it would from another OFF booking there.
+    adjacent = await _find_adjacent_leave(who, start, end)
+    if adjacent and _adjacency_needs_note(kind, adjacent["kind"]) and not note.strip():
+        # Adjacent bookings are allowed — back-to-back is a real pattern, not
+        # a mistake by default — but only with a stated reason, so it reads
+        # as a deliberate choice. Two OFF bookings landing back-to-back are
+        # exempt (see `_adjacency_needs_note`); anything touching WFH or a
+        # partial day still needs one.
         raise WorkloadError(
             "This booking is right next to one of your existing WFH/day-off bookings — add a note explaining why"
         )
 
-    span_days = _leave_span_days(start, end, half)
     if kind == "off":
         # The cap is per booking, not monthly, so there's nothing to sum
         # against existing rows — just the length of this one request.
@@ -888,12 +912,13 @@ async def create_leave(
             raise WorkloadError(
                 f"A day-off booking can span at most {OFF_MAX_CONSECUTIVE_DAYS} consecutive days"
             )
-    else:
+    elif kind == "wfh":
         # WFH is always a single day — a multi-day span *is* two-or-more
-        # consecutive WFH days, which the adjacency rule above forbids
-        # outright, so there's no such thing as a valid multi-day WFH booking.
+        # consecutive WFH days, which is booked as separate single-day
+        # requests instead (each still subject to the adjacency check above).
         if start != end:
             raise WorkloadError("WFH can only be booked one day at a time (no consecutive-day spans)")
+        span_days = _leave_span_days(start, end, half)
         month = start[:7]
         used_days, used_count = await _wfh_month_usage(who, month)
         if used_days + span_days > WFH_MAX_DAYS_PER_MONTH:
@@ -903,12 +928,21 @@ async def create_leave(
             )
         if used_count + 1 > WFH_MAX_BOOKINGS_PER_MONTH:
             raise WorkloadError(f"WFH is capped at {WFH_MAX_BOOKINGS_PER_MONTH} booking(s) a month")
+    else:  # partial — a normal work day with a late arrival, an early
+        # leave, or both; no monthly quota, same as it wouldn't get one if a
+        # member just mentioned it verbally.
+        if start != end:
+            raise WorkloadError("A partial-day booking can only cover one day")
+        if not arrive and not leave:
+            raise WorkloadError("A partial-day booking needs an arrive time, a leave time, or both")
+        if arrive and leave and arrive >= leave:
+            raise WorkloadError("arrive_time must be earlier than leave_time")
 
     lid = _new_id()
     ts = _now()
     await _leaves().insert_one({
         "_id": lid, "email": who, "kind": kind, "start_date": start, "end_date": end,
-        "half": half, "note": note.strip(),
+        "half": half, "arrive_time": arrive, "leave_time": leave, "note": note.strip(),
         "created_by": (created_by or "").strip().lower(), "created_at": ts, "updated_at": ts,
     })
     return await get_leave(lid)  # type: ignore[return-value]
