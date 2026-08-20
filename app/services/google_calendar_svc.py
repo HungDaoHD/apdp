@@ -27,7 +27,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from services.authz import display_name
+from services.authz import WORKLOAD_ADMINS, display_name
 from services.mcp_client import _get_fernet
 from services.workload_svc import _db, set_leave_google_event_id
 
@@ -43,7 +43,7 @@ _STATE_TTL_MINUTES = 10
 # Refresh a bit before actual expiry so a slow request never straddles it.
 _EXPIRY_SLACK = timedelta(minutes=2)
 
-_KIND_LABEL = {"wfh": "🏠 WFH", "off": "🌴 Day off", "partial": "⏰ Partial day"}
+_KIND_LABEL = {"wfh": "WFH", "off": "Day off", "partial": "Partial day"}
 
 
 class GoogleCalendarError(Exception):
@@ -305,7 +305,7 @@ def _event_body(leave: dict) -> dict:
             leave.get("leave_time") and f"out {leave['leave_time']}",
         ) if p]
         detail = f" ({'/'.join(parts)})"
-    summary = f"{_KIND_LABEL.get(leave['kind'], leave['kind'])}{detail} — {display_name(leave['email'])}"
+    summary = f"{display_name(leave['email'])} - {_KIND_LABEL.get(leave['kind'], leave['kind'])}{detail}"
     # Google's all-day "date" end is exclusive (RFC 5545), unlike this app's
     # own inclusive end_date.
     end_exclusive = (date.fromisoformat(leave["end_date"]) + timedelta(days=1)).isoformat()
@@ -316,6 +316,13 @@ def _event_body(leave: dict) -> dict:
     }
     if leave.get("note"):
         body["description"] = leave["note"]
+    # The admin gets invited (and emailed — sync_create sends with
+    # sendUpdates=all) to every member's booking, so they see the whole
+    # team's calendar without each member having to share theirs. Skipped
+    # when the booking IS the admin's own — no point inviting yourself.
+    attendees = [{"email": a} for a in WORKLOAD_ADMINS if a != leave["email"]]
+    if attendees:
+        body["attendees"] = attendees
     return body
 
 
@@ -330,7 +337,7 @@ async def sync_create(leave: dict) -> None:
             return
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
-                _EVENTS_URL, json=_event_body(leave),
+                _EVENTS_URL, json=_event_body(leave), params={"sendUpdates": "all"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         if r.status_code not in (200, 201):
@@ -356,7 +363,7 @@ async def sync_delete(leave: dict) -> None:
             return
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.delete(
-                f"{_EVENTS_URL}/{event_id}",
+                f"{_EVENTS_URL}/{event_id}", params={"sendUpdates": "all"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         # 404/410 means the user already deleted it on the Google side — that
