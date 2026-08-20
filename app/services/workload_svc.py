@@ -820,8 +820,12 @@ def _check_no_weekend(start: str, end: str) -> None:
 
 async def _has_adjacent_leave(email: str, start: str, end: str) -> bool:
     """Whether *email* already has *any* booking — WFH or off — touching the
-    day right before *start* or right after *end*. Kind-agnostic: WFH can't
-    sit next to another WFH day, next to an OFF day, or vice versa.
+    day right before *start* or right after *end*. Kind-agnostic: a WFH day
+    counts as adjacent to another WFH day, an OFF day, or vice versa.
+
+    Adjacency isn't forbidden on its own — `create_leave` allows it as long
+    as a note is given, so a deliberate back-to-back booking reads as
+    intentional rather than a mistake.
 
     Only the two boundary dates need checking, not every existing booking's
     full span: `_leave_overlaps` has already ruled out anything overlapping
@@ -865,11 +869,15 @@ async def create_leave(
 
     if await _leave_overlaps(who, start, end):
         raise WorkloadError(f"{display_name(who)} already has a booking overlapping this date range")
-    if await _has_adjacent_leave(who, start, end):
-        # Applies across kinds, not just within one — an OFF booking ending
-        # Wednesday blocks a WFH booking starting Thursday just as much as it
-        # would block another OFF booking there.
-        raise WorkloadError("WFH and day off can't be booked on consecutive days — you already have one right next to this date")
+    if await _has_adjacent_leave(who, start, end) and not note.strip():
+        # Adjacent bookings are allowed — back-to-back WFH/off is a real
+        # pattern, not a mistake by default — but only with a stated reason,
+        # so it reads as a deliberate choice. Applies across kinds: an OFF
+        # booking ending Wednesday needs the same note from a WFH booking
+        # starting Thursday as it would from another OFF booking there.
+        raise WorkloadError(
+            "This booking is right next to one of your existing WFH/day-off bookings — add a note explaining why"
+        )
 
     span_days = _leave_span_days(start, end, half)
     if kind == "off":
