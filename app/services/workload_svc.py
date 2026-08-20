@@ -31,7 +31,7 @@ from functools import lru_cache
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo import UpdateOne
 
-from services.authz import WORKLOAD_MEMBERS, is_workload_admin
+from services.authz import WORKLOAD_MEMBERS, display_name, is_workload_admin
 
 # VNxxxx (VN + 4 digits) — the human-facing project identifier, distinct
 # from the internal `id` primary key used in URLs and joins.
@@ -105,6 +105,10 @@ def _activity():
     return _db()["activity"]
 
 
+def _leaves():
+    return _db()["leaves"]
+
+
 async def init_db() -> None:
     """Create indexes if absent. Safe to call on every startup — Mongo's
     create_index is a no-op when an equivalent index already exists, so no
@@ -118,6 +122,10 @@ async def init_db() -> None:
     # The log is only ever read newest-first, optionally narrowed to one person.
     await _activity().create_index([("at", -1)])
     await _activity().create_index("actor")
+    # Quota checks and the booking grid both scan one person's month at a
+    # time, sorted by when it starts.
+    await _leaves().create_index([("email", 1), ("start_date", 1)])
+    await _leaves().create_index("start_date")
 
 
 def _now() -> str:
@@ -746,6 +754,190 @@ async def calendar(view: str, anchor: str, **filters) -> dict:
     }
 
 
+# ── Leave / booking (WFH & day off) ─────────────────────────────────────────
+# Self-service, no approval step — each kind is bounded only by the quota it
+# carries. A separate collection from `tasks` since a booking isn't work to
+# schedule, it's the opposite: time a member is *not* available for it. This
+# stands alone for now — nothing here touches the calendar or capacity views.
+
+LEAVE_KINDS: tuple[str, ...] = ("wfh", "off")
+WFH_MAX_DAYS_PER_MONTH = 3
+WFH_MAX_BOOKINGS_PER_MONTH = 4
+OFF_MAX_CONSECUTIVE_DAYS = 3
+
+
+def _check_leave_kind(kind: str) -> str:
+    if kind not in LEAVE_KINDS:
+        raise WorkloadError(f"kind {kind!r} is invalid — expected one of {', '.join(LEAVE_KINDS)}")
+    return kind
+
+
+def _check_half(half: str | None) -> str | None:
+    if not half:
+        return None
+    if half not in ("am", "pm"):
+        raise WorkloadError(f"half must be 'am' or 'pm', got {half!r}")
+    return half
+
+
+def _leave_span_days(start: str, end: str, half: str | None) -> float:
+    """How many days a booking counts as. A half-day booking is always a
+    single day (enforced on the way in), so this never needs both rules at once."""
+    if half:
+        return 0.5
+    return (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+
+
+async def _leave_overlaps(email: str, start: str, end: str) -> bool:
+    """One booking per calendar day per person. Stacking a half-day WFH
+    morning against a half-day day-off afternoon is a real scenario a
+    4-person team can just talk through, not one worth the extra bookkeeping."""
+    return await _leaves().find_one(
+        {"email": email, "start_date": {"$lte": end}, "end_date": {"$gte": start}}
+    ) is not None
+
+
+async def _wfh_month_usage(email: str, month: str) -> tuple[float, int]:
+    """(days already booked, bookings already made) for *email*'s WFH in
+    *month* (YYYY-MM) — what a new booking's quota check has to fit under."""
+    rows = await _leaves().find(
+        {"email": email, "kind": "wfh", "start_date": {"$gte": f"{month}-01", "$lte": f"{month}-31"}}
+    ).to_list(length=None)
+    days = sum(_leave_span_days(r["start_date"], r["end_date"], r.get("half")) for r in rows)
+    return days, len(rows)
+
+
+def _check_no_weekend(start: str, end: str) -> None:
+    """Neither kind is bookable on a Saturday or Sunday — every day the span
+    touches, not just its ends, since a multi-day OFF booking can cross one."""
+    d = date.fromisoformat(start)
+    last = date.fromisoformat(end)
+    while d <= last:
+        if d.weekday() >= 5:   # 5 = Saturday, 6 = Sunday
+            raise WorkloadError("WFH and day off can't be booked on Saturday or Sunday")
+        d += timedelta(days=1)
+
+
+async def _has_adjacent_leave(email: str, start: str, end: str) -> bool:
+    """Whether *email* already has *any* booking — WFH or off — touching the
+    day right before *start* or right after *end*. Kind-agnostic: WFH can't
+    sit next to another WFH day, next to an OFF day, or vice versa.
+
+    Only the two boundary dates need checking, not every existing booking's
+    full span: `_leave_overlaps` has already ruled out anything overlapping
+    [start, end], so an existing booking can only be adjacent by having its
+    *own* end land exactly on start's eve, or its own start land exactly on
+    end's morrow — anything else is either non-adjacent or would have
+    overlapped and been rejected already.
+    """
+    prev_day = (date.fromisoformat(start) - timedelta(days=1)).isoformat()
+    next_day = (date.fromisoformat(end) + timedelta(days=1)).isoformat()
+    return await _leaves().find_one({
+        "email": email,
+        "$or": [{"end_date": prev_day}, {"start_date": next_day}],
+    }) is not None
+
+
+async def create_leave(
+    *,
+    email: str,
+    kind: str,
+    start_date: str,
+    end_date: str | None = None,
+    half: str | None = None,
+    note: str = "",
+    created_by: str = "",
+) -> dict:
+    who = _check_member(email, "email")
+    if not who:
+        raise WorkloadError("email is required")
+    kind = _check_leave_kind(kind)
+    half = _check_half(half)
+    start = _check_date(start_date, "start_date")
+    if not start:
+        raise WorkloadError("start_date is required")
+    end = _check_date(end_date, "end_date") or start
+    if half and start != end:
+        raise WorkloadError("A half-day booking must be a single day")
+    if end < start:
+        raise WorkloadError("end_date must be on or after start_date")
+    _check_no_weekend(start, end)
+
+    if await _leave_overlaps(who, start, end):
+        raise WorkloadError(f"{display_name(who)} already has a booking overlapping this date range")
+    if await _has_adjacent_leave(who, start, end):
+        # Applies across kinds, not just within one — an OFF booking ending
+        # Wednesday blocks a WFH booking starting Thursday just as much as it
+        # would block another OFF booking there.
+        raise WorkloadError("WFH and day off can't be booked on consecutive days — you already have one right next to this date")
+
+    span_days = _leave_span_days(start, end, half)
+    if kind == "off":
+        # The cap is per booking, not monthly, so there's nothing to sum
+        # against existing rows — just the length of this one request.
+        whole_days = (date.fromisoformat(end) - date.fromisoformat(start)).days + 1
+        if whole_days > OFF_MAX_CONSECUTIVE_DAYS:
+            raise WorkloadError(
+                f"A day-off booking can span at most {OFF_MAX_CONSECUTIVE_DAYS} consecutive days"
+            )
+    else:
+        # WFH is always a single day — a multi-day span *is* two-or-more
+        # consecutive WFH days, which the adjacency rule above forbids
+        # outright, so there's no such thing as a valid multi-day WFH booking.
+        if start != end:
+            raise WorkloadError("WFH can only be booked one day at a time (no consecutive-day spans)")
+        month = start[:7]
+        used_days, used_count = await _wfh_month_usage(who, month)
+        if used_days + span_days > WFH_MAX_DAYS_PER_MONTH:
+            raise WorkloadError(
+                f"WFH is capped at {WFH_MAX_DAYS_PER_MONTH} day(s) a month — "
+                f"{used_days:g} already booked in {month}"
+            )
+        if used_count + 1 > WFH_MAX_BOOKINGS_PER_MONTH:
+            raise WorkloadError(f"WFH is capped at {WFH_MAX_BOOKINGS_PER_MONTH} booking(s) a month")
+
+    lid = _new_id()
+    ts = _now()
+    await _leaves().insert_one({
+        "_id": lid, "email": who, "kind": kind, "start_date": start, "end_date": end,
+        "half": half, "note": note.strip(),
+        "created_by": (created_by or "").strip().lower(), "created_at": ts, "updated_at": ts,
+    })
+    return await get_leave(lid)  # type: ignore[return-value]
+
+
+async def get_leave(leave_id: str) -> dict | None:
+    return _out(await _leaves().find_one({"_id": leave_id}))
+
+
+async def delete_leave(leave_id: str) -> None:
+    result = await _leaves().delete_one({"_id": leave_id})
+    if result.deleted_count == 0:
+        raise WorkloadError("Booking not found")
+
+
+async def list_leaves(
+    *, email: str | None = None, date_from: str | None = None, date_to: str | None = None
+) -> list[dict]:
+    """Every booking touching [date_from, date_to] (either bound optional),
+    newest-starting last. Open to every workload member — same visibility
+    rule as projects and tasks: everyone already sees everyone else's plate,
+    so seeing when they're out is no more sensitive."""
+    query: dict = {}
+    if email:
+        emails = _check_members(_split_csv(email))
+        if emails:
+            query["email"] = {"$in": emails}
+    frm = _check_date(date_from, "date_from")
+    to = _check_date(date_to, "date_to")
+    if frm:
+        query["end_date"] = {"$gte": frm}
+    if to:
+        query["start_date"] = {"$lte": to}
+    rows = await _leaves().find(query).sort("start_date", 1).to_list(length=None)
+    return [_out(r) for r in rows]
+
+
 # ── Activity log ──────────────────────────────────────────────────────────────
 # Append-only: who did what, to which project/task, and what changed. Written
 # from the router layer, which is where the acting account is actually known —
@@ -759,6 +951,7 @@ async def calendar(view: str, anchor: str, **filters) -> dict:
 ACTIVITY_ACTIONS: tuple[str, ...] = (
     "project.create", "project.update", "project.delete",
     "task.create", "task.update", "task.delete", "task.bulk_assignee",
+    "leave.create", "leave.delete",
 )
 
 # Fields whose before/after is worth recording. Anything not listed (e.g.

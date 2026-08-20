@@ -96,6 +96,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .more{font-size:10px;color:#888;cursor:pointer;padding:1px 4px;flex-shrink:0}
 .more:hover{color:#f36a17;text-decoration:underline}
 
+/* WFH/day-off note on the calendar — informational only, deliberately kept
+   out of .cell-chips/.wk-cell/.uv-cell's own task markup so it can never be
+   mistaken for a task or change any task count. */
+.cell-leaves{display:flex;flex-wrap:wrap;gap:2px;flex-shrink:0;margin-bottom:1px}
+.leave-b{display:inline-flex;font-size:10px;line-height:1;cursor:default}
+.leave-b.half{opacity:.6}
+
 /* ── Task chip ── */
 /* A flex row so the day counter stays pinned and visible while only the
    title takes the ellipsis — putting the counter in the same text flow
@@ -316,6 +323,7 @@ textarea.inp{resize:vertical;min-height:56px}
 .ttbl tr.st-cancel td:nth-child(1) input{color:#aaa;text-decoration:line-through}
 
 .hint{font-size:11px;color:#999;line-height:1.6}
+.hint.err{color:#c0392b}
 .badge-ro{font-size:10px;background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6;padding:2px 8px;border-radius:10px;font-weight:700}
 
 /* ── Unscheduled tray — pinned above the calendar ── */
@@ -417,6 +425,26 @@ textarea.inp{resize:vertical;min-height:56px}
 .hm-nav .btn[disabled]{opacity:.45;cursor:default}
 .hm-nav .btn[disabled]:hover{border-color:#dde1e7;color:#444}
 .hm-lg{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#999;flex-wrap:wrap}
+
+/* Booking grid — reuses the .hm table skeleton (people down the side, days
+   across the top); .bk-c stands in for .hm-c since the cell holds an emoji
+   rather than a coloured count, which needs its own background rules. */
+.bk-c{width:23px;height:23px}
+.bk-c i{display:flex;align-items:center;justify-content:center;width:19px;height:19px;margin:2px;
+  border-radius:4px;background:#f1f3f6;font-style:normal;font-size:11px;cursor:default}
+.bk-c.we i{background:#eceef2;box-shadow:inset 0 0 0 1px #e2e5ea}
+.bk-c i.wfh{background:#e3edfc}
+.bk-c i.off{background:#fde7e0}
+.bk-c i.half{opacity:.6}
+.bk-c i.mine{cursor:pointer}
+.bk-c i.mine:hover{outline:2px solid #f36a17;outline-offset:-2px}
+.bk-past{opacity:.5}
+
+/* Dashboard booking card — "who's out today" row */
+.bk-today{display:flex;flex-direction:column;gap:6px}
+.bk-today-row{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.bk-pill{font-size:10.5px;font-weight:700;color:#555;background:#f4f5f7;border:1px solid #e3e6ea;
+  border-radius:20px;padding:2px 9px}
 .hm-lg i{display:inline-block;width:14px;height:14px;border-radius:3px;font-style:normal;vertical-align:-3px}
 
 /* Workload balance bars */
@@ -566,6 +594,7 @@ textarea.inp{resize:vertical;min-height:56px}
 <div class="main">
   <div class="tabs">
     <button id="tabDash"  class="on" onclick="switchTab('dash')">📊 Dashboard</button>
+    <button id="tabBook"            onclick="switchTab('book')">🏖️ Booking</button>
     <button id="tabCal"             onclick="switchTab('cal')">📅 Calendar</button>
     <button id="tabProj"            onclick="switchTab('proj')">📁 Projects</button>
     <button id="tabUsers"           onclick="switchTab('users')">👥 Users</button>
@@ -685,6 +714,20 @@ textarea.inp{resize:vertical;min-height:56px}
       <div class="gap"></div>
     </div>
     <div id="dashArea"><div class="loading"><div class="spin"></div> Loading dashboard…</div></div>
+  </div>
+
+  <!-- ══ BOOKING TAB — WFH & day-off, self-service, not yet tied to the
+       calendar or capacity views ══ -->
+  <div id="paneBook" style="display:none">
+    <div class="tbar">
+      <div class="ssel filt" id="bMemberWrap" style="width:158px">
+        <input class="inp" autocomplete="off" placeholder="All members">
+        <div class="ssel-panel"></div>
+      </div>
+      <div class="gap"></div>
+      <button class="btn btn-pri" onclick="openBookDlg()">＋ Book</button>
+    </div>
+    <div id="bookArea"><div class="loading"><div class="spin"></div> Loading bookings…</div></div>
   </div>
 
   <!-- ══ LOG TAB ══ -->
@@ -926,6 +969,53 @@ textarea.inp{resize:vertical;min-height:56px}
   </div>
 </div>
 
+<!-- ══ BOOK — the [＋ Book] button on the Booking tab ══ -->
+<div class="mov" id="bookDlg" style="display:none;z-index:1050">
+  <div class="mdlg" style="width:420px">
+    <div class="mhd">
+      <strong>＋ Book</strong>
+      <button class="mbtn-close" onclick="closeBookDlg()">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="fld">
+        <label>TYPE</label>
+        <div class="seg" style="width:100%">
+          <button id="bfKindWfh" class="on" style="flex:1" onclick="setBookKind('wfh')">🏠 WFH</button>
+          <button id="bfKindOff"           style="flex:1" onclick="setBookKind('off')">🌴 Day off</button>
+        </div>
+      </div>
+      <div class="row3">
+        <div class="fld">
+          <label>FROM</label>
+          <input class="inp" type="date" id="bfFrom" onchange="onBookDateChange()">
+        </div>
+        <div class="fld">
+          <label>TO</label>
+          <input class="inp" type="date" id="bfTo" onchange="onBookDateChange()">
+        </div>
+        <div class="fld">
+          <label>HALF DAY</label>
+          <select class="inp" id="bfHalf" onchange="updateBookQuota()">
+            <option value="">Full day</option>
+            <option value="am">Morning</option>
+            <option value="pm">Afternoon</option>
+          </select>
+        </div>
+      </div>
+      <div class="hint" id="bfQuota"></div>
+      <div class="fld">
+        <label>NOTE</label>
+        <textarea class="inp" id="bfNote" placeholder="Optional…"></textarea>
+      </div>
+    </div>
+    <div class="mft">
+      <div class="mft-status" id="bfStatusMsg" style="display:none"></div>
+      <button class="btn btn-lt" onclick="closeBookDlg()">Cancel</button>
+      <button class="btn btn-suc" id="bfSaveBtn" onclick="saveBooking()">Book</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ USER PROJECTS — the "More" button on a Users-tab card ══ -->
 <div class="mov" id="userDlg" style="display:none;z-index:1040">
   <div class="mdlg wide">
@@ -955,6 +1045,7 @@ let TAB       = 'dash';
 let DETAIL    = null;      // project currently open in the detail dialog
 let EDITING   = null;      // project being edited in the project dialog (null = create)
 let ALL_TASKS = [];        // every task, joined with its project — powers the Users tab
+let ALL_LEAVES = [];       // every WFH/day-off booking — powers Booking and the Dashboard card
 let LOG       = [];        // most recent activity entries — powers the Log tab
 let _csrfToken = null;
 let _newTaskAssignees = []; // pending selection in the detail dialog's "add task" row
@@ -1417,6 +1508,9 @@ async function boot(){
     getOptions: () => PROJECTS.map(p => ({value: p.id, label: (p.project_code ? p.project_code + ' — ' : '') + p.name})),
     allLabel: 'All projects', onChange: renderDashboard,
   });
+  msInit(document.getElementById('bMemberWrap'), {
+    getOptions: memberFilterOptions, allLabel: 'All members', onChange: renderBooking,
+  });
   // The Log tab's two filters refetch (the server holds far more history than
   // one page shows), unlike the purely client-side filters above.
   msInit(document.getElementById('lMemberWrap'), {
@@ -1464,13 +1558,19 @@ async function refreshAll(){
   document.getElementById('projArea').innerHTML    = loadingBox('projects');
   document.getElementById('usersArea').innerHTML   = loadingBox('users');
   document.getElementById('dashArea').innerHTML    = loadingBox('dashboard');
+  document.getElementById('bookArea').innerHTML    = loadingBox('bookings');
   document.getElementById('logArea').innerHTML     = loadingBox('log');
   try {
     await loadProjects();
     await loadCalendar();
     await loadAllTasks(true);
+    await loadAllLeaves(true);
     renderUsers();
     renderDashboard();
+    renderBooking();
+    // loadCalendar() above already rendered once, but with the leave data
+    // that was still stale at that point — re-render now that it's fresh.
+    renderCalendar();
     await loadLog();
     toast('Refreshed', 'ok');
   } catch(e){
@@ -1488,6 +1588,13 @@ async function loadAllTasks(force){
   if (_allTasksLoaded && !force) return;
   ALL_TASKS = await api('/api/workload/tasks');
   _allTasksLoaded = true;
+}
+
+let _allLeavesLoaded = false;
+async function loadAllLeaves(force){
+  if (_allLeavesLoaded && !force) return;
+  ALL_LEAVES = await api('/api/workload/leaves');
+  _allLeavesLoaded = true;
 }
 
 async function loadCalendar(){
@@ -1614,6 +1721,40 @@ function tasksByDate(){
   });
   Object.values(map).forEach(list => list.sort(byAssignee));
   return map;
+}
+
+/** Every WFH/day-off booking touching *day*, across all members — the
+ *  Month/Day views' aggregate note. Purely informational: kept out of
+ *  `tasksByDate`/`capChips` entirely, so it can never be mistaken for, or
+ *  counted alongside, a task. */
+function leavesOnDay(day){
+  return ALL_LEAVES.filter(l => l.start_date <= day && l.end_date >= day);
+}
+
+/** One member's booking on *day*, if any — the Week/User views' per-cell
+ *  note, where the row or column already pins down who. */
+function leaveOnDay(email, day){
+  return ALL_LEAVES.find(l => l.email === email && l.start_date <= day && l.end_date >= day);
+}
+
+function leaveNoteText(l, name){
+  return `${esc(name)} · ${l.kind === 'wfh' ? 'WFH' : 'Day off'}${l.half ? ' · ' + l.half.toUpperCase() : ''}`;
+}
+
+/** Small icon badge for one booking — same 🏠/🌴 vocabulary as the Booking
+ *  tab, sized down to fit inside a calendar cell. */
+function leaveBadge(l, name){
+  return `<span class="leave-b ${l.kind}${l.half ? ' half' : ''}" title="${leaveNoteText(l, name)}"
+    >${l.kind === 'wfh' ? '🏠' : '🌴'}</span>`;
+}
+
+/** Aggregate row for a cell with no single "this member" to key off of
+ *  (Month view's day cell) — one badge per person on leave that day. */
+function leaveBadgeRow(day){
+  const mine = leavesOnDay(day);
+  if (!mine.length) return '';
+  return `<div class="cell-leaves">${mine.map(l =>
+    leaveBadge(l, (META.members.find(m => m.email === l.email) || {}).name || l.email)).join('')}</div>`;
 }
 
 /** Roster order (the same order the week view lays out its rows), not
@@ -1762,10 +1903,11 @@ function renderUserView(){
       const {shown, rest} = capChips(list, MAX_CHIPS_PER_USERCELL);
       // Clicking anywhere on the cell opens *that day's* full task list — not
       // just this column's slice of it.
+      const leave = c.key ? leaveOnDay(c.key, d) : null;
       return `<td onclick="openDayTasksDlg('${d}')"
         ondragover="dropAllow(event)" ondragleave="dropLeave(event)"
         ondrop="dropOnUserCell(event,'${d}','${esc(c.key)}')"
-        ><div class="uv-cell">${shown.map(t => chip(t, d)).join('')}
+        ><div class="uv-cell">${leave ? leaveBadge(leave, c.label) : ''}${shown.map(t => chip(t, d)).join('')}
           ${rest > 0 ? `<span class="more">+${rest} more</span>` : ''}</div></td>`;
     }).join('');
     return `<tr class="${d === today ? 'uv-today' : ''}${weekend ? ' uv-wknd' : ''}">
@@ -1828,6 +1970,7 @@ function renderMonth(){
       <div class="cell-n">
         <span>${dd.getDate()}</span>
         <button class="cell-add" title="Add a task on this day" onclick="event.stopPropagation();openDayAdd('${d}')">＋</button></div>
+      ${leaveBadgeRow(d)}
       <div class="cell-chips">
         ${shown.map(t => chip(t, d)).join('')}
         ${rest > 0 ? `<span class="more">+${rest} more</span>` : ''}
@@ -1863,10 +2006,11 @@ function renderWeek(){
       // row simply grows to fit (see .wk-cell); no fixed height to clip it.
       // Clicking anywhere on the cell opens that day's full task list — not
       // just this row's slice of it — so it's keyed by date alone.
+      const leave = leaveOnDay(r.key, d);
       return `<td class="${d===today?'today-col':''}"
         onclick="openDayTasksDlg('${d}')"
         ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')"
-        ><div class="wk-cell">${list.map(t => chip(t, d)).join('')}</div></td>`;
+        ><div class="wk-cell">${leave ? leaveBadge(leave, r.label) : ''}${list.map(t => chip(t, d)).join('')}</div></td>`;
     }).join('');
 
     return `<tr><td class="who" style="border-left:3px solid ${memberColor(r.key)}">${esc(r.label)}</td>${tds}</tr>`;
@@ -1889,6 +2033,7 @@ function renderWeek(){
 
 function renderDay(){
   const list = CAL.tasks || [];
+  const leaves = leaveBadgeRow(ANCHOR);   // empty string when nobody's out — same helper as Month view
   const addBar = `<div class="day-grp" style="margin-bottom:12px"
     ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${ANCHOR}')">
     <div class="day-grp-hd">
@@ -1897,6 +2042,7 @@ function renderDay(){
       <div class="gap"></div>
       <button class="btn btn-suc" style="font-size:11px" onclick="openDayAdd('${ANCHOR}')">＋ Add task</button>
     </div>
+    ${leaves ? `<div style="padding:0 14px 10px">${leaves}</div>` : ''}
   </div>`;
 
   if (!list.length){
@@ -2450,12 +2596,24 @@ let HM_MONTH = 0;
 async function loadDashboard(){
   try {
     await loadAllTasks();
+    await loadAllLeaves();
   } catch(e){
     if (e.status === 403) return showDeny(e.message);
     document.getElementById('dashArea').innerHTML = errBox(e.message);
     return;
   }
   renderDashboard();
+}
+
+async function loadBooking(){
+  try {
+    await loadAllLeaves();
+  } catch(e){
+    if (e.status === 403) return showDeny(e.message);
+    document.getElementById('bookArea').innerHTML = errBox(e.message);
+    return;
+  }
+  renderBooking();
 }
 
 function setDashScope(s){
@@ -2663,7 +2821,57 @@ function renderDashboard(){
       ${statusStatCard('📁 Projects by status', pCounts, projects.length, PROJECT_STATUS_LABEL)}
       ${statusStatCard('✅ Tasks by status', tCounts, tasks.length, STATUS_LABEL)}
     </div>
+    ${dashBookingCard(members, ALL_LEAVES, today)}
     ${dashByUser(members, tasks, projects, load, today)}`;
+}
+
+// ── Booking card ─────────────────────────────────────
+/** Who's out or WFH today, and each member's WFH usage this month — a
+ *  glance at the Booking tab's numbers without leaving the Dashboard.
+ *  Reads ALL_LEAVES directly rather than through the task filters above:
+ *  a booking has no project, so the project filter has nothing to say
+ *  about it, and the date-range/weekday-weekend lens is a task-load
+ *  question this card isn't answering. */
+function dashBookingCard(members, leaves, today){
+  const todayRows = members.map(m => {
+    const mine = leaves.filter(l => l.email === m.email && l.start_date <= today && l.end_date >= today);
+    if (!mine.length) return '';
+    const pills = mine.map(l => `<span class="bk-pill">${l.kind === 'wfh' ? '🏠 WFH' : '🌴 Off'}${l.half ? ` · ${l.half.toUpperCase()}` : ''}</span>`).join('');
+    return `<div class="bk-today-row">${assigneeTag(m.email, m.name)} ${esc(m.name)} ${pills}</div>`;
+  }).filter(Boolean).join('');
+
+  return `<div class="sumcard" style="margin-bottom:14px">
+    <div class="sumcard-hd">🏖️ Booking
+      <span class="hint" style="cursor:pointer;margin-left:auto" onclick="switchTab('book')">Book / view all →</span>
+    </div>
+    ${todayRows ? `<div class="bk-today">${todayRows}</div>` : `<div class="hint">Nobody is WFH or off today.</div>`}
+    ${bookSummaryTable(members, today)}
+  </div>`;
+}
+
+/** Member x (WFH, Off) x (this month, total) — shared by the Dashboard's
+ *  Booking card and the Booking tab itself, so the two never disagree. */
+function bookSummaryTable(members, today){
+  const month = today.slice(0, 7);
+  const rows = members.map(m => {
+    const wfhM = leaveMonthUsage(m.email, 'wfh', month);
+    const wfhT = leaveTotalUsage(m.email, 'wfh');
+    const offM = leaveMonthUsage(m.email, 'off', month);
+    const offT = leaveTotalUsage(m.email, 'off');
+    return `<tr>
+      <td class="un">${assigneeTag(m.email, m.name)} ${esc(m.name)}</td>
+      <td class="num${wfhM.days >= WFH_MAX_DAYS_PER_MONTH ? ' warn' : ''}">${wfhM.days}d · ${wfhM.count}x</td>
+      <td class="num">${wfhT.days || '—'}d</td>
+      <td class="num">${offM.days || '—'}d</td>
+      <td class="num">${offT.days || '—'}d</td>
+    </tr>`;
+  }).join('');
+  return `<table class="sumtbl"><thead><tr>
+      <th>Member</th>
+      <th class="num">WFH this month</th><th class="num">WFH total</th>
+      <th class="num">Off this month</th><th class="num">Off total</th>
+    </tr></thead>
+    <tbody>${rows}</tbody></table>`;
 }
 
 // ── KPI strip ────────────────────────────────────────
@@ -2919,6 +3127,277 @@ function dashByUser(members, tasks, projects, load, today){
 }
 
 // ════════════════════════════════════════════════════
+// BOOKING — WFH & day off. Self-service; not yet tied to the calendar or
+// capacity views (see the module docstring in workload_svc.py).
+// ════════════════════════════════════════════════════
+/** Mirrors the caps enforced server-side in workload_svc.py, so the dialog
+ *  can show a live "you'd be over" hint before the round trip — the server
+ *  re-checks these regardless, so drift here can only make the hint wrong,
+ *  never let an over-quota booking through. */
+const WFH_MAX_DAYS_PER_MONTH = 3;
+const WFH_MAX_BOOKINGS_PER_MONTH = 4;
+const OFF_MAX_CONSECUTIVE_DAYS = 3;
+
+let BOOK_MONTH = 0;   // months from the current one — same idiom as HM_MONTH
+let BOOK_KIND  = 'wfh';
+
+function bookWindow(){
+  const d = parseISO(todayISO());
+  return {
+    s: iso(new Date(d.getFullYear(), d.getMonth() + BOOK_MONTH, 1, 12)),
+    e: iso(new Date(d.getFullYear(), d.getMonth() + BOOK_MONTH + 1, 0, 12)),
+  };
+}
+function shiftBookMonth(n){
+  BOOK_MONTH = n === null ? 0 : BOOK_MONTH + n;
+  renderBooking();
+}
+
+function renderBooking(){
+  if (!META) return;
+  const today = todayISO();
+  const who = msValues(document.getElementById('bMemberWrap'));
+  const members = who.length ? META.members.filter(m => who.includes(m.email)) : META.members;
+  const win = bookWindow();
+  document.getElementById('bookArea').innerHTML = `
+    <div class="sumcard" style="margin-bottom:14px">
+      <div class="sumcard-hd">📊 Summary</div>
+      ${members.length ? bookSummaryTable(members, today) : `<div class="hint">No members to show.</div>`}
+    </div>
+    ${bookGrid(members, ALL_LEAVES, win, today)}
+    ${bookList(members, ALL_LEAVES, today)}`;
+}
+
+function bookGrid(members, leaves, win, today){
+  const LTR = ['M','T','W','T','F','S','S'];
+  const days = [];
+  for (let d = win.s; d <= win.e; d = addDays(d, 1)) days.push(d);
+
+  const head = days.map(d => {
+    const dt = parseISO(d);
+    return `<th class="hm-d${isWeekend(d) ? ' we' : ''}${d === today ? ' today' : ''}"
+      title="${fmtFull(d)}"><span>${dt.getDate()}</span><br>${LTR[(dt.getDay() + 6) % 7]}</th>`;
+  }).join('');
+
+  const rows = members.map(m => {
+    const mine = leaves.filter(l => l.email === m.email);
+    const cells = days.map(d => {
+      const l = mine.find(x => x.start_date <= d && x.end_date >= d);
+      if (!l){
+        return `<td class="bk-c${isWeekend(d) ? ' we' : ''}"><i></i></td>`;
+      }
+      const canCancel = l.email === META.me.email || META.me.is_admin;
+      const label = `${l.kind === 'wfh' ? 'WFH' : 'Day off'}${l.half ? ' · ' + l.half.toUpperCase() : ''}`;
+      return `<td class="bk-c${isWeekend(d) ? ' we' : ''}"><i
+        class="${l.kind}${l.half ? ' half' : ''}${canCancel ? ' mine' : ''}"
+        title="${esc(m.name)} · ${label} · ${fmtFull(d)}${l.note ? ' · ' + esc(l.note) : ''}"
+        ${canCancel ? `onclick="cancelBookingPrompt('${l.id}')"` : ''}
+        >${l.kind === 'wfh' ? '🏠' : '🌴'}</i></td>`;
+    }).join('');
+    return `<tr><td class="hm-name">${assigneeTag(m.email, m.name)} ${esc(m.name)}</td>${cells}</tr>`;
+  }).join('');
+
+  return `<div class="sumcard" style="margin-bottom:14px">
+    <div class="sumcard-hd">🏖️ ${MONTH_NAMES[parseISO(win.s).getMonth()]} ${parseISO(win.s).getFullYear()}
+      <span class="hm-nav">
+        <button class="nav-btn" onclick="shiftBookMonth(-1)" title="Previous month">‹</button>
+        <button class="btn btn-lt" onclick="shiftBookMonth(null)"${BOOK_MONTH ? '' : ' disabled'}
+          title="Back to this month">Today</button>
+        <button class="nav-btn" onclick="shiftBookMonth(1)" title="Next month">›</button>
+      </span>
+    </div>
+    ${members.length ? `<div class="hm-wrap"><table class="hm">
+      <thead><tr><th class="hm-name"></th>${head}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>` : `<div class="hint">No members to show.</div>`}
+    <div class="hm-lg">
+      <span>🏠 WFH</span><span>🌴 Day off</span>
+      <span>a faded icon is a half-day booking</span>
+      <span>click your own (or, as admin, anyone's) to cancel it</span>
+    </div>
+  </div>`;
+}
+
+function bookList(members, leaves, today){
+  const emails = new Set(members.map(m => m.email));
+  const nameOf = e => (META.members.find(m => m.email === e) || {}).name || e;
+  const rows = leaves.filter(l => emails.has(l.email))
+    .slice().sort((a, b) => a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0);
+
+  if (!rows.length){
+    return `<div class="sumcard"><div class="sumcard-hd">📋 Bookings</div><div class="hint">No bookings yet.</div></div>`;
+  }
+
+  const trs = rows.map(l => {
+    const canCancel = l.email === META.me.email || META.me.is_admin;
+    const span = l.start_date === l.end_date ? fmtFull(l.start_date) : `${fmtDM(l.start_date)} – ${fmtFull(l.end_date)}`;
+    return `<tr class="${l.end_date < today ? 'bk-past' : ''}">
+      <td>${assigneeTag(l.email, nameOf(l.email))} ${esc(nameOf(l.email))}</td>
+      <td>${l.kind === 'wfh' ? '🏠 WFH' : '🌴 Day off'}${l.half ? ` · ${l.half.toUpperCase()}` : ''}</td>
+      <td>${span}</td>
+      <td>${esc(l.note || '')}</td>
+      <td>${canCancel ? `<button class="btn btn-dng" style="padding:3px 9px;font-size:11px"
+        onclick="cancelBookingPrompt('${l.id}')">Cancel</button>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="sumcard">
+    <div class="sumcard-hd">📋 Bookings</div>
+    <table class="ttbl"><thead><tr><th>Member</th><th>Type</th><th>Dates</th><th>Note</th><th></th></tr></thead>
+    <tbody>${trs}</tbody></table>
+  </div>`;
+}
+
+// ── Booking dialog ────────────────────────────────────
+function openBookDlg(){
+  document.getElementById('bfFrom').value = todayISO();
+  document.getElementById('bfTo').value   = todayISO();
+  document.getElementById('bfHalf').value = '';
+  document.getElementById('bfNote').value = '';
+  setMsg('bfStatusMsg', '');
+  setBookKind('wfh');   // also syncs TO, half-day, and the quota hint
+  document.getElementById('bookDlg').style.display = 'flex';
+}
+function closeBookDlg(){ document.getElementById('bookDlg').style.display = 'none'; }
+
+function setBookKind(k){
+  BOOK_KIND = k;
+  document.getElementById('bfKindWfh').classList.toggle('on', k === 'wfh');
+  document.getElementById('bfKindOff').classList.toggle('on', k === 'off');
+  const to = document.getElementById('bfTo');
+  // WFH is always a single day now — a multi-day span *is* consecutive WFH,
+  // which is no longer allowed — so the TO field has nothing to offer here.
+  to.disabled = k === 'wfh';
+  if (k === 'wfh') to.value = document.getElementById('bfFrom').value;
+  onBookDateChange();
+}
+
+/** Keep the pair sane as either end is edited — same "the other end fills
+ *  itself in" convenience as the task editor's start/due fields — and turn
+ *  off half-day the moment the booking spans more than one day, since a
+ *  half-day booking only ever means a single day. */
+function onBookDateChange(){
+  const from = document.getElementById('bfFrom');
+  const to   = document.getElementById('bfTo');
+  if (BOOK_KIND === 'wfh'){
+    to.value = from.value;   // TO is disabled, but stays in lockstep for saveBooking() to read
+  } else {
+    if (from.value && !to.value) to.value = from.value;
+    if (to.value && !from.value) from.value = to.value;
+    if (from.value && to.value && to.value < from.value) to.value = from.value;
+  }
+  const half = document.getElementById('bfHalf');
+  const single = from.value && from.value === to.value;
+  if (!single) half.value = '';
+  half.disabled = !single;
+  updateBookQuota();
+}
+
+/** email -> (days booked, bookings made) for *kind* in *month* (YYYY-MM),
+ *  from the already-fetched ALL_LEAVES — mirrors workload_svc._wfh_month_usage. */
+function leaveMonthUsage(email, kind, month){
+  const rows = ALL_LEAVES.filter(l => l.email === email && l.kind === kind && l.start_date.slice(0, 7) === month);
+  const days = rows.reduce((s, l) => s + (l.half ? 0.5 : daysBetween(l.start_date, l.end_date) + 1), 0);
+  return {days, count: rows.length};
+}
+
+/** email -> (days booked, bookings made) for *kind*, all-time — the "Total"
+ *  half of the summary table, same shape as leaveMonthUsage minus the filter. */
+function leaveTotalUsage(email, kind){
+  const rows = ALL_LEAVES.filter(l => l.email === email && l.kind === kind);
+  const days = rows.reduce((s, l) => s + (l.half ? 0.5 : daysBetween(l.start_date, l.end_date) + 1), 0);
+  return {days, count: rows.length};
+}
+
+/** Whether *email* already has any booking — WFH or off — touching the day
+ *  right before *start* or right after *end*. Kind-agnostic: mirrors
+ *  workload_svc._has_adjacent_leave, including the same shortcut of only
+ *  checking the two boundary dates (see that function's docstring for why
+ *  that's enough once overlaps are already ruled out). */
+function hasAdjacentLeave(email, start, end){
+  const prev = addDays(start, -1), next = addDays(end, 1);
+  return ALL_LEAVES.some(l => l.email === email && (l.end_date === prev || l.start_date === next));
+}
+
+function updateBookQuota(){
+  const from = document.getElementById('bfFrom').value;
+  const to   = document.getElementById('bfTo').value || from;
+  const half = document.getElementById('bfHalf').value;
+  const el = document.getElementById('bfQuota');
+  if (!from){ el.textContent = ''; el.className = 'hint'; return; }
+
+  // Neither kind is bookable on a weekend — checked first since it applies
+  // to both kinds, and makes every other hint moot until it's fixed.
+  for (let d = from; d <= to; d = addDays(d, 1)){
+    if (isWeekend(d)){
+      el.textContent = `WFH/day off can't be booked on Saturday or Sunday (${fmtFull(d)} is one).`;
+      el.className = 'hint err';
+      return;
+    }
+  }
+  // Adjacency is cross-kind, so it's checked once here, before either
+  // kind's own branch — an OFF booking ending Wednesday blocks a WFH
+  // booking starting Thursday exactly as much as another OFF booking would.
+  if (hasAdjacentLeave(META.me.email, from, to)){
+    el.textContent = `WFH and day off can't be booked on consecutive days — you already have one right next to this date.`;
+    el.className = 'hint err';
+    return;
+  }
+
+  const wholeDays = daysBetween(from, to) + 1;
+  if (BOOK_KIND === 'off'){
+    el.textContent = `${half ? 0.5 : wholeDays} day(s) off · a booking may span at most ${OFF_MAX_CONSECUTIVE_DAYS} consecutive day(s)`;
+    el.className = 'hint' + (wholeDays > OFF_MAX_CONSECUTIVE_DAYS ? ' err' : '');
+    return;
+  }
+  const span = half ? 0.5 : wholeDays;
+  const {days, count} = leaveMonthUsage(META.me.email, 'wfh', from.slice(0, 7));
+  const over = (days + span > WFH_MAX_DAYS_PER_MONTH) || (count + 1 > WFH_MAX_BOOKINGS_PER_MONTH);
+  el.textContent = `This booking: ${span}d · booked so far this month: ${days}/${WFH_MAX_DAYS_PER_MONTH} day(s), ${count}/${WFH_MAX_BOOKINGS_PER_MONTH} booking(s)`;
+  el.className = 'hint' + (over ? ' err' : '');
+}
+
+async function saveBooking(){
+  const from = document.getElementById('bfFrom').value;
+  const to   = document.getElementById('bfTo').value || from;
+  const half = document.getElementById('bfHalf').value || null;
+  const note = document.getElementById('bfNote').value.trim();
+  if (!from) return setMsg('bfStatusMsg', 'Start date is required', 'err');
+
+  const btn = document.getElementById('bfSaveBtn');
+  btn.disabled = true; btn.textContent = 'Booking…';
+  try {
+    await api('/api/workload/leaves', {method: 'POST', body: {
+      kind: BOOK_KIND, start_date: from, end_date: to, half, note,
+    }});
+    closeBookDlg();
+    toast('Booked', 'ok');
+    await loadAllLeaves(true);
+    if (TAB === 'book') renderBooking();
+    if (TAB === 'dash') renderDashboard();
+    if (TAB === 'cal')  renderCalendar();   // CAL itself is unchanged — only the leave note on top of it is
+  } catch(e){
+    setMsg('bfStatusMsg', e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Book';
+  }
+}
+
+async function cancelBookingPrompt(leaveId){
+  if (!confirm('Cancel this booking?')) return;
+  try {
+    await api(`/api/workload/leaves/${leaveId}`, {method: 'DELETE'});
+    toast('Cancelled', 'ok');
+    await loadAllLeaves(true);
+    if (TAB === 'book') renderBooking();
+    if (TAB === 'dash') renderDashboard();
+    if (TAB === 'cal')  renderCalendar();
+  } catch(e){
+    toast(e.message, 'err');
+  }
+}
+
+// ════════════════════════════════════════════════════
 // ACTIVITY LOG
 // ════════════════════════════════════════════════════
 const ACTION_LABEL = {
@@ -2929,6 +3408,8 @@ const ACTION_LABEL = {
   'task.update':        'Edited task',
   'task.delete':        'Deleted task',
   'task.bulk_assignee': 'Bulk assign',
+  'leave.create':       'Booked WFH/off',
+  'leave.delete':       'Cancelled booking',
 };
 function actionClass(a){
   if (a.endsWith('.create')) return 'act-create';
@@ -3152,7 +3633,7 @@ function goToday(){ ANCHOR = todayISO(); loadCalendar(); }
 function switchTab(t){
   TAB = t;
   [['tabCal','paneCal','cal'], ['tabProj','paneProj','proj'], ['tabUsers','paneUsers','users'],
-   ['tabDash','paneDash','dash'], ['tabLog','paneLog','log']]
+   ['tabDash','paneDash','dash'], ['tabBook','paneBook','book'], ['tabLog','paneLog','log']]
     .forEach(([tab, pane, key]) => {
       document.getElementById(tab).classList.toggle('on', t === key);
       document.getElementById(pane).style.display = t === key ? '' : 'none';
@@ -3163,6 +3644,7 @@ function switchTab(t){
   // but only once the tab is actually open.
   if (t === 'users') loadUsers();
   if (t === 'dash') loadDashboard();
+  if (t === 'book') loadBooking();
   if (t === 'proj') loadAllTasks().then(renderProjects).catch(() => {});
   // Always refetched: the point of a log is to show what just happened, and
   // it changes on every edit anyone makes — a cached copy would be stale on

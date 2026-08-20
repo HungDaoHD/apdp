@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from dependencies import require_csrf, require_workload
 from services import workload_svc
-from services.authz import WORKLOAD_ADMINS, WORKLOAD_MEMBERS, display_name
+from services.authz import WORKLOAD_ADMINS, WORKLOAD_MEMBERS, display_name, is_workload_admin
 from services.workload_svc import WorkloadError
 
 log = logging.getLogger(__name__)
@@ -26,6 +26,8 @@ router = APIRouter(prefix="/api/workload", tags=["workload"])
 Status = Literal["pending", "ongoing", "complete", "cancel"]          # tasks
 ProjectStatus = Literal["pending", "ongoing", "complete", "cancel"]    # projects — a distinct domain
 View = Literal["month", "week", "day"]
+LeaveKind = Literal["wfh", "off"]
+Half = Literal["am", "pm"]
 
 
 # ── Request bodies ────────────────────────────────────────────────────────────
@@ -76,6 +78,16 @@ class TaskUpdate(BaseModel):
 class BulkAssignee(BaseModel):
     email: str = Field(min_length=1, max_length=120)
     add:   bool
+
+
+class LeaveCreate(BaseModel):
+    """No `email` field — booking is self-service only for now; an admin
+    booking on someone else's behalf isn't supported yet."""
+    kind:       LeaveKind
+    start_date: str
+    end_date:   str | None = None
+    half:       Half | None = None
+    note:       str = Field(default="", max_length=500)
 
 
 def _patch(body: BaseModel, *, drop: set[str] = frozenset()) -> dict:
@@ -131,7 +143,6 @@ def _plabel(project: dict | None) -> tuple[str, str]:
 @router.get("/meta")
 async def meta(email: str = Depends(require_workload)):
     """Roster, dropdown options, and what this caller is allowed to do."""
-    from services.authz import is_workload_admin
     return {
         "me": {
             "email":    email,
@@ -368,3 +379,55 @@ async def calendar(
         return await workload_svc.calendar(view, anchor, **filters)
     except WorkloadError as exc:
         raise _bad(exc)
+
+
+# ── Leave / booking (WFH & day off) ─────────────────────────────────────────
+
+@router.get("/leaves")
+async def list_leaves(
+    email: str = Depends(require_workload),
+    member:    str | None = Query(default=None, description="Comma-separated emails"),
+    date_from: str | None = Query(default=None),
+    date_to:   str | None = Query(default=None),
+):
+    """Every workload member sees every booking — same open-visibility rule
+    as projects and tasks."""
+    try:
+        return await workload_svc.list_leaves(email=member, date_from=date_from, date_to=date_to)
+    except WorkloadError as exc:
+        raise _bad(exc)
+
+
+@router.post("/leaves", dependencies=[Depends(require_csrf)])
+async def create_leave(body: LeaveCreate, email: str = Depends(require_workload)):
+    try:
+        created = await workload_svc.create_leave(
+            email=email, kind=body.kind, start_date=body.start_date,
+            end_date=body.end_date, half=body.half, note=body.note, created_by=email,
+        )
+    except WorkloadError as exc:
+        raise _bad(exc)
+    span = created["start_date"] if created["start_date"] == created["end_date"] \
+        else f"{created['start_date']} → {created['end_date']}"
+    await _log(
+        actor=email, action="leave.create",
+        target=f"{body.kind.upper()} {span}" + (f" ({created['half'].upper()})" if created["half"] else ""),
+    )
+    return created
+
+
+@router.delete("/leaves/{leave_id}", dependencies=[Depends(require_csrf)])
+async def delete_leave(leave_id: str, email: str = Depends(require_workload)):
+    leave = await workload_svc.get_leave(leave_id)
+    if leave is None:
+        raise HTTPException(404, "Booking not found")
+    if leave["email"] != email and not is_workload_admin(email):
+        raise HTTPException(403, "You can only cancel your own bookings")
+    await workload_svc.delete_leave(leave_id)
+    span = leave["start_date"] if leave["start_date"] == leave["end_date"] \
+        else f"{leave['start_date']} → {leave['end_date']}"
+    await _log(
+        actor=email, action="leave.delete",
+        target=f"{display_name(leave['email'])} · {leave['kind'].upper()} · {span}",
+    )
+    return {"ok": True}
