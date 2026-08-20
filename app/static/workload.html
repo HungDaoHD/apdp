@@ -3277,7 +3277,7 @@ function renderBooking(){
       ${members.length ? bookSummaryTable(members, today) : `<div class="hint">No members to show.</div>`}
     </div>
     ${bookGrid(members, ALL_LEAVES, win, today)}
-    ${bookList(members, ALL_LEAVES, today)}`;
+    ${bookList(members, ALL_LEAVES, win, today)}`;
 }
 
 function bookGrid(members, leaves, win, today){
@@ -3298,7 +3298,9 @@ function bookGrid(members, leaves, win, today){
       if (!l){
         return `<td class="bk-c${isWeekend(d) ? ' we' : ''}"><i></i></td>`;
       }
-      const canCancel = l.email === META.me.email || META.me.is_admin;
+      // Past your own booking, only the admin can still cancel it — same
+      // "you can undo it while it's still yours to undo" rule as bookList().
+      const canCancel = (l.email === META.me.email && l.end_date >= today) || META.me.is_admin;
       const detail = leaveDetail(l);
       const label = `${KIND_META[l.kind].label}${detail ? ' · ' + detail : ''}`;
       return `<td class="bk-c${isWeekend(d) ? ' we' : ''}"><i
@@ -3326,23 +3328,29 @@ function bookGrid(members, leaves, win, today){
     <div class="hm-lg">
       <span>🏠 WFH</span><span>🌴 Day off</span><span>⏰ Partial day</span>
       <span>a faded icon is a half-day booking</span>
-      <span>click your own (or, as admin, anyone's) to cancel it</span>
+      <span>click your own (upcoming) or, as admin, anyone's to cancel it</span>
     </div>
   </div>`;
 }
 
-function bookList(members, leaves, today){
+/** *win* — the same month window bookGrid above is showing, driven by the
+ *  shared BOOK_MONTH/shiftBookMonth nav — so the list is always the same
+ *  page as the grid rather than tracking its own separate month state. */
+function bookList(members, leaves, win, today){
   const emails = new Set(members.map(m => m.email));
   const nameOf = e => (META.members.find(m => m.email === e) || {}).name || e;
-  const rows = leaves.filter(l => emails.has(l.email))
-    .slice().sort((a, b) => a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0);
+  const rows = leaves.filter(l => emails.has(l.email) && l.start_date <= win.e && l.end_date >= win.s)
+    .slice().sort((a, b) => a.start_date < b.start_date ? 1 : a.start_date > b.start_date ? -1 : 0);
 
+  const heading = `📋 Bookings — ${MONTH_NAMES[parseISO(win.s).getMonth()]} ${parseISO(win.s).getFullYear()}`;
   if (!rows.length){
-    return `<div class="sumcard"><div class="sumcard-hd">📋 Bookings</div><div class="hint">No bookings yet.</div></div>`;
+    return `<div class="sumcard"><div class="sumcard-hd">${heading}</div><div class="hint">No bookings this month.</div></div>`;
   }
 
   const trs = rows.map(l => {
-    const canCancel = l.email === META.me.email || META.me.is_admin;
+    // Past your own booking, only the admin can still cancel it — a member
+    // shouldn't be able to quietly erase a booking that's already happened.
+    const canCancel = (l.email === META.me.email && l.end_date >= today) || META.me.is_admin;
     const span = l.start_date === l.end_date ? fmtFull(l.start_date) : `${fmtDM(l.start_date)} – ${fmtFull(l.end_date)}`;
     const detail = leaveDetail(l);
     return `<tr class="${l.end_date < today ? 'bk-past' : ''}">
@@ -3356,7 +3364,7 @@ function bookList(members, leaves, today){
   }).join('');
 
   return `<div class="sumcard">
-    <div class="sumcard-hd">📋 Bookings</div>
+    <div class="sumcard-hd">${heading}</div>
     <table class="ttbl"><thead><tr><th>Member</th><th>Type</th><th>Dates</th><th>Note</th><th></th></tr></thead>
     <tbody>${trs}</tbody></table>
   </div>`;

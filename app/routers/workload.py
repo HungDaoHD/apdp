@@ -9,6 +9,7 @@ self-assign their own work without going through the admin.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -445,6 +446,12 @@ async def delete_leave(leave_id: str, email: str = Depends(require_workload)):
         raise HTTPException(404, "Booking not found")
     if leave["email"] != email and not is_workload_admin(email):
         raise HTTPException(403, "You can only cancel your own bookings")
+    # A booking that's already over is only the admin's to undo — a member
+    # shouldn't be able to quietly erase one after the fact. Server's own UTC
+    # "today", same imprecision as the rest of this app's date handling.
+    today = datetime.now(timezone.utc).date().isoformat()
+    if leave["end_date"] < today and not is_workload_admin(email):
+        raise HTTPException(403, "This booking has already passed — only the admin can cancel it")
     await workload_svc.delete_leave(leave_id)
     span = leave["start_date"] if leave["start_date"] == leave["end_date"] \
         else f"{leave['start_date']} → {leave['end_date']}"
