@@ -31,7 +31,7 @@ class AppConfigBody(BaseModel):
 class NotifyConfigBody(BaseModel):
     """Who else hears about a booking beyond its own owner — see
     _event_body in google_calendar_svc.py for how these are used."""
-    staff_emails:       list[str] = Field(default_factory=list, max_length=50)
+    hr_emails:          list[str] = Field(default_factory=list, max_length=50)
     line_manager_email: str = Field(default="", max_length=200)
 
 
@@ -74,7 +74,7 @@ async def notify_config(email: str = Depends(require_workload_admin)):
 
 @router.put("/notify-config", dependencies=[Depends(require_csrf)])
 async def set_notify_config(body: NotifyConfigBody, email: str = Depends(require_workload_admin)):
-    await google_calendar_svc.set_notify_config(body.staff_emails, body.line_manager_email, updated_by=email)
+    await google_calendar_svc.set_notify_config(body.hr_emails, body.line_manager_email, updated_by=email)
     await _log(actor=email, action="google.app_config", target="Google Calendar notification settings updated")
     return await google_calendar_svc.get_notify_config()
 

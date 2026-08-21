@@ -121,21 +121,21 @@ async def set_app_config(client_id: str, client_secret: str, redirect_uri: str, 
 # ── Notification config (admin-set: extra attendees + line-manager CC) ──────
 
 async def get_notify_config() -> dict:
-    doc = await _app_config().find_one({"_id": "app"}, {"staff_emails": 1, "line_manager_email": 1})
+    doc = await _app_config().find_one({"_id": "app"}, {"hr_emails": 1, "line_manager_email": 1})
     return {
-        "staff_emails": (doc or {}).get("staff_emails", []),
+        "hr_emails": (doc or {}).get("hr_emails", []),
         "line_manager_email": (doc or {}).get("line_manager_email", ""),
     }
 
 
-async def set_notify_config(staff_emails: list[str], line_manager_email: str, updated_by: str) -> None:
-    staff_emails = sorted({e.strip().lower() for e in staff_emails if e.strip()})
+async def set_notify_config(hr_emails: list[str], line_manager_email: str, updated_by: str) -> None:
+    hr_emails = sorted({e.strip().lower() for e in hr_emails if e.strip()})
     line_manager_email = line_manager_email.strip().lower()
     now = datetime.now(timezone.utc)
     await _app_config().update_one(
         {"_id": "app"},
         {"$set": {
-            "staff_emails": staff_emails,
+            "hr_emails": hr_emails,
             "line_manager_email": line_manager_email,
             "notify_updated_by": updated_by,
             "notify_updated_at": now,
@@ -344,11 +344,11 @@ async def _event_body(leave: dict) -> dict:
         body["description"] = leave["note"]
 
     # Everyone who should hear about a booking (and get emailed — sync_create
-    # sends with sendUpdates=all): the admin(s) always, plus any staff emails
+    # sends with sendUpdates=all): the admin(s) always, plus any HR emails
     # the admin has added under Config. Included even on the admin's own
     # booking so it's never a silent, self-organized event.
     notify_cfg = await get_notify_config()
-    attendee_set = dict.fromkeys(list(WORKLOAD_ADMINS) + notify_cfg["staff_emails"])
+    attendee_set = dict.fromkeys(list(WORKLOAD_ADMINS) + notify_cfg["hr_emails"])
     # An admin booking for themselves also CCs their line manager — a plain
     # attendee, since Google only emails people it lists that way.
     if leave["email"] in WORKLOAD_ADMINS and notify_cfg["line_manager_email"]:
