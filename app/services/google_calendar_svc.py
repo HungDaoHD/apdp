@@ -317,10 +317,10 @@ def _event_body(leave: dict) -> dict:
     if leave.get("note"):
         body["description"] = leave["note"]
     # The admin gets invited (and emailed — sync_create sends with
-    # sendUpdates=all) to every member's booking, so they see the whole
-    # team's calendar without each member having to share theirs. Skipped
-    # when the booking IS the admin's own — no point inviting yourself.
-    attendees = [{"email": a} for a in WORKLOAD_ADMINS if a != leave["email"]]
+    # sendUpdates=all) to every booking, including their own, so they always
+    # get an email record of it landing on the calendar rather than only a
+    # silent self-organized event.
+    attendees = [{"email": a} for a in WORKLOAD_ADMINS]
     if attendees:
         body["attendees"] = attendees
     return body
