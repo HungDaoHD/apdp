@@ -118,6 +118,32 @@ async def set_app_config(client_id: str, client_secret: str, redirect_uri: str, 
     )
 
 
+# ── Notification config (admin-set: extra attendees + line-manager CC) ──────
+
+async def get_notify_config() -> dict:
+    doc = await _app_config().find_one({"_id": "app"}, {"staff_emails": 1, "line_manager_email": 1})
+    return {
+        "staff_emails": (doc or {}).get("staff_emails", []),
+        "line_manager_email": (doc or {}).get("line_manager_email", ""),
+    }
+
+
+async def set_notify_config(staff_emails: list[str], line_manager_email: str, updated_by: str) -> None:
+    staff_emails = sorted({e.strip().lower() for e in staff_emails if e.strip()})
+    line_manager_email = line_manager_email.strip().lower()
+    now = datetime.now(timezone.utc)
+    await _app_config().update_one(
+        {"_id": "app"},
+        {"$set": {
+            "staff_emails": staff_emails,
+            "line_manager_email": line_manager_email,
+            "notify_updated_by": updated_by,
+            "notify_updated_at": now,
+        }, "$setOnInsert": {"created_at": now}},
+        upsert=True,
+    )
+
+
 async def get_credentials() -> dict | None:
     """This app's own client_id/client_secret/redirect_uri, or None if the
     admin hasn't set them up yet."""
@@ -295,7 +321,7 @@ async def _valid_access_token(email: str) -> str | None:
 
 # ── Event sync ────────────────────────────────────────────────────────────────
 
-def _event_body(leave: dict) -> dict:
+async def _event_body(leave: dict) -> dict:
     detail = ""
     if leave.get("half"):
         detail = f" ({leave['half'].upper()})"
@@ -316,11 +342,18 @@ def _event_body(leave: dict) -> dict:
     }
     if leave.get("note"):
         body["description"] = leave["note"]
-    # The admin gets invited (and emailed — sync_create sends with
-    # sendUpdates=all) to every booking, including their own, so they always
-    # get an email record of it landing on the calendar rather than only a
-    # silent self-organized event.
-    attendees = [{"email": a} for a in WORKLOAD_ADMINS]
+
+    # Everyone who should hear about a booking (and get emailed — sync_create
+    # sends with sendUpdates=all): the admin(s) always, plus any staff emails
+    # the admin has added under Config. Included even on the admin's own
+    # booking so it's never a silent, self-organized event.
+    notify_cfg = await get_notify_config()
+    attendee_set = dict.fromkeys(list(WORKLOAD_ADMINS) + notify_cfg["staff_emails"])
+    # An admin booking for themselves also CCs their line manager — a plain
+    # attendee, since Google only emails people it lists that way.
+    if leave["email"] in WORKLOAD_ADMINS and notify_cfg["line_manager_email"]:
+        attendee_set[notify_cfg["line_manager_email"]] = None
+    attendees = [{"email": a} for a in attendee_set]
     if attendees:
         body["attendees"] = attendees
     return body
@@ -337,7 +370,7 @@ async def sync_create(leave: dict) -> None:
             return
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
-                _EVENTS_URL, json=_event_body(leave), params={"sendUpdates": "all"},
+                _EVENTS_URL, json=await _event_body(leave), params={"sendUpdates": "all"},
                 headers={"Authorization": f"Bearer {token}"},
             )
         if r.status_code not in (200, 201):

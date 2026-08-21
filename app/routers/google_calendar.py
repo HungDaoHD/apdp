@@ -28,6 +28,13 @@ class AppConfigBody(BaseModel):
     redirect_uri:  str = Field(min_length=1, max_length=300)
 
 
+class NotifyConfigBody(BaseModel):
+    """Who else hears about a booking beyond its own owner — see
+    _event_body in google_calendar_svc.py for how these are used."""
+    staff_emails:       list[str] = Field(default_factory=list, max_length=50)
+    line_manager_email: str = Field(default="", max_length=200)
+
+
 async def _log(**kw) -> None:
     try:
         from services import workload_svc
@@ -60,6 +67,18 @@ async def set_app_config(body: AppConfigBody, email: str = Depends(require_workl
     return await google_calendar_svc.get_app_config()
 
 
+@router.get("/notify-config")
+async def notify_config(email: str = Depends(require_workload_admin)):
+    return await google_calendar_svc.get_notify_config()
+
+
+@router.put("/notify-config", dependencies=[Depends(require_csrf)])
+async def set_notify_config(body: NotifyConfigBody, email: str = Depends(require_workload_admin)):
+    await google_calendar_svc.set_notify_config(body.staff_emails, body.line_manager_email, updated_by=email)
+    await _log(actor=email, action="google.app_config", target="Google Calendar notification settings updated")
+    return await google_calendar_svc.get_notify_config()
+
+
 @router.get("/connect")
 async def connect(email: str = Depends(require_workload)):
     """Kicks off the OAuth dance. *email* comes from the existing session
@@ -67,7 +86,7 @@ async def connect(email: str = Depends(require_workload)):
     so it's captured now in the server-side `state` record instead."""
     creds = await google_calendar_svc.get_credentials()
     if not creds:
-        raise HTTPException(409, "Google Calendar isn't set up yet — ask the admin to configure it under the Users tab")
+        raise HTTPException(409, "Google Calendar isn't set up yet — ask the admin to configure it under the Config tab")
     state = secrets.token_urlsafe(32)
     await google_calendar_svc.save_oauth_state(state, email)
     return RedirectResponse(google_calendar_svc.authorize_url(state, email, creds))

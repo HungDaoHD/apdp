@@ -603,6 +603,7 @@ textarea.inp{resize:vertical;min-height:56px}
     <button id="tabProj"            onclick="switchTab('proj')">📁 Projects</button>
     <button id="tabUsers"           onclick="switchTab('users')">👥 Users</button>
     <button id="tabLog"             onclick="switchTab('log')">🕘 Log</button>
+    <button id="tabConfig" style="display:none" onclick="switchTab('config')">⚙️ Config</button>
   </div>
 
   <!-- ══ CALENDAR TAB ══ -->
@@ -678,8 +679,13 @@ textarea.inp{resize:vertical;min-height:56px}
       </div>
       <div class="gap"></div>
     </div>
+    <div id="usersArea"><div class="loading"><div class="spin"></div> Loading users…</div></div>
+  </div>
+
+  <!-- ══ CONFIG TAB — admin only (both this pane and the API behind it) ══ -->
+  <div id="paneConfig" style="display:none">
     <div id="gcalAdminCard" class="sumcard" style="display:none;margin-bottom:14px">
-      <div class="sumcard-hd">🔗 Google Calendar integration <span class="hint" style="font-weight:400">(admin only)</span></div>
+      <div class="sumcard-hd">🔗 Google Calendar — app setup</div>
       <div class="mbody" style="padding:12px 16px">
         <div class="hint" style="margin-bottom:10px">
           One-time setup so every member can sync their own bookings to their personal Google Calendar. Create an
@@ -708,7 +714,28 @@ textarea.inp{resize:vertical;min-height:56px}
         <button class="btn btn-suc" id="gcCfgSaveBtn" onclick="saveGcalAppConfig()">Save</button>
       </div>
     </div>
-    <div id="usersArea"><div class="loading"><div class="spin"></div> Loading users…</div></div>
+
+    <div id="gcalNotifyCard" class="sumcard" style="display:none">
+      <div class="sumcard-hd">✉️ Google Calendar — notifications</div>
+      <div class="mbody" style="padding:12px 16px">
+        <div class="hint" style="margin-bottom:10px">
+          These addresses get invited (and emailed) on every booking, on top of the admin(s) — useful for HR or
+          shared-inbox accounts that should see the whole team's calendar without connecting their own.
+        </div>
+        <div class="fld">
+          <label>STAFF EMAILS <span class="hint">— one per line, added to every booking</span></label>
+          <textarea class="inp" id="gcStaffEmails" rows="4" placeholder="hr@asia-plus.net&#10;ops@asia-plus.net"></textarea>
+        </div>
+        <div class="fld" style="margin-top:8px">
+          <label>LINE MANAGER EMAIL <span class="hint">— only CC'd when an admin books for themselves</span></label>
+          <input class="inp" id="gcLineManager" placeholder="manager@asia-plus.net">
+        </div>
+      </div>
+      <div class="mft">
+        <div class="mft-status" id="gcNotifyMsg" style="display:none"></div>
+        <button class="btn btn-suc" id="gcNotifySaveBtn" onclick="saveGcalNotifyConfig()">Save</button>
+      </div>
+    </div>
   </div>
 
   <!-- ══ DASHBOARD TAB ══ -->
@@ -1542,9 +1569,11 @@ async function boot(){
   // Every workload member can start a project now (they own what they create),
   // so the button is no longer admin-gated.
   document.getElementById('newProjBtn').style.display = '';
+  // Config tab (Google Calendar app setup + notification settings) is
+  // admin-only — both this button and the APIs behind it.
+  document.getElementById('tabConfig').style.display = META.me.is_admin ? '' : 'none';
 
   await loadGcalStatus();
-  await loadGcalAppConfig();
   // Land here from the Google OAuth redirect: report the result once, then
   // scrub the query string so a page refresh doesn't re-show the toast.
   const gcalResult = new URLSearchParams(location.search).get('google');
@@ -2618,9 +2647,46 @@ async function saveGcalAppConfig(){
   }
 }
 
+// ── Google Calendar — notification settings (Config tab) ───────────────────
+let GCAL_NOTIFY_CFG = null;   // {staff_emails, line_manager_email} — admin only
+
+async function loadGcalNotifyConfig(){
+  if (!META.me.is_admin) return;
+  try { GCAL_NOTIFY_CFG = await api('/api/workload/google/notify-config'); }
+  catch { GCAL_NOTIFY_CFG = null; }
+}
+
+function renderGcalNotifyConfig(){
+  const card = document.getElementById('gcalNotifyCard');
+  if (!META.me.is_admin || !GCAL_NOTIFY_CFG){ card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('gcStaffEmails').value = (GCAL_NOTIFY_CFG.staff_emails || []).join('\n');
+  document.getElementById('gcLineManager').value = GCAL_NOTIFY_CFG.line_manager_email || '';
+}
+
+async function saveGcalNotifyConfig(){
+  const staff_emails = document.getElementById('gcStaffEmails').value
+    .split(/[\n,]/).map(s => s.trim()).filter(Boolean);
+  const line_manager_email = document.getElementById('gcLineManager').value.trim();
+
+  const btn = document.getElementById('gcNotifySaveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    GCAL_NOTIFY_CFG = await api('/api/workload/google/notify-config', {
+      method: 'PUT', body: {staff_emails, line_manager_email},
+    });
+    setMsg('gcNotifyMsg', '', '');
+    toast('Google Calendar notification settings saved');
+    renderGcalNotifyConfig();
+  } catch(e){
+    setMsg('gcNotifyMsg', e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
 function renderUsers(){
   if (!META) return;
-  renderGcalAppConfig();
   const st = msValues(document.getElementById('uStatusWrap'));
   const today = todayISO();
   const tasks = st.length ? ALL_TASKS.filter(t => st.includes(t.status)) : ALL_TASKS;
@@ -3362,7 +3428,7 @@ async function loadGcalStatus(){
 function gcalWidget(){
   if (!GCAL_STATUS) return '';
   if (!META.google_configured){
-    return `<span class="hint" title="Ask the admin to set it up under the Users tab">📅 Google Calendar not set up yet</span>`;
+    return `<span class="hint" title="Ask the admin to set it up under the Config tab">📅 Google Calendar not set up yet</span>`;
   }
   return GCAL_STATUS.connected
     ? `<button class="btn btn-lt" onclick="disconnectGcal()"
@@ -3950,7 +4016,8 @@ function goToday(){ ANCHOR = todayISO(); loadCalendar(); }
 function switchTab(t){
   TAB = t;
   [['tabCal','paneCal','cal'], ['tabProj','paneProj','proj'], ['tabUsers','paneUsers','users'],
-   ['tabDash','paneDash','dash'], ['tabBook','paneBook','book'], ['tabLog','paneLog','log']]
+   ['tabDash','paneDash','dash'], ['tabBook','paneBook','book'], ['tabLog','paneLog','log'],
+   ['tabConfig','paneConfig','config']]
     .forEach(([tab, pane, key]) => {
       document.getElementById(tab).classList.toggle('on', t === key);
       document.getElementById(pane).style.display = t === key ? '' : 'none';
@@ -3967,6 +4034,13 @@ function switchTab(t){
   // it changes on every edit anyone makes — a cached copy would be stale on
   // arrival in a way the other tabs are not.
   if (t === 'log') loadLog();
+  // Admin-only, lazy-loaded like the tabs above — the tab button itself is
+  // hidden for everyone else, but re-fetch on every visit since the config
+  // lives in Mongo and another admin session could have just changed it.
+  if (t === 'config'){
+    loadGcalAppConfig().then(renderGcalAppConfig);
+    loadGcalNotifyConfig().then(renderGcalNotifyConfig);
+  }
 }
 
 // ════════════════════════════════════════════════════
