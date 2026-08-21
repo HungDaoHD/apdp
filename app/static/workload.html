@@ -319,6 +319,7 @@ textarea.inp{resize:vertical;min-height:56px}
 .ttbl input:disabled,.ttbl select:disabled{color:#666;cursor:default;background:transparent;-webkit-appearance:none;appearance:none}
 .ttbl .del{border:none;background:none;cursor:pointer;color:#ccc;font-size:14px;padding:2px 5px;border-radius:4px}
 .ttbl .del:hover{color:#c0392b;background:#fce8e6}
+.bktbl tbody tr:hover{background:#f8f9fb}
 .ttbl tr.st-complete td:nth-child(1) input{color:#1e8449}
 .ttbl tr.st-cancel td:nth-child(1) input{color:#aaa;text-decoration:line-through}
 
@@ -3555,7 +3556,7 @@ function bookList(members, leaves, win, today){
 
   return `<div class="sumcard">
     <div class="sumcard-hd">${heading}</div>
-    <table class="ttbl"><thead><tr><th>Member</th><th>Type</th><th>Dates</th><th>Note</th><th></th></tr></thead>
+    <table class="ttbl bktbl"><thead><tr><th>Member</th><th>Type</th><th>Dates</th><th>Note</th><th></th></tr></thead>
     <tbody>${trs}</tbody></table>
   </div>`;
 }
