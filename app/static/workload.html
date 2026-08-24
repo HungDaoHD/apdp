@@ -26,7 +26,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .btn-lt{background:white;color:#444;border:1px solid #dde1e7}.btn-lt:hover{border-color:#f36a17;color:#f36a17}
 
 /* ── Main ── */
-.main{flex:1;max-width:1500px;width:100%;margin:0 auto;padding:20px 24px 40px}
+/* No max-width: every tab uses the full window width, not just Calendar
+   (whose right-hand side panel was the original reason more room was
+   needed). Uncapped rather than capped-but-wide, so it scales with however
+   big the monitor actually is instead of guessing a number in advance. */
+.main{flex:1;width:100%;padding:20px 24px 40px}
 
 /* ── Toolbar ── */
 .tbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -327,6 +331,13 @@ textarea.inp{resize:vertical;min-height:56px}
 .hint.err{color:#c0392b}
 .badge-ro{font-size:10px;background:#f1f2f4;color:#8a8f97;border:1px solid #dfe2e6;padding:2px 8px;border-radius:10px;font-weight:700}
 
+/* ── Calendar tab — 3-column layout: status legend / calendar / unscheduled ── */
+/* ── Status-meaning legend (static, above Unscheduled — doesn't freeze) ──
+   One line, matching .hm-lg's legend style elsewhere; hover a pill for its
+   full meaning rather than spelling it all out inline. */
+.cal-legend{display:flex;align-items:center;gap:8px;font-size:11px;color:#888;flex-wrap:wrap;margin-bottom:12px}
+.cal-legend .stag{cursor:default}
+
 /* ── Unscheduled tray — pinned above the calendar ── */
 /* Sticky so it stays available as a drag source and drop target no matter how
    far down the calendar you've scrolled. Its own height is capped and scrolls
@@ -599,8 +610,8 @@ textarea.inp{resize:vertical;min-height:56px}
 <div class="main">
   <div class="tabs">
     <button id="tabDash"  class="on" onclick="switchTab('dash')">📊 Dashboard</button>
-    <button id="tabBook"            onclick="switchTab('book')">🏖️ Booking</button>
     <button id="tabCal"             onclick="switchTab('cal')">📅 Calendar</button>
+    <button id="tabBook"            onclick="switchTab('book')">🏖️ Booking</button>
     <button id="tabProj"            onclick="switchTab('proj')">📁 Projects</button>
     <button id="tabUsers"           onclick="switchTab('users')">👥 Users</button>
     <button id="tabLog"             onclick="switchTab('log')">🕘 Log</button>
@@ -637,13 +648,18 @@ textarea.inp{resize:vertical;min-height:56px}
         <input class="inp" autocomplete="off" placeholder="Any status">
         <div class="ssel-panel"></div>
       </div>
-      <button class="nav-btn" title="Ý nghĩa các status:
-• Ongoing — task đang làm trong ngày, hoặc đã được book cho các ngày sắp tới.
-• Complete — task đã hoàn tất trong ngày hoặc trước đó.
-• Cancel — task đã book nhưng tới hạn không làm nữa và cũng không có lịch mới.
-
-Task bị dời sang thời gian khác: cập nhật lại ngày cho task đó, status vẫn giữ Ongoing (không dùng Cancel).">ℹ️</button>
     </div>
+
+    <!-- What each status means — static, doesn't scroll with the page like
+         Unscheduled below it does, since there's nothing to keep re-checking
+         against as you browse. One line; hover a pill for the full meaning. -->
+    <div class="cal-legend">
+      <span>ℹ️ Status:</span>
+      <span class="stag stag-ongoing" title="Task đang làm trong ngày, hoặc đã được book cho các ngày sắp tới. Task bị dời sang thời gian khác: cập nhật lại ngày cho task đó — status vẫn giữ Ongoing, không dùng Cancel.">Ongoing</span>
+      <span class="stag stag-complete" title="Task đã hoàn tất trong ngày hoặc trước đó.">Complete</span>
+      <span class="stag stag-cancel" title="Task đã book nhưng tới hạn không làm nữa và cũng không có lịch mới.">Cancel</span>
+    </div>
+
     <!-- Unscheduled sits above the calendar and sticks to the top while the
          calendar scrolls, so it stays reachable as a drag source/target. -->
     <div id="unsched"></div>
