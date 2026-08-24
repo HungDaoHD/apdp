@@ -60,10 +60,14 @@ DEFAULT_PROJECT_TYPES: tuple[str, ...] = (
 )
 
 # Task status. Kept as its own tuple, independent from PROJECT_STATUSES below
-# — the two domains happen to share the same four words today, but that's
-# coincidence, not a shared type; one can change without silently affecting
-# the other.
-STATUSES: tuple[str, ...] = ("pending", "ongoing", "complete", "cancel")
+# — the two domains happen to share three of the same words today, but
+# that's coincidence, not a shared type; one can change without silently
+# affecting the other. No "pending" here — a task starts life "ongoing"
+# (see create_task's default) since a task only exists once someone's
+# already committed to doing it; "not started yet" was never a distinct
+# state worth tracking. init_db() migrates any pre-existing "pending" tasks
+# to "ongoing" on startup.
+STATUSES: tuple[str, ...] = ("ongoing", "complete", "cancel")
 
 # Project status — a separate domain from task status.
 PROJECT_STATUSES: tuple[str, ...] = ("pending", "ongoing", "complete", "cancel")
@@ -126,6 +130,10 @@ async def init_db() -> None:
     # time, sorted by when it starts.
     await _leaves().create_index([("email", 1), ("start_date", 1)])
     await _leaves().create_index("start_date")
+    # One-time cleanup for the "pending" task status removed above — safe to
+    # run on every startup, since after the first run there's nothing left
+    # to match.
+    await _tasks().update_many({"status": "pending"}, {"$set": {"status": "ongoing"}})
 
 
 def _now() -> str:

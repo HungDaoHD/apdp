@@ -24,7 +24,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workload", tags=["workload"])
 
-Status = Literal["pending", "ongoing", "complete", "cancel"]          # tasks
+Status = Literal["ongoing", "complete", "cancel"]                     # tasks — no "pending"
 ProjectStatus = Literal["pending", "ongoing", "complete", "cancel"]    # projects — a distinct domain
 View = Literal["month", "week", "day"]
 LeaveKind = Literal["wfh", "off", "partial"]

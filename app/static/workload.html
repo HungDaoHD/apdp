@@ -959,7 +959,6 @@ textarea.inp{resize:vertical;min-height:56px}
         <div class="fld">
           <label>STATUS</label>
           <select class="inp" id="tfStatus">
-            <option value="pending">Pending</option>
             <option value="ongoing">Ongoing</option>
             <option value="complete">Complete</option>
             <option value="cancel">Cancel</option>
@@ -1156,7 +1155,7 @@ let _dayTasksDlgDate = null; // date the day-tasks browse dialog is showing
 let _dragTaskId = null;    // task being dragged across the calendar
 
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-const STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'};          // tasks
+const STATUS_LABEL = {ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'};                             // tasks — no "pending"
 const PROJECT_STATUS_LABEL = {pending:'Pending', ongoing:'Ongoing', complete:'Complete', cancel:'Cancel'}; // projects — a distinct domain
 /** Status reads twice over: its colour *and* its icon. The icon was added
  *  because colour alone is easy to miss on a 3px chip stripe and useless to
@@ -2696,7 +2695,7 @@ function renderUsers(){
     const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
     const projects = projectsForUser(m.email);
     const projComplete = projects.filter(p => p.status === 'complete').length;
-    const counts = {pending:0, ongoing:0, complete:0, cancel:0};
+    const counts = {ongoing:0, complete:0, cancel:0};
     mine.forEach(t => counts[t.status]++);
     const overdue = mine.filter(t => isOverdue(t, today)).length;
     const color = memberColor(m.email);
@@ -2724,7 +2723,6 @@ function renderUsers(){
       ${mine.length ? `<div class="bar">
         <i class="b-complete" style="width:${counts.complete / mine.length * 100}%"></i>
         <i class="b-ongoing"  style="width:${counts.ongoing  / mine.length * 100}%"></i>
-        <i class="b-pending"  style="width:${counts.pending  / mine.length * 100}%"></i>
         <i class="b-cancel"   style="width:${counts.cancel   / mine.length * 100}%"></i>
       </div>` : ''}
       <div class="uprojs">${shown.length
@@ -2977,17 +2975,18 @@ function buildLoad(tasks, win, emails){
 }
 
 function statusStatCard(title, counts, total, labels){
+  // STATUS_ORDER is shared between tasks and projects; filtering by
+  // `labels[k]` drops whichever status the caller's own label set doesn't
+  // have (tasks have no "pending" — see STATUS_LABEL — projects still do).
+  const statuses = STATUS_ORDER.filter(k => labels[k]);
   return `<div class="sumcard">
     <div class="sumcard-hd">${title}</div>
-    <div class="ustats" style="grid-template-columns:repeat(4,1fr)">
-      ${STATUS_ORDER.map(k =>
+    <div class="ustats" style="grid-template-columns:repeat(${statuses.length},1fr)">
+      ${statuses.map(k =>
         `<div class="ustat"><b>${counts[k]}</b><span>${statusIconSvg(k, 'sico')} ${labels[k]}</span></div>`).join('')}
     </div>
     ${total ? `<div class="bar">
-      <i class="b-complete" style="width:${counts.complete / total * 100}%"></i>
-      <i class="b-ongoing"  style="width:${counts.ongoing  / total * 100}%"></i>
-      <i class="b-pending"  style="width:${counts.pending  / total * 100}%"></i>
-      <i class="b-cancel"   style="width:${counts.cancel   / total * 100}%"></i>
+      ${statuses.map(k => `<i class="b-${k}" style="width:${counts[k] / total * 100}%"></i>`).join('')}
     </div>` : ''}
     <div class="hint">${total} total</div>
   </div>`;
@@ -3033,7 +3032,7 @@ function renderDashboard(){
 
   const pCounts = {pending:0, ongoing:0, complete:0, cancel:0};
   projects.forEach(p => pCounts[p.status]++);
-  const tCounts = {pending:0, ongoing:0, complete:0, cancel:0};
+  const tCounts = {ongoing:0, complete:0, cancel:0};
   tasks.forEach(t => tCounts[t.status]++);
 
   const scope = [
@@ -3330,7 +3329,7 @@ function dashByUser(members, tasks, projects, load, today){
   const byUser = members.map(m => {
     const mine = tasks.filter(t => (t.assignees || []).includes(m.email));
     const theirs = projects.filter(p => isOnProject(p, m.email));
-    const counts = {pending:0, ongoing:0, complete:0, cancel:0};
+    const counts = {ongoing:0, complete:0, cancel:0};
     mine.forEach(t => counts[t.status]++);
     const days = load.get(m.email) || new Map();
     return {
@@ -3350,7 +3349,7 @@ function dashByUser(members, tasks, projects, load, today){
       <thead><tr>
         <th>User</th><th class="num">Projects</th><th class="num">Proj. done</th><th class="num">Tasks</th>
         <th class="num">Task-days</th><th class="num">Weekend</th><th class="num">Hot days</th>
-        <th class="num">Pending</th><th class="num">Ongoing</th><th class="num">Complete</th>
+        <th class="num">Ongoing</th><th class="num">Complete</th>
         <th class="num">Cancel</th><th class="num">Overdue</th>
       </tr></thead>
       <tbody>${byUser.map(u => `<tr>
@@ -3361,7 +3360,6 @@ function dashByUser(members, tasks, projects, load, today){
         <td class="num">${u.taskDays}</td>
         <td class="num">${u.weekend}</td>
         <td class="num${u.hot ? ' warn' : ''}">${u.hot}</td>
-        <td class="num">${u.counts.pending}</td>
         <td class="num">${u.counts.ongoing}</td>
         <td class="num">${u.counts.complete}</td>
         <td class="num">${u.counts.cancel}</td>
@@ -3990,7 +3988,6 @@ function projCard(p){
     <div class="bar">
       <i class="b-complete" style="width:${pct('complete')}%"></i>
       <i class="b-ongoing"  style="width:${pct('ongoing')}%"></i>
-      <i class="b-pending"  style="width:${pct('pending')}%"></i>
       <i class="b-cancel"   style="width:${pct('cancel')}%"></i>
     </div>
     <div class="pcard-sub">${c.complete}/${total} tasks complete${c.cancel ? ` · ${c.cancel} cancelled` : ''}</div>
