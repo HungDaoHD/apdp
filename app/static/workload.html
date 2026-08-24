@@ -139,6 +139,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 
 /* ── Week view ── */
 .wk{background:white;border:1px solid #e0e4ea;border-radius:10px;overflow:auto}
+.wk + .wk-next-hd{margin-top:18px}
+.wk-next-hd{font-size:12px;font-weight:700;color:#888;margin-bottom:8px}
 .wk table{width:100%;border-collapse:collapse;min-width:920px;table-layout:fixed}
 .wk th{background:#f8f9fb;font-size:11px;font-weight:700;color:#888;padding:8px 10px;text-align:center;border-bottom:1px solid #e0e4ea;border-right:1px solid #eef0f3}
 .wk th.who{text-align:left;width:130px;position:sticky;left:0;background:#f8f9fb;z-index:2}
@@ -1160,6 +1162,7 @@ textarea.inp{resize:vertical;min-height:56px}
 // ════════════════════════════════════════════════════
 let META      = null;      // /api/workload/meta
 let CAL       = null;      // last calendar payload
+let CAL_NEXT  = null;      // week view only: the following week's payload, for the "Next week" cluster below the main grid
 let PROJECTS  = [];
 let VIEW      = 'month';
 let ANCHOR    = todayISO();
@@ -1746,6 +1749,15 @@ async function loadCalendar(){
   if (st.length)  q.set('status', st.join(','));
   try {
     CAL = await api('/api/workload/calendar?' + q);
+    // Week view also shows a second, read-only cluster for the week right
+    // after this one — fetched with the same filters, anchored 7 days on.
+    if (VIEW === 'week'){
+      const q2 = new URLSearchParams(q);
+      q2.set('anchor', addDays(ANCHOR, 7));
+      CAL_NEXT = await api('/api/workload/calendar?' + q2);
+    } else {
+      CAL_NEXT = null;
+    }
     renderCalendar();
   } catch(e){
     if (e.status === 403) return showDeny(e.message);
@@ -1846,12 +1858,12 @@ function chip(t, day, {compact = false} = {}){
  *  listed once per day across its [start_date, due_date] span, clipped to the
  *  calendar's own window so a task running far outside the view doesn't loop
  *  needlessly. */
-function tasksByDate(){
+function tasksByDate(cal = CAL){
   const map = {};
-  (CAL.tasks || []).forEach(t => {
+  (cal.tasks || []).forEach(t => {
     if (!t.due_date) return;
-    const from = taskStart(t) < CAL.from ? CAL.from : taskStart(t);
-    const to   = t.due_date  > CAL.to   ? CAL.to   : t.due_date;
+    const from = taskStart(t) < cal.from ? cal.from : taskStart(t);
+    const to   = t.due_date  > cal.to   ? cal.to   : t.due_date;
     for (let d = from; d <= to; d = addDays(d, 1)) (map[d] ||= []).push(t);
   });
   Object.values(map).forEach(list => list.sort(byAssignee));
@@ -2119,9 +2131,12 @@ function renderMonth(){
   </div>`;
 }
 
-function renderWeek(){
-  const byDate = tasksByDate();
-  const days = Array.from({length:7}, (_, i) => addDays(CAL.from, i));
+/** The member-rows x day-columns grid used by the week view — factored out
+ *  so the same cluster can be drawn twice: once for the current week (from
+ *  CAL, editable) and once read-only for the week after (from CAL_NEXT). */
+function weekTableHtml(cal, {editable = true} = {}){
+  const byDate = tasksByDate(cal);
+  const days = Array.from({length:7}, (_, i) => addDays(cal.from, i));
   const today = todayISO();
 
   // One row per roster member — an unassigned task has no row to land on
@@ -2143,9 +2158,11 @@ function renderWeek(){
       // Clicking anywhere on the cell opens that day's full task list — not
       // just this row's slice of it — so it's keyed by date alone.
       const leave = leaveOnDay(r.key, d);
+      const dragAttrs = editable
+        ? ` ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')"`
+        : '';
       return `<td class="${d===today?'today-col':''}"
-        onclick="openDayTasksDlg('${d}')"
-        ondragover="dropAllow(event)" ondragleave="dropLeave(event)" ondrop="dropOnDate(event,'${d}')"
+        onclick="openDayTasksDlg('${d}')"${dragAttrs}
         ><div class="wk-cell">${leave ? leaveBadge(leave, r.label) : ''}${list.map(t => chip(t, d)).join('')}</div></td>`;
     }).join('');
 
@@ -2157,14 +2174,23 @@ function renderWeek(){
   // button into all 7 x N body cells.
   const heads = days.map((d,i) =>
     `<th class="${d===today?'today-col':''}">${DOW[i]}
-      <button class="cell-add" style="opacity:.75" title="Add a task on this day"
-              onclick="openDayAdd('${d}')">＋</button>
+      ${editable ? `<button class="cell-add" style="opacity:.75" title="Add a task on this day"
+              onclick="openDayAdd('${d}')">＋</button>` : ''}
       <br><span style="font-weight:400;color:#aaa">${fmtDM(d)}</span></th>`
   ).join('');
 
-  document.getElementById('calArea').innerHTML = `<div class="wk"><table>
+  return `<div class="wk"><table>
     <thead><tr><th class="who">MEMBER</th>${heads}</tr></thead>
     <tbody>${body}</tbody></table></div>`;
+}
+
+function renderWeek(){
+  let html = weekTableHtml(CAL);
+  if (CAL_NEXT){
+    html += `<div class="wk-next-hd">Next week — ${fmtDM(CAL_NEXT.from)} – ${fmtFull(CAL_NEXT.to)}</div>`
+      + weekTableHtml(CAL_NEXT, {editable: false});
+  }
+  document.getElementById('calArea').innerHTML = html;
 }
 
 function renderDay(){
